@@ -1,0 +1,18 @@
+DatRail
+Copyright (c) 2026 DatRail
+
+DatRail is distributed under the Apache License, Version 2.0. See LICENSE.txt.
+
+Third-party components
+----------------------
+
+AgentSight — https://github.com/eunomia-bpf/agentsight
+
+DatRail components use AgentSight from the eunomia-bpf organization for eBPF
+TLS capture and observed-interaction data. AgentSight is third-party software
+distributed under the MIT License. Its copyright and license terms remain
+those of the upstream project; the Apache License for DatRail does not replace
+or modify them.
+
+Repository-specific NOTICE files identify how each DatRail component uses or
+derives from third-party software and take precedence for that component.
