@@ -1,0 +1,13 @@
+# Local-built mode override: build both images from source instead of pulling.
+# raildash and railmon are sibling checkouts (../raildash, ../railmon by
+# default; override with RAILDASH_SRC / RAILMON_SRC). The base file requires
+# RAILMON_TAG / RAILDASH_TAG rather than defaulting to :latest; `make
+# stack-local` sets them to the placeholder `local`, and the image names below
+# replace the base file's outright.
+services:
+  raildash:
+    image: raildash:local
+    build: ${RAILDASH_SRC:-../raildash}
+  railmon:
+    image: railmon:local
+    build: ${RAILMON_SRC:-../railmon}
