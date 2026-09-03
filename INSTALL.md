@@ -5,7 +5,7 @@ DatRail's local bundle runs two components together from one command:
 - **RailMon** — a CLI daemon that taps live agent traffic at the kernel level (eBPF) and records interactions to JSONL and/or a webhook.
 - **RailDash** — a local dashboard (FastAPI + SQLite) that imports RailMon's capture and serves it at `http://127.0.0.1:8000`.
 
-Everything runs locally: no cloud account, no Rail Center, no auth. The stack binds to `127.0.0.1` only and stores data in Docker volumes.
+The stack that runs them together lives in this repo (`datrail-project`); the components live in `datrail/railmon` and `datrail/raildash`. Everything runs locally: no cloud account, no Rail Center, no auth. The stack binds to `127.0.0.1` only and stores data in Docker volumes.
 
 ## Prerequisites
 
@@ -27,23 +27,24 @@ Everything runs locally: no cloud account, no Rail Center, no auth. The stack bi
 
 Builds both images from your own source checkouts — nothing is cloned for you, and nothing is pulled from a registry.
 
-1. Clone both repos as siblings:
+1. Clone all three repos as siblings:
 
 ```bash
    git clone https://github.com/datrail/railmon.git
    git clone https://github.com/datrail/raildash.git
+   git clone https://github.com/datrail/datrail-project.git
 ```
 
-   RailDash expects the railmon checkout as a sibling directory (`../railmon`) by default. If yours lives elsewhere, point at it with `RAILMON_SRC`:
+   The stack expects `railmon` and `raildash` as sibling checkouts (`../railmon`, `../raildash`) by default. If they live elsewhere, point at them with `RAILMON_SRC` / `RAILDASH_SRC`:
 
 ```bash
-   make stack-local RAILMON_SRC=/path/to/railmon
+   make stack-local RAILMON_SRC=/path/to/railmon RAILDASH_SRC=/path/to/raildash
 ```
 
-2. From the raildash checkout, bring the stack up:
+2. From this repo, bring the stack up:
 
 ```bash
-   cd raildash
+   cd datrail-project
    make stack-local
 ```
 
@@ -56,7 +57,7 @@ Builds both images from your own source checkouts — nothing is cloned for you,
 Pulls both images from GHCR at explicit tags. There is deliberately no default — the stack refuses to run an unpinned `:latest` privileged container, and errors out if either tag is missing:
 
 ```bash
-cd raildash
+cd datrail-project
 make stack RAILMON_TAG=v0.1.0-m2 RAILDASH_TAG=v0.1.0
 ```
 
@@ -85,7 +86,7 @@ Six interactions from three requests is correct, not a bug — see Troubleshooti
 
 **More than 6 interactions on a second run.** `make stack-down` keeps the volumes, and RailMon appends to the capture. Run `make stack-clean` for a fresh start that matches the first-run numbers.
 
-**`no RailMon checkout at ../railmon`.** Option A can't find the railmon source. Clone `datrail/railmon` as a sibling of the raildash checkout, or set `RAILMON_SRC=/path/to/railmon`.
+**`no RailMon checkout at ../railmon`.** Option A can't find the railmon source. Clone `datrail/railmon` as a sibling of this repo, or set `RAILMON_SRC=/path/to/railmon`.
 
 **`the RailMon at … does not honour RAILMON_WEBHOOK_URL / RAILMON_SESSION_ID`.** Your railmon checkout is out of date. Update it to the current `master`. Without the demo env passthrough the webhook path never fires and the stack silently runs at half of what it claims.
 
