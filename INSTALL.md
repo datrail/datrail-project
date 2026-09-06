@@ -58,7 +58,7 @@ Pulls both images from GHCR at explicit tags. There is deliberately no default â
 
 ```bash
 cd datrail-project
-make stack RAILMON_TAG=v0.1.0-m2 RAILDASH_TAG=v0.1.0
+make stack RAILMON_TAG=v0.1.0 RAILDASH_TAG=v0.1.0
 ```
 
 The leading `v` is fine â€” the Makefile strips it when resolving the image tag. `make stack-down` and `make stack-logs` work for either mode without repeating the tags.

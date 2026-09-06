@@ -2,7 +2,7 @@
 # RailMon + RailDash together, from one command, in two modes (BDL-F5):
 #
 #   make stack-local                              build from source checkouts
-#   make stack RAILMON_TAG=v0.1.1 RAILDASH_TAG=v0.1.0
+#   make stack RAILMON_TAG=v0.1.0 RAILDASH_TAG=v0.1.0
 #                                                 run the published images
 #
 # Local-built mode assumes the component repos are already checked out:
@@ -60,7 +60,7 @@ railmon-src-check:
 stack-local: railmon-src-check
 	@$(MAKE) --no-print-directory _stack-up COMPOSE_CMD='$(COMPOSE_LOCAL)' UP_FLAGS=--build
 
-# Registry mode. Tags may be git-style (v0.1.0-m2) or image-style (0.1.0-m2);
+# Registry mode. Tags may be git-style (v0.1.0) or image-style (0.1.0);
 # the leading v is stripped to match what container-release.yml publishes. An
 # image predating railmon#9 starts but never posts the webhook -- there is no
 # way to check inside an image up front, so that case is caught at run time
@@ -68,7 +68,7 @@ stack-local: railmon-src-check
 stack:
 	@[ -n "$(RAILMON_TAG)" ] && [ -n "$(RAILDASH_TAG)" ] || { \
 	  echo "registry mode needs both tags, e.g.:" >&2; \
-	  echo "  make stack RAILMON_TAG=v0.1.1 RAILDASH_TAG=v0.1.0" >&2; \
+	  echo "  make stack RAILMON_TAG=v0.1.0 RAILDASH_TAG=v0.1.0" >&2; \
 	  echo "(or build from checkouts instead: make stack-local)" >&2; exit 1; }
 	@$(MAKE) --no-print-directory _stack-up COMPOSE_CMD='$(COMPOSE)' UP_FLAGS= \
 	  RAILMON_TAG='$(patsubst v%,%,$(RAILMON_TAG))' \
