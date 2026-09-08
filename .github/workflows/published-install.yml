@@ -16,18 +16,19 @@ jobs:
     env:
       COMPOSE_PROJECT_NAME: dr99-${{ github.run_id }}-${{ github.run_attempt }}
       DEMO_SESSION_ID: dr99-${{ github.run_id }}-${{ github.run_attempt }}
-      DOCKER_CONFIG: ${{ runner.temp }}/anonymous-docker
-      EVIDENCE_DIR: ${{ runner.temp }}/published-install
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
       - name: Install published images and verify captured data
+        env:
+          DOCKER_CONFIG: ${{ runner.temp }}/anonymous-docker
+          EVIDENCE_DIR: ${{ runner.temp }}/published-install
         run: bash tests/published-install.sh
       - name: Preserve runtime and browser evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: published-install-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ env.EVIDENCE_DIR }}
+          path: ${{ runner.temp }}/published-install
           if-no-files-found: error
