@@ -1,0 +1,33 @@
+name: Published installation
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      COMPOSE_PROJECT_NAME: dr99-${{ github.run_id }}-${{ github.run_attempt }}
+      DEMO_SESSION_ID: dr99-${{ github.run_id }}-${{ github.run_attempt }}
+      DOCKER_CONFIG: ${{ runner.temp }}/anonymous-docker
+      EVIDENCE_DIR: ${{ runner.temp }}/published-install
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install published images and verify captured data
+        run: bash tests/published-install.sh
+      - name: Preserve runtime and browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: published-install-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.EVIDENCE_DIR }}
+          if-no-files-found: error
