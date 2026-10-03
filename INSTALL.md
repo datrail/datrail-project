@@ -1,95 +1,179 @@
 # Installing DatRail (RailMon + RailDash)
 
-DatRail's local bundle runs two components together from one command:
+[README.md](README.md) has the short version. This page covers the details:
+what the stack needs, every setting, watching your own agent, and what to do
+when something looks wrong.
 
-- **RailMon** — a CLI daemon that taps live agent traffic at the kernel level (eBPF) and records interactions to JSONL and/or a webhook.
-- **RailDash** — a local dashboard (FastAPI + SQLite) that imports RailMon's capture and serves it at `http://127.0.0.1:8000`.
-
-The stack that runs them together lives in this repo (`datrail-project`); the components live in `datrail/railmon` and `datrail/raildash`. Everything runs locally: no cloud account, no Rail Center, no auth. The stack binds to `127.0.0.1` only and stores data in Docker volumes.
+Everything runs locally. There is no cloud account and no sign-in, and
+RailDash listens on `127.0.0.1` only.
 
 ## Prerequisites
 
-- **Docker Engine with Compose v2.** The RailMon container runs `--privileged` with `pid=host` (required for the eBPF tap), so your Docker daemon must allow privileged containers.
-- **`make` and `git`.**
-- **An x86_64 machine.** See the platform matrix below — this is a hard requirement for capture.
-- For Option A only: local checkouts of both repos (see that section).
+- **Docker Engine with Compose v2.** Two RailMon containers run privileged
+  in the host PID namespace (the eBPF probes need it), so your Docker daemon
+  must allow privileged containers.
+- **`git`.** `make` is optional; the [Makefile](Makefile) only wraps
+  `docker compose` commands.
+- **Linux on x86_64 with a BTF-enabled kernel** (`/sys/kernel/btf/vmlinux`
+  exists). See the platform table below.
+- **Network access to GitHub** for the first build. The images are built from
+  the components' source (see [Images](#images)).
 
 ### Platform support
 
-| Platform | Capture | Notes |
+| Platform | Works | Notes |
 | --- | --- | --- |
-| **Linux (x86_64, native)** | Supported | Real kernel with BTF; the tap sees host processes. |
-| **Windows via WSL2 (x86_64)** | Supported — verified reference setup | WSL2 provides a real Linux kernel with BTF. |
-| **macOS (Intel, Docker Desktop)** | Limited | Docker Desktop runs containers in a Linux VM, so the tap cannot see the Mac's own processes — only what runs inside that VM. The bundled demo runs entirely in-container and works; tapping a real local agent does not. |
-| **Apple Silicon / arm64** | Not supported | AgentSight (the tap) publishes no arm64 build. An arm64 image exists but lacks the tap binary, so `collect` and `demo` cannot capture; `scan`, `skills`, and `forward` still work. |
+| **Linux (x86_64, native)** | Yes | Real kernel with BTF; the probes see host processes. |
+| **Windows via WSL2 (x86_64)** | Yes | WSL2 runs a real Linux kernel with BTF. |
+| **macOS (Intel, Docker Desktop)** | Partly | Containers run in a Linux VM, so the probes see only what runs inside that VM. The demo agent works; an agent running natively on the Mac is not visible. |
+| **Apple Silicon / arm64** | No | AgentSight, RailMon's TLS probe, publishes no arm64 build, so nothing is captured. |
 
-## Option A — build from source (`make stack-local`)
-
-Builds both images from your own source checkouts — nothing is cloned for you, and nothing is pulled from a registry.
-
-1. Clone all three repos as siblings:
+## Run it
 
 ```bash
-   git clone https://github.com/datrail/railmon.git
-   git clone https://github.com/datrail/raildash.git
-   git clone https://github.com/datrail/datrail-project.git
-```
-
-   The stack expects `railmon` and `raildash` as sibling checkouts (`../railmon`, `../raildash`) by default. If they live elsewhere, point at them with `RAILMON_SRC` / `RAILDASH_SRC`:
-
-```bash
-   make stack-local RAILMON_SRC=/path/to/railmon RAILDASH_SRC=/path/to/raildash
-```
-
-2. From this repo, bring the stack up:
-
-```bash
-   cd datrail-project
-   make stack-local
-```
-
-3. This builds both images from your checkouts, starts the stack, generates demo traffic through the tap, then imports the capture into RailDash. **During the import the dashboard briefly stops and restarts — this is expected** (see Troubleshooting).
-
-4. Open **http://127.0.0.1:8000**.
-
-## Option B — from published images (`make stack`)
-
-Pulls both images from GHCR at explicit tags. There is deliberately no default — the stack refuses to run an unpinned `:latest` privileged container, and errors out if either tag is missing:
-
-```bash
+git clone --recursive https://github.com/datrail/datrail-project.git
 cd datrail-project
-make stack RAILMON_TAG=v0.1.0 RAILDASH_TAG=v0.1.0
+docker compose up -d
 ```
 
-The leading `v` is fine — the Makefile strips it when resolving the image tag. `make stack-down` and `make stack-logs` work for either mode without repeating the tags.
+Open <http://127.0.0.1:8000>. Five services start:
 
-## Verify the install — what you should see
+| Service | What it does |
+| --- | --- |
+| `raildash` | The dashboard and its SQLite database, on `127.0.0.1:8000`. |
+| `railmon-collect` | `railmon collect`: captures the agent's TLS traffic and posts each request/response pair to RailDash as it happens. |
+| `railmon-listen` | `railmon listen`: records every socket the agent opens to accept traffic, and who connects to it. |
+| `railmon-scan` | `railmon scan --interval`: scans the agent every `SCAN_INTERVAL` seconds and posts the evidence bundle to RailDash, where it becomes an ASP. |
+| `demo-agent` | A stand-in agent (`datrail-demo-agent`) that serves HTTPS on `127.0.0.1:8443` and calls itself. |
 
-In either mode, a few seconds after the stack comes up:
+Every service restarts on its own and delivers continuously. Nothing has to be
+stopped, restarted or imported by hand, before or after you lock a baseline.
 
-- **RailMon's container ran once and exited 0.** Expected — the demo capture finishes and stops; it is not a long-running collector. Only the raildash service stays `Up` in `docker compose ps`.
-- **The file-import step reports `6 already present, skipped`** — the webhook path already delivered every interaction, so the file path had nothing to insert. This is the dedup working, with both paths wired.
-- **http://127.0.0.1:8000** shows **6 interactions** against `127.0.0.1:8443`, all `POST`, all `200`, across `/v1/demo` and `/v1/demo/other`.
+### Verify
 
-Six interactions from three requests is correct, not a bug — see Troubleshooting.
+A minute or two after `docker compose up -d`:
 
-### Teardown
+- `docker compose ps` shows all five services `Up`, and `raildash` `healthy`.
+- The dashboard lists interactions: `POST` to `127.0.0.1:8443`, paths
+  `/v1/demo` and `/v1/demo/other`, status `200`. Each call is captured twice,
+  once as the client sent it and once as the server received it, because
+  both ends are the demo agent's processes.
+- The **Agent Security Profile alignment** panel has ASPs for `demo-agent`,
+  one more every minute, with `observed_listeners` including port 8443.
 
-- `make stack-down` stops the stack but **keeps the volumes** — the capture and database survive, so a second run shows the first run's rows too.
-- `make stack-clean` removes the volumes as well — the full reset that makes the first-run numbers above true again.
+The README's [drift walkthrough](README.md#what-you-see-in-raildash) shows the
+rest.
+
+### Stop and reset
+
+```bash
+docker compose down        # stop; RailDash's database and token are kept
+docker compose down -v     # also delete them, for a fresh start
+```
+
+## Settings
+
+Set these in your shell or in a `.env` file next to `docker-compose.yml`.
+All are optional.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `AGENT_CONTAINER` | `datrail-demo-agent` | The container to watch. `railmon-listen` attaches to it and `railmon-scan` scans it. |
+| `AGENT_KEY` | the container name | The identity RailDash files ASPs under, when the agent has no deployment identity of its own (see [docs/glossary.md](docs/glossary.md#identity)). A container started by Compose is identified by its Compose project and service instead. |
+| `COLLECT_TARGET` | `--comm datrail-demo` | Which processes `railmon collect` taps. It matches across the whole host, so make it specific to your agent: `--comm NAME`, `--pid PID`, `--uid UID`, or `--binary-path PATH` for an agent with its TLS library linked in statically. |
+| `SCAN_INTERVAL` | `60` | Seconds between scans. |
+| `RAIL_HOST_ID` | `datrail-local` | The name of this machine in every evidence bundle. |
+| `RAILDASH_PORT` | `8000` | The local port RailDash is published on (always on `127.0.0.1`). |
+| `RAILDASH_TOKEN` | unset | RailDash's local write token, if you want to choose it (see below). |
+| `RAILMON_SRC`, `RAILDASH_SRC` | the GitHub repositories | Where to build each image from (see [Images](#images)). |
+| `DEMO_INTERVAL` | `30` | Seconds between the demo agent's calls. |
+
+### The RailDash token
+
+Every RailDash route that changes ASP or baseline state, including the one
+evidence bundles are delivered to, requires RailDash's local write token in an
+`X-RailDash-Token` header. The dashboard page carries it for your browser.
+RailDash also writes it to `raildash.db.token` beside its database, and
+`railmon-scan` reads it from there (a read-only mount), so the stack needs
+no token configuration.
+
+RailDash keeps the token in that file across restarts, so `railmon-scan`
+keeps delivering after either side restarts. Set `RAILDASH_TOKEN` to choose
+the token yourself. A RailDash image built before stable-token support (an
+old local build, or an old checkout in `RAILDASH_SRC`) generates a new token
+on every start instead; if `docker compose logs railmon-scan` then shows
+`HTTP 403` after RailDash restarted, rebuild with `docker compose up -d
+--build` (updating that checkout first), or run
+`docker compose restart railmon-scan`.
+
+## Watch your own agent
+
+Run your agent in a container, then point the stack at it and leave the demo
+agent out:
+
+```bash
+AGENT_CONTAINER=my-agent COLLECT_TARGET="--comm my-agent-bin" \
+  docker compose up -d --scale demo-agent=0
+```
+
+- `railmon-listen` waits for `my-agent` to start and attaches again whenever
+  it restarts. It only records sockets opened after it attaches, so start
+  the stack before the agent, or restart the agent once.
+- `COLLECT_TARGET` selects the agent's processes on the host. A process
+  name (`--comm`) matches every process of that name on the machine, so pick
+  one only your agent uses, or use `--pid` or `--uid`. An agent
+  binary with its own statically linked TLS library needs
+  `--binary-path /path/to/that/binary` as the host sees it.
+- Lock a baseline in RailDash once the agent has done its normal work for a
+  while. Anything it does later that the baseline does not cover is drift.
+
+An agent not in a container can still be captured with `COLLECT_TARGET`; the
+listen and scan services need a container to attach to.
+
+## Images
+
+Both images are built from source, from each repository's default branch:
+`docker compose up -d` builds them the first time, and
+`docker compose up -d --build` updates them. A git URL build context is
+fetched with its submodules, which RailMon needs.
+
+To build from local checkouts instead, clone them with their submodules:
+
+```bash
+git clone --recursive https://github.com/datrail/railmon.git
+git clone --recursive https://github.com/datrail/raildash.git
+RAILMON_SRC=../railmon RAILDASH_SRC=../raildash docker compose up -d --build
+```
+
+The published images (`ghcr.io/datrail/railmon:0.1.0` and
+`ghcr.io/datrail/raildash:0.1.0`) predate interval scanning, `railmon listen`
+and RailDash's evidence-bundle route, so they cannot run this stack. The
+stack will switch to published images once a release contains these
+features.
+
+This repository's CI runs the same stack from both default branches on every
+change and daily, and checks the walkthrough above end to end
+([`tests/stack-acceptance.sh`](tests/stack-acceptance.sh)).
 
 ## Troubleshooting
 
-**The dashboard pauses or drops connections during a file import.** Expected. RailDash's SQLite database allows exactly one opener, so the stack stops the server, runs the import as the sole opener, and restarts it, waiting for health. If the dashboard seems down right after starting the stack, give it ~30 seconds. A file cannot be imported while the server is running — this is a component limitation, not a broken install.
+**No interactions appear.** Check `docker compose logs railmon-collect`. The
+collector needs a privileged container, the host PID namespace, and an
+x86_64 kernel with BTF. On macOS, only processes inside Docker Desktop's VM
+are visible. For your own agent, check that `COLLECT_TARGET` matches its
+processes.
 
-**"6 interactions but I only made 3 requests."** Also expected. RailMon's demo taps by process name (`--comm python3`), and both ends of the exchange — `demo_server.py` and `demo_client.py` — are `python3`, so each request is captured twice: once as the client sent it, once as the server received it. Two genuine observations of one exchange (different `pid`s), not one row written twice — double-counting would show 12.
+**No ASPs appear.** Check `docker compose logs railmon-scan`. `container not
+found` means `AGENT_CONTAINER` names a container that is not running;
+`HTTP 403` means a stale token (see [The RailDash token](#the-raildash-token)).
 
-**More than 6 interactions on a second run.** `make stack-down` keeps the volumes, and RailMon appends to the capture. Run `make stack-clean` for a fresh start that matches the first-run numbers.
+**`observed_listeners` is `PARTIAL`, or drifts after a restart.** The listen
+probe restarted, so sockets opened while it was down may be missing. RailMon
+reports that as drift rather than "nothing new". Accept the new state once
+you have checked it.
 
-**`no RailMon checkout at ../railmon`.** Option A can't find the railmon source. Clone `datrail/railmon` as a sibling of this repo, or set `RAILMON_SRC=/path/to/railmon`.
+**The demo agent's listener is missing.** `railmon-listen` attached after
+the demo server started. Run `docker compose restart demo-agent`.
 
-**`the RailMon at … does not honour RAILMON_WEBHOOK_URL / RAILMON_SESSION_ID`.** Your railmon checkout is out of date. Update it to the current `master`. Without the demo env passthrough the webhook path never fires and the stack silently runs at half of what it claims.
-
-**Empty capture on macOS or arm64.** See the platform matrix — on macOS Docker Desktop the tap can't see host processes, and on arm64 there is no tap binary at all.
-
-**Import fails but the dashboard is up.** By design a failed import does not leave the stack down. Check `make stack-logs` for the cause.
+**Interactions appear twice.** Expected for the demo agent: both ends of its
+HTTPS calls are tapped (see [Verify](#verify)).

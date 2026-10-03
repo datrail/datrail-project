@@ -1,18 +1,96 @@
-# datRail
+# DatRail
 
-**Intent-aligned guardrails for AI agents.**
+**Runtime guardrails for AI agents, learned from what the agent actually does.**
 
-The datRail project is building tools that can learn your AI agents' resource, data, and API baselines to automatically enforce runtime guardrails against unintended behavior.
+DatRail watches an AI agent while it runs: the APIs it calls, the files and
+data it touches, the ports it opens. It turns those observations into an
+**Agent Security Profile (ASP)**. Once you lock an ASP as the agent's baseline,
+every later observation is compared with it, and anything new is reported as
+drift.
 
-## Why datRail?
+This repository is the starting point. It runs the open-source DatRail stack
+on your own machine with one command, and links to every component.
 
-As AI agents gain autonomous access to local file systems, personal/proprietary data via protocols like MCP, and third-party APIs, traditional static security rules quickly fall short. Agents are non-deterministic by design—predicting every API call, token threshold, or file touch in advance is nearly impossible without crippling their functionality. The datRail project solves this by introducing profile-driven runtime protection: it monitors passively your agent in a control/test run to build a precise baseline of its resource usage and data boundaries, called security profile. Such a security profile is then used to detect deviations during agent runtime. By turning observed behavior into enforceable guardrails, datRail lets developers and power users deploy agentic workflows without giving agents a blank check to their critical data and infrastructure.
+## Quick start
 
-## Installation
+You need Linux on x86_64 (WSL2 works) with Docker Engine and Compose v2, and a
+kernel with BTF (`/sys/kernel/btf/vmlinux` exists). See
+[INSTALL.md](INSTALL.md#prerequisites) for details.
 
-See **[INSTALL.md](INSTALL.md)** for the full install guide — it covers the local bundle (RailMon + RailDash), prerequisites, the platform support matrix, verification, and troubleshooting.
+```bash
+git clone --recursive https://github.com/datrail/datrail-project.git
+cd datrail-project
+docker compose up -d
+```
 
-## Components
+The first run builds the RailMon and RailDash images from source, which takes
+several minutes. Then open **<http://127.0.0.1:8000>**.
 
-- **RailMon** — a CLI daemon that taps live agent traffic at the kernel level (eBPF) and records interactions.
-- **RailDash** — a local dashboard that imports RailMon's capture and shows what the agent actually did.
+### What you see in RailDash
+
+The stack comes with a small demo agent that serves HTTPS on port 8443 and
+calls itself every 30 seconds. Nothing needs to be restarted or imported by
+hand:
+
+- **Interactions.** Each request the demo agent makes appears within seconds,
+  with its destination, method, path and status.
+- **Agent Security Profile alignment.** A new ASP for `demo-agent` arrives
+  every 60 seconds. Its observed listeners include `127.0.0.1:8443`.
+- **Drift.** Lock one ASP as the baseline. Later ASPs then show as
+  **aligned**. Make the agent open a port it did not have before:
+
+  ```bash
+  docker exec -d datrail-demo-agent python3 -m http.server 9000 --bind 127.0.0.1
+  ```
+
+  Within a minute the next ASP shows **drift detected**. The changed
+  attribute is `observed_listeners`, and "drift explained" shows the old and
+  new values. You can accept the new state as a new baseline, or switch back
+  to an earlier one.
+
+To watch your own agent instead of the demo, see
+[INSTALL.md](INSTALL.md#watch-your-own-agent).
+
+### Stop
+
+```bash
+docker compose down        # stop; the dashboard's data is kept
+docker compose down -v     # stop and delete the data
+```
+
+## How it fits together
+
+```mermaid
+flowchart LR
+  agent[Your agent] -->|TLS calls| collect[railmon collect]
+  agent -->|opens a port| listen[railmon listen]
+  listen -->|listen.jsonl| scan[railmon scan --interval]
+  agent -.->|config, environment| scan
+  collect -->|interactions, webhook| dash[RailDash]
+  scan -->|evidence bundle| dash
+  dash --> browser[Your browser]
+```
+
+| Component | What it does |
+| --- | --- |
+| [RailMon](https://github.com/datrail/railmon#readme) | Collects evidence: captures the agent's TLS traffic, records the sockets it opens, and scans its environment into evidence bundles on an interval. |
+| [RailDash](https://github.com/datrail/raildash#readme) | Local dashboard. Stores interactions and ASPs, locks baselines, and shows drift. |
+| [eBPF TLS Tap](https://github.com/datrail/ebpf-tls-tap#readme) | Standalone Linux eBPF probes: `sslsniff` (TLS plaintext), `listensnoop` (listening sockets, behind `railmon listen`) and `filesnoop` (file opens). |
+| [DatRail Proxy](https://github.com/datrail/proxy#readme) | Sits between an agent and its MCP servers and attaches an `x-rail` identity ticket to each call. |
+| [DatRail Gateway](https://github.com/datrail/gateway#readme) | Sits in front of an MCP server, checks the `x-rail` ticket against policy, and forwards or refuses the call. |
+
+The stack in this repository runs RailMon and RailDash. The proxy and gateway
+are deployed separately; their READMEs explain how.
+
+## Documentation
+
+- [INSTALL.md](INSTALL.md): prerequisites, platform support, settings,
+  watching your own agent, building from local checkouts, troubleshooting.
+- [docs/glossary.md](docs/glossary.md): evidence bundle, ASP, baseline,
+  alignment, drift, profile.
+- [The DatRail organization](https://github.com/datrail): every repository,
+  and the project's background.
+
+## License
+
+Apache-2.0. See [LICENSE.txt](LICENSE.txt) and [NOTICE.txt](NOTICE.txt).

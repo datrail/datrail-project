@@ -1,88 +1,176 @@
-# RailMon + RailDash, running together, from one command. DR-81 (BDL-F5).
-# Two modes, sharing this base file; the only difference is image source:
+# DatRail: RailMon and RailDash, always on, from one command.
 #
-#   make stack-local                          build from source checkouts, via
-#                                             the docker-compose.build.yml
-#                                             override
-#   make stack RAILMON_TAG=... RAILDASH_TAG=...
-#                                             pull the published ghcr.io images
+#   docker compose up -d            # the first run builds both images
+#   open http://127.0.0.1:8000
+#   docker compose down             # stop (add -v to delete the data too)
 #
-# Both of RailDash's ingestion paths are wired at once: the file (RailMon
-# writes JSONL to the shared `captures` volume, imported by the Makefile) and
-# the webhook (posted straight to the raildash service by compose-network
-# name). They do not double-count each other only because both sides are told
-# the SAME session id (DEMO_SESSION_ID, set once in the Makefile) -- RailMon's
-# JSONL carries no session id of its own, and RailDash dedups on
-# (session_id, interaction_id), not interaction_id alone.
+# README.md has the quick start. INSTALL.md lists every setting below.
 #
-# The file import is NOT a service here, deliberately: a RailDash database is
-# single-process by design (store.py takes PRAGMA locking_mode=EXCLUSIVE so an
-# older process cannot write unredacted rows around a schema migration, DR-20),
-# so a second opener gets "database is locked" wherever the file lives. The
-# Makefile pauses the raildash service, runs `raildash load` as the sole
-# owner, and starts it again. Full explanation in README.md's "Running both
-# together" and Storage sections.
+# What runs:
+#
+#   raildash        the dashboard, on 127.0.0.1:8000 only
+#   railmon-collect captures the agent's TLS traffic (eBPF) and posts each
+#                   request/response pair to RailDash's webhook as it happens
+#   railmon-listen  records every socket the agent opens to accept traffic
+#   railmon-scan    scans the agent every SCAN_INTERVAL seconds and posts the
+#                   evidence bundle to RailDash, where it becomes an Agent
+#                   Security Profile (ASP)
+#   demo-agent      a small stand-in agent, so a first run has something to
+#                   watch; replace it with your own (INSTALL.md)
+#
+# Nothing needs a manual restart or import: every service keeps running and
+# delivers on its own.
+#
+# Images are built from source, from each repository's default branch. The
+# published 0.1.0 images predate interval scanning, `railmon listen` and
+# RailDash's evidence-bundle route, so they cannot run this stack. Point
+# RAILMON_SRC / RAILDASH_SRC at a local checkout to build that instead; a
+# railmon checkout needs its submodules (`git clone --recursive`). A git URL
+# context is fetched with its submodules.
+
+x-railmon: &railmon
+  image: datrail-railmon:local
+  build:
+    context: ${RAILMON_SRC:-https://github.com/datrail/railmon.git}
+  restart: unless-stopped
 
 services:
   raildash:
-    # Registry mode; docker-compose.build.yml overrides this with a local
-    # build. Image tags carry no leading v (the release workflow publishes
-    # 0.1.0 for git tag v0.1.0); `make stack` strips one either way.
-    #
-    # Required, not defaulted -- see the railmon service below for why there is
-    # no `:-latest` here either.
-    image: ghcr.io/datrail/raildash:${RAILDASH_TAG:?set RAILDASH_TAG to a published tag, or use `make stack RAILMON_TAG=... RAILDASH_TAG=...` / `make stack-local`}
+    image: datrail-raildash:local
+    build:
+      context: ${RAILDASH_SRC:-https://github.com/datrail/raildash.git}
+    restart: unless-stopped
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:${RAILDASH_PORT:-8000}:8000"
     volumes:
-      - captures:/captures:ro
-      - raildash-db:/data
+      - raildash-data:/data
     environment:
       RAILDASH_DB: /data/raildash.db
+      # RailDash's local write token guards every route that changes state,
+      # including the one RailMon delivers evidence bundles to. RailDash
+      # writes it to /data/raildash.db.token, and railmon-scan reads it from
+      # there, so it never needs to be set. The file survives restarts. Set
+      # RAILDASH_TOKEN only to choose the token yourself (see INSTALL.md).
+      RAILDASH_TOKEN: ${RAILDASH_TOKEN:-}
     healthcheck:
-      # The image installs only RailDash's own Python deps -- no curl -- so
-      # the check is a one-line stdlib request rather than a new package.
+      # The image has no curl, so the check uses Python's standard library.
       test:
         - CMD
         - python3
         - -c
         - "import urllib.request as u,sys; sys.exit(0 if u.urlopen('http://127.0.0.1:8000/webhook/health', timeout=2).status == 200 else 1)"
-      interval: 2s
+      interval: 5s
       timeout: 3s
-      retries: 15
+      retries: 30
+      start_period: 10s
 
-  railmon:
-    # No `:-latest` default, deliberately. This service is privileged with the
-    # host PID namespace (below), so whatever image lands here runs
-    # root-equivalent on the machine -- and `:latest` is a mutable pointer that
-    # container-release.yml's own header documents as last-write-wins across
-    # concurrent tag pushes. `make stack` already refuses to run without both
-    # tags, but that guard lives in the Makefile: a bare `docker compose up` in
-    # this directory would sail past it. Requiring the variable here means the
-    # unguarded path fails with an explanation instead of silently pulling a
-    # moving tag into a privileged container. Local-built mode supplies
-    # `local`, which docker-compose.build.yml then replaces outright.
-    image: ghcr.io/datrail/railmon:${RAILMON_TAG:?set RAILMON_TAG to a published tag, or use `make stack RAILMON_TAG=... RAILDASH_TAG=...` / `make stack-local`}
-    # eBPF tap -- RailMon's collect/demo always need this; not a choice this
-    # stack makes. See railmon's README "Platforms" for the host kernel
-    # prerequisites (BTF/CO-RE) it does not relax.
+  railmon-collect:
+    <<: *railmon
+    # The eBPF TLS probe needs privilege and the host's PID namespace to see
+    # the agent's processes. This container runs root-equivalent on the host.
     privileged: true
-    pid: "host"
-    command: ["demo"]
-    volumes:
-      - captures:/out
+    pid: host
     environment:
-      # Must match the --session-id the Makefile's import step passes, or the
-      # two ingestion paths land in different sessions and every interaction
-      # is counted twice. DEMO_SESSION_ID is set once in the Makefile and
-      # exported; the default here only keeps a bare `docker compose up`
-      # consistent with it.
-      RAILMON_SESSION_ID: "${DEMO_SESSION_ID:-railmon-raildash-stack}"
-      RAILMON_WEBHOOK_URL: "http://raildash:8000/webhook/http-interactions"
+      # Which processes to tap. A process name matches across the whole host
+      # (host PID namespace), so the default is a name only the demo agent
+      # uses. For your own agent see INSTALL.md (--comm, --pid, --uid,
+      # --binary-path).
+      COLLECT_TARGET: ${COLLECT_TARGET:---comm datrail-demo}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        exec railmon collect --mode http
+        --webhook http://raildash:8000/webhook/http-interactions
+        $$COLLECT_TARGET
     depends_on:
       raildash:
         condition: service_healthy
 
+  railmon-listen:
+    <<: *railmon
+    # Privileged and in the host PID namespace so it can enter the agent's
+    # PID namespace and attach the probe there; the Docker socket is how it
+    # finds the agent's container, and finds it again after a restart.
+    privileged: true
+    pid: host
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - listen-data:/listen
+    environment:
+      RAIL_LISTEN_CONTAINER: ${AGENT_CONTAINER:-datrail-demo-agent}
+      RAIL_LISTEN_FILE: /listen/listen.jsonl
+    command: ["listen"]
+
+  railmon-scan:
+    <<: *railmon
+    volumes:
+      # `scan --mode docker` inspects the agent's container through Docker.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - listen-data:/listen:ro
+      # Read-only, for RailDash's token file only.
+      - raildash-data:/raildash:ro
+    environment:
+      AGENT_CONTAINER: ${AGENT_CONTAINER:-datrail-demo-agent}
+      AGENT_KEY: ${AGENT_KEY:-}
+      SCAN_INTERVAL: ${SCAN_INTERVAL:-60}
+      RAIL_LISTEN_FILE: /listen/listen.jsonl
+      RAIL_RAILDASH_URL: http://raildash:8000
+      # Names this machine in every evidence bundle (the bundle requires
+      # one). Set it to the value your other DatRail components report, if
+      # any; the default only has to be stable.
+      RAIL_HOST_ID: ${RAIL_HOST_ID:-datrail-local}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        token_file=/raildash/raildash.db.token
+        until [ -s "$$token_file" ]; do sleep 1; done
+        RAIL_RAILDASH_TOKEN=$$(cat "$$token_file")
+        export RAIL_RAILDASH_TOKEN
+        exec railmon scan --mode docker --container "$$AGENT_CONTAINER" \
+          --agent-key "$${AGENT_KEY:-$$AGENT_CONTAINER}" \
+          --raildash-url "$$RAIL_RAILDASH_URL" \
+          --output /tmp/registration-payload.json \
+          --interval "$$SCAN_INTERVAL"
+    depends_on:
+      raildash:
+        condition: service_healthy
+      railmon-listen:
+        condition: service_started
+
+  demo-agent:
+    <<: *railmon
+    # Fixed so railmon-listen and railmon-scan can find it by name. To watch
+    # your own agent instead, set AGENT_CONTAINER and start the stack with
+    # `--scale demo-agent=0` (INSTALL.md).
+    container_name: datrail-demo-agent
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        demo=/opt/railmon/tools/local-demo
+        # Its own process name, so railmon-collect's default --comm taps the
+        # demo agent and nothing else on the host. Beside python3, so Python
+        # still finds its standard library.
+        cp /usr/local/bin/python3 /usr/local/bin/datrail-demo
+        certs=$$(mktemp -d)
+        openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj /CN=127.0.0.1 \
+          -keyout "$$certs/key.pem" -out "$$certs/cert.pem" >/dev/null 2>&1
+        # railmon-listen only records sockets opened after it attaches, so
+        # give it time to find this container before the server listens.
+        sleep 15
+        datrail-demo "$$demo/demo_server.py" "$$certs/cert.pem" "$$certs/key.pem" &
+        while sleep "$$DEMO_INTERVAL"; do
+          datrail-demo "$$demo/demo_client.py" || true
+        done
+    environment:
+      DEMO_INTERVAL: ${DEMO_INTERVAL:-30}
+    depends_on:
+      railmon-listen:
+        condition: service_started
+      railmon-collect:
+        condition: service_started
+
 volumes:
-  captures:
-  raildash-db:
+  raildash-data:
+  listen-data:
