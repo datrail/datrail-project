@@ -57,7 +57,7 @@ A minute or two after `docker compose up -d`:
 - The dashboard lists interactions: `POST` to `127.0.0.1:8443`, paths
   `/v1/demo` and `/v1/demo/other`, status `200`. Each call is captured twice,
   once as the client sent it and once as the server received it, because
-  both ends are the demo agent's `python3` processes.
+  both ends are the demo agent's processes.
 - The **Agent Security Profile alignment** panel has ASPs for `demo-agent`,
   one more every minute, with `observed_listeners` including port 8443.
 
@@ -80,7 +80,7 @@ All are optional.
 | --- | --- | --- |
 | `AGENT_CONTAINER` | `datrail-demo-agent` | The container to watch. `railmon-listen` attaches to it and `railmon-scan` scans it. |
 | `AGENT_KEY` | the container name | The identity RailDash files ASPs under, when the agent has no deployment identity of its own (see [docs/glossary.md](docs/glossary.md#identity)). A container started by Compose is identified by its Compose project and service instead. |
-| `COLLECT_TARGET` | `--comm python3` | Which processes `railmon collect` taps: `--comm NAME`, `--pid PID`, `--uid UID`, or `--binary-path PATH` for an agent with its TLS library linked in statically. |
+| `COLLECT_TARGET` | `--comm datrail-demo` | Which processes `railmon collect` taps. It matches across the whole host, so make it specific to your agent: `--comm NAME`, `--pid PID`, `--uid UID`, or `--binary-path PATH` for an agent with its TLS library linked in statically. |
 | `SCAN_INTERVAL` | `60` | Seconds between scans. |
 | `RAIL_HOST_ID` | `datrail-local` | The name of this machine in every evidence bundle. |
 | `RAILDASH_PORT` | `8000` | The local port RailDash is published on (always on `127.0.0.1`). |
@@ -90,20 +90,21 @@ All are optional.
 
 ### The RailDash token
 
-Every RailDash route that changes state, including the one evidence bundles
-are delivered to, requires RailDash's local write token in an
+Every RailDash route that changes ASP or baseline state, including the one
+evidence bundles are delivered to, requires RailDash's local write token in an
 `X-RailDash-Token` header. The dashboard page carries it for your browser.
 RailDash also writes it to `raildash.db.token` beside its database, and
 `railmon-scan` reads it from there (a read-only mount), so the stack needs
 no token configuration.
 
-Recent RailDash builds keep the token in that file across restarts, and take
-`RAILDASH_TOKEN` when you want to set it yourself. A RailDash build without
-that support generates a new token on every start, and `railmon-scan` keeps
-the one it read when it started. If deliveries then fail with `HTTP 403` in
-`docker compose logs railmon-scan` after RailDash restarted, run
-`docker compose restart railmon-scan`, or rebuild with
-`docker compose up -d --build` to pick up the current RailDash.
+RailDash keeps the token in that file across restarts, so `railmon-scan`
+keeps delivering after either side restarts. Set `RAILDASH_TOKEN` to choose
+the token yourself. A RailDash image built before stable-token support (an
+old local build, or an old checkout in `RAILDASH_SRC`) generates a new token
+on every start instead; if `docker compose logs railmon-scan` then shows
+`HTTP 403` after RailDash restarted, rebuild with `docker compose up -d
+--build` (updating that checkout first), or run
+`docker compose restart railmon-scan`.
 
 ## Watch your own agent
 
@@ -111,14 +112,16 @@ Run your agent in a container, then point the stack at it and leave the demo
 agent out:
 
 ```bash
-AGENT_CONTAINER=my-agent COLLECT_TARGET="--comm node" \
+AGENT_CONTAINER=my-agent COLLECT_TARGET="--comm my-agent-bin" \
   docker compose up -d --scale demo-agent=0
 ```
 
 - `railmon-listen` waits for `my-agent` to start and attaches again whenever
   it restarts. It only records sockets opened after it attaches, so start
   the stack before the agent, or restart the agent once.
-- `COLLECT_TARGET` selects the agent's processes on the host. An agent
+- `COLLECT_TARGET` selects the agent's processes on the host. A process
+  name (`--comm`) matches every process of that name on the machine, so pick
+  one only your agent uses, or use `--pid` or `--uid`. An agent
   binary with its own statically linked TLS library needs
   `--binary-path /path/to/that/binary` as the host sees it.
 - Lock a baseline in RailDash once the agent has done its normal work for a

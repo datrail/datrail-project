@@ -49,9 +49,8 @@ services:
       # RailDash's local write token guards every route that changes state,
       # including the one RailMon delivers evidence bundles to. RailDash
       # writes it to /data/raildash.db.token, and railmon-scan reads it from
-      # there, so it never needs to be set. Set RAILDASH_TOKEN only to choose
-      # it yourself; a RailDash build that predates stable tokens ignores it
-      # and generates a new one on every start (see INSTALL.md).
+      # there, so it never needs to be set. The file survives restarts. Set
+      # RAILDASH_TOKEN only to choose the token yourself (see INSTALL.md).
       RAILDASH_TOKEN: ${RAILDASH_TOKEN:-}
     healthcheck:
       # The image has no curl, so the check uses Python's standard library.
@@ -72,9 +71,11 @@ services:
     privileged: true
     pid: host
     environment:
-      # Which processes to tap. The default matches the demo agent; see
-      # INSTALL.md for --binary-path, --pid and --uid.
-      COLLECT_TARGET: ${COLLECT_TARGET:---comm python3}
+      # Which processes to tap. A process name matches across the whole host
+      # (host PID namespace), so the default is a name only the demo agent
+      # uses. For your own agent see INSTALL.md (--comm, --pid, --uid,
+      # --binary-path).
+      COLLECT_TARGET: ${COLLECT_TARGET:---comm datrail-demo}
     entrypoint: ["/bin/sh", "-c"]
     command:
       - >-
@@ -148,15 +149,19 @@ services:
       - |
         set -eu
         demo=/opt/railmon/tools/local-demo
+        # Its own process name, so railmon-collect's default --comm taps the
+        # demo agent and nothing else on the host. Beside python3, so Python
+        # still finds its standard library.
+        cp /usr/local/bin/python3 /usr/local/bin/datrail-demo
         certs=$$(mktemp -d)
         openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj /CN=127.0.0.1 \
           -keyout "$$certs/key.pem" -out "$$certs/cert.pem" >/dev/null 2>&1
         # railmon-listen only records sockets opened after it attaches, so
         # give it time to find this container before the server listens.
         sleep 15
-        python3 "$$demo/demo_server.py" "$$certs/cert.pem" "$$certs/key.pem" &
+        datrail-demo "$$demo/demo_server.py" "$$certs/cert.pem" "$$certs/key.pem" &
         while sleep "$$DEMO_INTERVAL"; do
-          python3 "$$demo/demo_client.py" || true
+          datrail-demo "$$demo/demo_client.py" || true
         done
     environment:
       DEMO_INTERVAL: ${DEMO_INTERVAL:-30}
