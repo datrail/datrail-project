@@ -4,14 +4,17 @@
 With nobody touching the stack after `docker compose up -d`:
 
 1. the demo agent's HTTPS calls reach RailDash as interactions (collect);
-2. evidence bundles keep arriving as Agent Security Profiles (scan
-   --interval), and they carry the agent's listening socket (listen);
+2. an evidence bundle arrives as an Agent Security Profile (scan
+   --interval) and carries the agent's listening socket (listen);
 
 then, driving RailDash's own HTTP routes the way the dashboard does:
 
-3. a locked baseline makes the next ASP ALIGNED;
-4. a port the agent opens afterwards makes a later ASP DRIFT_DETECTED, with
-   observed_listeners among the changes.
+3. switching to a locked baseline makes the agent's newest ASP ALIGNED. An
+   unchanged agent's later scans re-send that same bundle, which RailDash
+   keeps as one ASP (DR-157), so no new ASP is expected here;
+4. a port the agent opens afterwards makes the next interval scan deliver a
+   new ASP, unprompted, that is DRIFT_DETECTED with observed_listeners among
+   the changes. Any other new ASP in between must still be ALIGNED.
 
 The local write token comes from RAILDASH_TOKEN_VALUE, never argv.
 """
@@ -94,20 +97,32 @@ def main() -> int:
         attribute = api(base, f"/api/asps/{asp_id}/bundle", token)["attributes"]["observed_listeners"]
         return (attribute.get("value") or []) if attribute.get("status") == "ANSWERED" else []
 
-    def asp_with_demo_listener() -> str | None:
-        for item in demo_asps():
-            if any(l.get("port") == DEMO_PORT for l in listeners(item["asp_id"])):
-                return item["asp_id"]
+    # The README's flow: lock the newest ASP. /api/asps lists the newest first.
+    def newest_asp_with_demo_listener() -> str | None:
+        asps = demo_asps()
+        if asps and any(l.get("port") == DEMO_PORT for l in listeners(asps[0]["asp_id"])):
+            return asps[0]["asp_id"]
         return None
 
-    wait_for("interval scans deliver more than one ASP, unprompted", lambda: len(demo_asps()) >= 2, 300)
-    baseline = wait_for(f"an ASP records the agent listening on {DEMO_PORT}",
-                        asp_with_demo_listener, 300)
+    baseline = wait_for(f"the newest ASP records the agent listening on {DEMO_PORT}",
+                        newest_asp_with_demo_listener, 300)
     print(f"      listeners: {json.dumps(listeners(baseline))}")
 
     version = api(base, f"/api/asps/{baseline}/lock", token, {"version": f"ci-{time.time_ns()}"})
     api(base, f"/api/alignments/{version['alignment_version_id']}/switch", token, {})
-    seen = {item["asp_id"] for item in demo_asps()}
+    asps = demo_asps()
+    seen = {item["asp_id"] for item in asps}
+
+    # Switching compares the agent's newest ASP with the new baseline, so the
+    # dashboard is ALIGNED at once, with no new scan needed. A scan may have
+    # delivered a newer ASP since the lock; it is still the one to check.
+    newest = asps[0]["asp_id"]
+    state = api(base, f"/api/asps/{newest}/state")
+    if state.get("state") != "ALIGNED":
+        print(json.dumps(state, indent=1))
+        sys.exit(f"FAIL: the agent's newest ASP {newest} is {state.get('state')} "
+                 "right after its baseline was switched in, expected ALIGNED")
+    print("ok:   the agent's newest ASP is ALIGNED once the baseline is switched in")
 
     def next_state() -> dict | None:
         fresh = [i for i in demo_asps() if i["asp_id"] not in seen]
@@ -115,13 +130,6 @@ def main() -> int:
             return None
         seen.update(i["asp_id"] for i in fresh)
         return {i["asp_id"]: api(base, f"/api/asps/{i['asp_id']}/state") for i in fresh}
-
-    states = wait_for("the next ASP after locking a baseline arrives", next_state, 120)
-    unexpected = {a: s for a, s in states.items() if s.get("state") != "ALIGNED"}
-    if unexpected:
-        print(json.dumps(unexpected, indent=1))
-        sys.exit("FAIL: an unchanged agent did not stay ALIGNED with its baseline")
-    print("ok:   an unchanged agent stays ALIGNED")
 
     subprocess.run(shlex.split(args.open_port), check=True)
 
@@ -134,7 +142,8 @@ def main() -> int:
                 sys.exit(f"FAIL: {asp_id} is {state.get('state')}, expected ALIGNED or DRIFT_DETECTED")
         return None
 
-    drift = wait_for("a port opened after the baseline shows up as drift", drifted, 180)
+    drift = wait_for("the next interval scan delivers the opened port as drift, unprompted",
+                     drifted, 180)
     names = [c.get("name") for c in (drift.get("drift") or {}).get("changes") or []]
     print(f"      changed: {names}")
     if "observed_listeners" not in names:

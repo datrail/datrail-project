@@ -109,8 +109,11 @@ is made from. It carries:
 collection: a shared sandbox scope plus one scope per declared agent. The
 schemas are in [RailMon's `schemas/`](https://github.com/datrail/railmon/tree/master/schemas).
 
-`railmon scan --interval N --raildash-url URL` delivers a new bundle every
-N seconds to RailDash's `POST /v1/evidence-bundles`.
+`railmon scan --interval N --raildash-url URL` scans every N seconds and
+posts the bundle to RailDash's `POST /v1/evidence-bundles`. When nothing
+changed since its previous scan it re-sends that same bundle, which RailDash
+answers as a `duplicate`, so an unchanged agent keeps one ASP instead of
+gaining one per interval.
 
 ## Identity
 
