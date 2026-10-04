@@ -34,9 +34,11 @@ hand:
 
 - **Interactions.** Each request the demo agent makes appears within seconds,
   with its destination, method, path and status.
-- **Agent Security Profile alignment.** A new ASP for `demo-agent` arrives
-  every 60 seconds. Its observed listeners include `127.0.0.1:8443`.
-- **Drift.** Lock one ASP as the baseline. Later ASPs then show as
+- **Agent Security Profile alignment.** RailMon scans `demo-agent` every
+  60 seconds. A scan that finds something new arrives as a new ASP; a scan
+  that finds nothing new keeps the same ASP rather than adding a copy. The
+  ASP's observed listeners include `127.0.0.1:8443`.
+- **Drift.** Lock the newest ASP as the baseline, and it shows as
   **aligned**. Make the agent open a port it did not have before:
 
   ```bash
