@@ -24,7 +24,7 @@ jobs:
     env:
       COMPOSE_PROJECT_NAME: datrail-ci-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: Run the quick-start stack and check what it shows
@@ -33,7 +33,7 @@ jobs:
         run: bash tests/stack-acceptance.sh
       - name: Preserve service logs and results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: stack-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/stack
