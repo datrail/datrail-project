@@ -12,11 +12,13 @@ RailDash listens on `127.0.0.1` only.
 - **Docker Engine with Compose v2.** Two RailMon containers run privileged
   in the host PID namespace (the eBPF probes need it), so your Docker daemon
   must allow privileged containers.
-- **On Windows: Docker Desktop, running, with WSL integration on** for the
-  WSL2 distro you use (Settings → Resources → WSL integration). The `docker`
-  command exists inside the distro only while Docker Desktop is running, and
-  can take a moment to appear after Desktop starts. Run every command below
-  inside that distro.
+- **On Windows, a WSL2 distro with Docker in it.** Either install Docker
+  Engine inside the distro, or use Docker Desktop with WSL integration on for
+  that distro (Settings → Resources → WSL integration); the
+  [platform table](#platform-support) shows what each one can watch. With
+  Docker Desktop, the `docker` command exists inside the distro only while
+  Desktop is running, and can take a moment to appear after Desktop starts.
+  Run every command below inside that distro.
 - **`git`.** `make` is optional; the [Makefile](Makefile) only wraps
   `docker compose` commands.
 - **Linux on x86_64 with a BTF-enabled kernel** (`/sys/kernel/btf/vmlinux`
@@ -83,14 +85,16 @@ make clean                 # also delete the built images and any leftovers
 `docker compose down -v` removes only what the current `docker-compose.yml`
 declares. It keeps the two built images (`datrail-railmon:local` and
 `datrail-raildash:local`, about 540 MB together). It also keeps anything an
-older version of this stack created: the version before October 2026 used
+older version of this stack created: the version before 3 October 2026 used
 the volumes `captures` and `raildash-db` and a `railmon` service, which
 survive an upgrade by `git pull`. `make clean` removes all of it: orphaned
 containers, every volume labelled with this Compose project, and the built
 images. Without `make`, run the commands in the [Makefile](Makefile)'s
-`clean` target. The older version ran the published `ghcr.io/datrail/railmon`
-and `ghcr.io/datrail/raildash` images; remove those with `docker image rm` if
-nothing else uses them.
+`clean` target. The older version's images are not this stack's, so `make
+clean` leaves them: the published `ghcr.io/datrail/railmon` and
+`ghcr.io/datrail/raildash`, or `railmon:local` and `raildash:local` if you
+built with `make stack-local`. Remove those with `docker image rm` if nothing
+else uses them.
 
 ## Settings
 
@@ -158,11 +162,12 @@ Both images are built from source, from each repository's default branch:
 `docker compose up -d --build` updates them. A git URL build context is
 fetched with its submodules, which RailMon needs.
 
-To build from local checkouts instead, clone them with their submodules:
+To build from local checkouts instead, clone them (RailMon with its
+submodules):
 
 ```bash
 git clone --recursive https://github.com/datrail/railmon.git
-git clone --recursive https://github.com/datrail/raildash.git
+git clone https://github.com/datrail/raildash.git
 RAILMON_SRC=../railmon RAILDASH_SRC=../raildash docker compose up -d --build
 ```
 
@@ -178,8 +183,8 @@ change and daily, and checks the walkthrough above end to end
 
 ## Troubleshooting
 
-**`docker: command not found` in WSL.** Docker Desktop is not running, or
-WSL integration is off for this distro (see [Prerequisites](#prerequisites)).
+**`docker: command not found` in WSL.** With Docker Desktop: Desktop is not
+running, or WSL integration is off for this distro (see [Prerequisites](#prerequisites)).
 Right after Desktop starts, give the integration a moment to attach.
 
 **No interactions appear.** Check `docker compose logs railmon-collect`. The

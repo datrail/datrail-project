@@ -14,8 +14,9 @@ on your own machine with one command, and links to every component.
 ## Quick start
 
 You need Linux on x86_64 with Docker Engine and Compose v2, and a kernel with
-BTF (`/sys/kernel/btf/vmlinux` exists). On Windows, use WSL2 with Docker
-Desktop running and WSL integration on for your distro. See
+BTF (`/sys/kernel/btf/vmlinux` exists). On Windows, use WSL2, with Docker
+Engine in the distro or Docker Desktop running with WSL integration on for
+it; [INSTALL.md](INSTALL.md#platform-support) says what each can watch. See
 [INSTALL.md](INSTALL.md#prerequisites) for details.
 
 ```bash
