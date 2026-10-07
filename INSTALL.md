@@ -207,9 +207,9 @@ found` means `AGENT_CONTAINER` names a container that is not running;
 
 **`observed_listeners` or `observed_file_access` is `PARTIAL`, or drifts
 after a restart.** The listen or files probe restarted (as it does when the
-agent restarts), so sockets or files opened while it was down may be missing. RailMon
-reports that as drift rather than "nothing new". Accept the new state once
-you have checked it.
+agent restarts), so sockets or files opened while it was down may be
+missing. RailMon reports that as drift rather than "nothing new". Accept the
+new state once you have checked it.
 
 **The agent's listener is missing.** The RailMon image predates recording
 the sockets an agent was already listening on when `railmon-listen`
@@ -220,14 +220,16 @@ with `docker compose up -d --build`, updating that checkout first.
 stack from before 7 October 2026 ran no `railmon-files`, so its ASPs
 reported `observed_file_access` as `BLIND`. Once the upgraded stack records
 files, the attribute is no longer `BLIND`, so a baseline locked before the
-upgrade shows drift on it. Check the files listed and accept the new state as the
-new baseline; it happens once.
+upgrade shows drift on it. Check the files listed and accept the new state
+as the new baseline; it happens once.
 
 **`observed_file_access` lists new paths after the agent restarts.** A
 restarted agent may open files under new names (a new log file, a fresh
-directory of its own). Randomly named temp files under `/tmp`, `/var/tmp` or
-`/dev/shm` are folded into one templated path, so they do not churn; other
-new names are drift, by design. Accept the new state once you have
+directory of its own). A randomly named temp file under `/tmp`, `/var/tmp`
+or `/dev/shm`, or directly in the agent's `$TMPDIR`, is folded into one
+templated path, so it does not churn. A fixed name inside a randomly named
+directory (`mktemp -d`) is not folded, and other new names are drift, by
+design. Accept the new state once you have
 checked it.
 
 **Interactions appear twice.** Expected for the demo agent: both ends of its

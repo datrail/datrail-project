@@ -42,8 +42,11 @@ hand:
   ASP's observed listeners include `127.0.0.1:8443`, and its observed file
   access lists the files the agent opened to read, write or run; click
   **Inspect evidence** on the ASP to see them.
-- **Drift.** Lock the newest ASP as the baseline, and it shows as
-  **aligned**. Make the agent open a port it did not have before:
+- **Drift.** Once the demo agent has made a few calls (a couple of
+  minutes after start), lock the newest ASP as the baseline, and it shows as
+  **aligned**. An ASP from before its first call lacks the files that call
+  reads, so locking it means one drift on `observed_file_access` later.
+  Make the agent open a port it did not have before:
 
   ```bash
   docker exec -d datrail-demo-agent python3 -m http.server 9000 --bind 127.0.0.1
@@ -52,8 +55,8 @@ hand:
   Within a minute the next ASP shows **drift detected**. The changed
   attributes are `observed_listeners`, with the new port, and
   `observed_file_access`, with the files the new server process read;
-  "drift explained" shows the old and new values. You can accept the new state as a new baseline, or switch back
-  to an earlier one.
+  "drift explained" shows the old and new values. You can accept the new
+  state as a new baseline, or switch back to an earlier one.
 
 To watch your own agent instead of the demo, see
 [INSTALL.md](INSTALL.md#watch-your-own-agent).
