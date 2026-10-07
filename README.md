@@ -13,12 +13,14 @@ on your own machine with one command, and links to every component.
 
 ## Quick start
 
-You need Linux on x86_64 (WSL2 works) with Docker Engine and Compose v2, and a
-kernel with BTF (`/sys/kernel/btf/vmlinux` exists). See
+You need Linux on x86_64 with Docker Engine and Compose v2, and a kernel with
+BTF (`/sys/kernel/btf/vmlinux` exists). On Windows, use WSL2, with Docker
+Engine in the distro or Docker Desktop running with WSL integration on for
+it; [INSTALL.md](INSTALL.md#platform-support) says what each can watch. See
 [INSTALL.md](INSTALL.md#prerequisites) for details.
 
 ```bash
-git clone --recursive https://github.com/datrail/datrail-project.git
+git clone https://github.com/datrail/datrail-project.git
 cd datrail-project
 docker compose up -d
 ```
@@ -37,7 +39,8 @@ hand:
 - **Agent Security Profile alignment.** RailMon scans `demo-agent` every
   60 seconds. A scan that finds something new arrives as a new ASP; a scan
   that finds nothing new keeps the same ASP rather than adding a copy. The
-  ASP's observed listeners include `127.0.0.1:8443`.
+  ASP's observed listeners include `127.0.0.1:8443`; click **Inspect
+  evidence** on the ASP to see them.
 - **Drift.** Lock the newest ASP as the baseline, and it shows as
   **aligned**. Make the agent open a port it did not have before:
 
@@ -58,6 +61,7 @@ To watch your own agent instead of the demo, see
 ```bash
 docker compose down        # stop; the dashboard's data is kept
 docker compose down -v     # stop and delete the data
+make clean                 # also delete the built images and an older stack version's leftovers
 ```
 
 ## How it fits together

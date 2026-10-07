@@ -18,12 +18,23 @@ compose=(docker compose)
 # run's data pass this one.
 [[ -z "$(docker volume ls -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME")" ]]
 [[ -z "$(docker ps -aq --filter "name=^datrail-demo-agent$")" ]]
+project_volumes() {
+  docker volume ls -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME"
+}
+# What an older version of the stack leaves behind: a volume that the current
+# docker-compose.yml no longer declares. `make clean` must remove it.
+docker volume create --label "com.docker.compose.project=$COMPOSE_PROJECT_NAME" \
+  "${COMPOSE_PROJECT_NAME}_captures" > /dev/null
 
 cleanup() {
   local result=$?
   "${compose[@]}" ps -a > "$EVIDENCE_DIR/services.txt" 2>&1 || true
   "${compose[@]}" logs --no-color > "$EVIDENCE_DIR/services.log" 2>&1 || true
-  "${compose[@]}" down -v > "$EVIDENCE_DIR/cleanup.log" 2>&1 || { [[ $result != 0 ]] || result=1; }
+  # The README's reset, so it is checked on every run: nothing of the
+  # project's may survive it, including the older version's volume.
+  { make clean && [[ -z "$(project_volumes)" ]] \
+      && [[ -z "$(docker image ls -q datrail-railmon:local)$(docker image ls -q datrail-raildash:local)" ]]; } \
+    > "$EVIDENCE_DIR/cleanup.log" 2>&1 || { [[ $result != 0 ]] || result=1; }
   exit "$result"
 }
 trap cleanup EXIT

@@ -12,6 +12,13 @@ RailDash listens on `127.0.0.1` only.
 - **Docker Engine with Compose v2.** Two RailMon containers run privileged
   in the host PID namespace (the eBPF probes need it), so your Docker daemon
   must allow privileged containers.
+- **On Windows, a WSL2 distro with Docker in it.** Either install Docker
+  Engine inside the distro, or use Docker Desktop with WSL integration on for
+  that distro (Settings → Resources → WSL integration); the
+  [platform table](#platform-support) shows what each one can watch. With
+  Docker Desktop, the `docker` command exists inside the distro only while
+  Desktop is running, and can take a moment to appear after Desktop starts.
+  Run every command below inside that distro.
 - **`git`.** `make` is optional; the [Makefile](Makefile) only wraps
   `docker compose` commands.
 - **Linux on x86_64 with a BTF-enabled kernel** (`/sys/kernel/btf/vmlinux`
@@ -24,14 +31,15 @@ RailDash listens on `127.0.0.1` only.
 | Platform | Works | Notes |
 | --- | --- | --- |
 | **Linux (x86_64, native)** | Yes | Real kernel with BTF; the probes see host processes. |
-| **Windows via WSL2 (x86_64)** | Yes | WSL2 runs a real Linux kernel with BTF. |
+| **Windows, WSL2 with Docker Engine installed in the distro (x86_64)** | Yes | WSL2 runs a real Linux kernel with BTF; the probes see the distro's processes. |
+| **Windows, WSL2 with Docker Desktop (x86_64)** | Partly | Containers run in Docker Desktop's own Linux VM, so the probes see only what runs inside that VM. The demo agent works; an agent running natively in your WSL distro is not visible, so run it in a container. |
 | **macOS (Intel, Docker Desktop)** | Partly | Containers run in a Linux VM, so the probes see only what runs inside that VM. The demo agent works; an agent running natively on the Mac is not visible. |
 | **Apple Silicon / arm64** | No | AgentSight, RailMon's TLS probe, publishes no arm64 build, so nothing is captured. |
 
 ## Run it
 
 ```bash
-git clone --recursive https://github.com/datrail/datrail-project.git
+git clone https://github.com/datrail/datrail-project.git
 cd datrail-project
 docker compose up -d
 ```
@@ -58,8 +66,10 @@ A minute or two after `docker compose up -d`:
   `/v1/demo` and `/v1/demo/other`, status `200`. Each call is captured twice,
   once as the client sent it and once as the server received it, because
   both ends are the demo agent's processes.
-- The **Agent Security Profile alignment** panel has ASPs for `demo-agent`,
-  one more every minute, with `observed_listeners` including port 8443.
+- The **Agent Security Profile alignment** panel has an ASP for
+  `demo-agent`, with `observed_listeners` including port 8443 (click
+  **Inspect evidence** on the ASP to see it). RailMon rescans every minute,
+  but a new ASP appears only when a scan finds something new.
 
 The README's [drift walkthrough](README.md#what-you-see-in-raildash) shows the
 rest.
@@ -69,7 +79,22 @@ rest.
 ```bash
 docker compose down        # stop; RailDash's database and token are kept
 docker compose down -v     # also delete them, for a fresh start
+make clean                 # also delete the built images and any leftovers
 ```
+
+`docker compose down -v` removes only what the current `docker-compose.yml`
+declares. It keeps the two built images (`datrail-railmon:local` and
+`datrail-raildash:local`, about 540 MB together). It also keeps anything an
+older version of this stack created: the version before 3 October 2026 used
+the volumes `captures` and `raildash-db` and a `railmon` service, which
+survive an upgrade by `git pull`. `make clean` removes all of it: orphaned
+containers, every volume labelled with this Compose project, and the built
+images. Without `make`, run the commands in the [Makefile](Makefile)'s
+`clean` target. The older version's images are not this stack's, so `make
+clean` leaves them: the published `ghcr.io/datrail/railmon` and
+`ghcr.io/datrail/raildash`, or `railmon:local` and `raildash:local` if you
+built with `make stack-local`. Remove those with `docker image rm` if nothing
+else uses them.
 
 ## Settings
 
@@ -137,11 +162,12 @@ Both images are built from source, from each repository's default branch:
 `docker compose up -d --build` updates them. A git URL build context is
 fetched with its submodules, which RailMon needs.
 
-To build from local checkouts instead, clone them with their submodules:
+To build from local checkouts instead, clone them (RailMon with its
+submodules):
 
 ```bash
 git clone --recursive https://github.com/datrail/railmon.git
-git clone --recursive https://github.com/datrail/raildash.git
+git clone https://github.com/datrail/raildash.git
 RAILMON_SRC=../railmon RAILDASH_SRC=../raildash docker compose up -d --build
 ```
 
@@ -156,6 +182,10 @@ change and daily, and checks the walkthrough above end to end
 ([`tests/stack-acceptance.sh`](tests/stack-acceptance.sh)).
 
 ## Troubleshooting
+
+**`docker: command not found` in WSL.** With Docker Desktop: Desktop is not
+running, or WSL integration is off for this distro (see [Prerequisites](#prerequisites)).
+Right after Desktop starts, give the integration a moment to attach.
 
 **No interactions appear.** Check `docker compose logs railmon-collect`. The
 collector needs a privileged container, the host PID namespace, and an
