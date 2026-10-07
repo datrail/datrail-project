@@ -6,8 +6,8 @@
 # the stack starts without the demo agent, pointed at a container the user
 # starts afterwards with `docker run`, which listens on its port at once.
 #
-# Run only on a disposable host: RailMon's collector and listen probe are
-# privileged and share the host's PID namespace.
+# Run only on a disposable host: RailMon's collector, listen probe and files
+# probe are privileged and share the host's PID namespace.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 : "${COMPOSE_PROJECT_NAME:?set a unique compose project name}"
@@ -49,6 +49,9 @@ cleanup() {
   local result=$?
   "${compose[@]}" ps -a > "$EVIDENCE_DIR/services.txt" 2>&1 || true
   "${compose[@]}" logs --no-color > "$EVIDENCE_DIR/services.log" 2>&1 || true
+  # What railmon-files recorded: file paths of the CI agent, nothing secret.
+  "${compose[@]}" cp railmon-files:/files/files.jsonl "$EVIDENCE_DIR/files.jsonl" \
+    > /dev/null 2>&1 || true
   if [[ $mode == own-agent ]]; then
     # The user's own container: not the stack's, so `make clean` leaves it,
     # and it holds the RailMon image the reset removes.
@@ -113,4 +116,5 @@ RAILDASH_TOKEN_VALUE="$token" python3 tests/stack_acceptance.py \
   --project "$COMPOSE_PROJECT_NAME" \
   --agent "$([[ $mode == own-agent ]] && echo key:my-agent || echo compose:demo-agent)" \
   --open-port "docker exec -d $agent python3 -m http.server 9000 --bind 127.0.0.1" \
+  --settle "$((SCAN_INTERVAL * 3))" \
   | tee "$EVIDENCE_DIR/acceptance.txt"
