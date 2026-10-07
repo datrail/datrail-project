@@ -40,7 +40,8 @@ jobs:
           if-no-files-found: error
 
   # INSTALL.md's "Watch your own agent": the stack without the demo agent,
-  # pointed at a container started afterwards. Also a required check.
+  # pointed at a container started afterwards. Its job id is a required
+  # status check on master too; keep it.
   own-agent:
     runs-on: ubuntu-26.04
     timeout-minutes: 45

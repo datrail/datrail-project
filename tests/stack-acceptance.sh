@@ -82,8 +82,13 @@ if [[ $mode == own-agent ]]; then
   # The user's agent, started after the stack as INSTALL.md says: here the
   # RailMon image's Python and demo scripts under a process name of its own,
   # serving HTTPS on 8443 the moment it starts and calling itself. Not a
-  # Compose service, so RailDash knows it by the scanner's agent key.
-  docker run -d --name my-agent --entrypoint /bin/sh -e DEMO_INTERVAL datrail-railmon:local -c '
+  # Compose service, so RailDash knows it by the scanner's agent key. Compose
+  # labelled the image it built with its project and service, and a
+  # container inherits its image's labels, so they are blanked here: a
+  # user's own image has none.
+  docker run -d --name my-agent --entrypoint /bin/sh -e DEMO_INTERVAL \
+    --label com.docker.compose.project= --label com.docker.compose.service= \
+    datrail-railmon:local -c '
     set -eu
     demo=/opt/railmon/tools/local-demo
     cp /usr/local/bin/python3 /usr/local/bin/my-agent-bin
