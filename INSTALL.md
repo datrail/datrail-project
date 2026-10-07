@@ -9,7 +9,7 @@ RailDash listens on `127.0.0.1` only.
 
 ## Prerequisites
 
-- **Docker Engine with Compose v2.** Two RailMon containers run privileged
+- **Docker Engine with Compose v2.** Three RailMon containers run privileged
   in the host PID namespace (the eBPF probes need it), so your Docker daemon
   must allow privileged containers.
 - **On Windows, a WSL2 distro with Docker in it.** Either install Docker
@@ -44,13 +44,14 @@ cd datrail-project
 docker compose up -d
 ```
 
-Open <http://127.0.0.1:8000>. Five services start:
+Open <http://127.0.0.1:8000>. Six services start:
 
 | Service | What it does |
 | --- | --- |
 | `raildash` | The dashboard and its SQLite database, on `127.0.0.1:8000`. |
 | `railmon-collect` | `railmon collect`: captures the agent's TLS traffic and posts each request/response pair to RailDash as it happens. |
 | `railmon-listen` | `railmon listen`: records every socket the agent opens to accept traffic, and who connects to it. |
+| `railmon-files` | `railmon files`: records each file the agent's processes open, and whether to read, write or run it. Paths only, never contents. |
 | `railmon-scan` | `railmon scan --interval`: scans the agent every `SCAN_INTERVAL` seconds and posts the evidence bundle to RailDash, where it becomes an ASP. |
 | `demo-agent` | A stand-in agent (`datrail-demo-agent`) that serves HTTPS on `127.0.0.1:8443` and calls itself. |
 
@@ -61,14 +62,16 @@ stopped, restarted or imported by hand, before or after you lock a baseline.
 
 A minute or two after `docker compose up -d`:
 
-- `docker compose ps` shows all five services `Up`, and `raildash` `healthy`.
+- `docker compose ps` shows all six services `Up`, and `raildash` `healthy`.
 - The dashboard lists interactions: `POST` to `127.0.0.1:8443`, paths
   `/v1/demo` and `/v1/demo/other`, status `200`. Each call is captured twice,
   once as the client sent it and once as the server received it, because
   both ends are the demo agent's processes.
 - The **Agent Security Profile alignment** panel has an ASP for
-  `demo-agent`, with `observed_listeners` including port 8443 (click
-  **Inspect evidence** on the ASP to see it). RailMon rescans every minute,
+  `demo-agent`, with `observed_listeners` including port 8443 and
+  `observed_file_access` listing the files the agent opened, among them its
+  own `demo_client.py` (click **Inspect evidence** on the ASP to see them).
+  RailMon rescans every minute,
   but a new ASP appears only when a scan finds something new.
 
 The README's [drift walkthrough](README.md#what-you-see-in-raildash) shows the
@@ -103,7 +106,7 @@ All are optional.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `AGENT_CONTAINER` | `datrail-demo-agent` | The container to watch. `railmon-listen` attaches to it and `railmon-scan` scans it. |
+| `AGENT_CONTAINER` | `datrail-demo-agent` | The container to watch. `railmon-listen` and `railmon-files` attach to it and `railmon-scan` scans it. |
 | `AGENT_KEY` | the container name | The identity RailDash files ASPs under, when the agent has no deployment identity of its own (see [docs/glossary.md](docs/glossary.md#identity)). A container started by Compose is identified by its Compose project and service instead. |
 | `COLLECT_TARGET` | `--comm datrail-demo` | Which processes `railmon collect` taps. It matches across the whole host, so make it specific to your agent: `--comm NAME`, `--pid PID`, `--uid UID`, or `--binary-path PATH` for an agent with its TLS library linked in statically. |
 | `SCAN_INTERVAL` | `60` | Seconds between scans. |
@@ -144,6 +147,9 @@ AGENT_CONTAINER=my-agent COLLECT_TARGET="--comm my-agent-bin" \
 - `railmon-listen` waits for `my-agent` to start, so either can start
   first, and attaches again whenever it restarts. At each attach it records
   the sockets the agent is already listening on, then each one it opens.
+- `railmon-files` follows `my-agent` the same way. It sees a file when it is
+  opened, so a file the agent opened only before `railmon-files` attached
+  (at its start, if the agent started first) is not listed.
 - `COLLECT_TARGET` selects the agent's processes on the host. A process
   name (`--comm`) matches every process of that name on the machine, so pick
   one only your agent uses, or use `--pid` or `--uid`. An agent
@@ -153,7 +159,7 @@ AGENT_CONTAINER=my-agent COLLECT_TARGET="--comm my-agent-bin" \
   while. Anything it does later that the baseline does not cover is drift.
 
 An agent not in a container can still be captured with `COLLECT_TARGET`; the
-listen and scan services need a container to attach to.
+listen, files and scan services need a container to attach to.
 
 ## Images
 
@@ -208,6 +214,20 @@ you have checked it.
 the sockets an agent was already listening on when `railmon-listen`
 attached (an old local build, or an old checkout in `RAILMON_SRC`). Rebuild
 with `docker compose up -d --build`, updating that checkout first.
+
+**A baseline drifts once after an upgrade, on `observed_file_access`.** A
+stack from before 7 October 2026 ran no `railmon-files`, so its ASPs
+reported `observed_file_access` as `BLIND`. Once the upgraded stack records
+files, the attribute is `ANSWERED` and a baseline locked before the upgrade
+shows drift on it. Check the files listed and accept the new state as the
+new baseline; it happens once.
+
+**`observed_file_access` drifts after the agent restarts.** A restarted agent
+may open files under new names (a fresh temp directory, a new log file).
+Randomly named files directly in `/tmp`, `/var/tmp`, `/dev/shm` or the
+agent's `$TMPDIR` are folded into one templated path, so they do not churn;
+other new names are drift, by design. Accept the new state once you have
+checked it.
 
 **Interactions appear twice.** Expected for the demo agent: both ends of its
 HTTPS calls are tapped (see [Verify](#verify)).

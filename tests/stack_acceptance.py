@@ -5,7 +5,8 @@ With nobody touching the stack after `docker compose up -d`:
 
 1. the agent's HTTPS calls reach RailDash as interactions (collect);
 2. an evidence bundle arrives as an Agent Security Profile (scan
-   --interval) and carries the agent's listening socket (listen);
+   --interval) and carries the agent's listening socket (listen) and the
+   demo script it reads on every call (files);
 
 then, driving RailDash's own HTTP routes the way the dashboard does:
 
@@ -38,6 +39,9 @@ from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 DEMO_PORT = 8443
+# The agent runs this script for every call it makes (the RailMon image's
+# local demo), so railmon-files must report it read.
+DEMO_SCRIPT = "/opt/railmon/tools/local-demo/demo_client.py"
 
 
 def api(base: str, path: str, token: str | None = None, body: dict | None = None) -> Any:
@@ -114,16 +118,28 @@ def main() -> int:
         attribute = api(base, f"/api/asps/{asp_id}/bundle", token)["attributes"]["observed_listeners"]
         return (attribute.get("value") or []) if attribute.get("status") == "ANSWERED" else []
 
+    def files(asp_id: str) -> list[dict]:
+        attribute = api(base, f"/api/asps/{asp_id}/bundle", token)["attributes"]["observed_file_access"]
+        return (attribute.get("value") or []) if attribute.get("status") == "ANSWERED" else []
+
     # The README's flow: lock the newest ASP. /api/asps lists the newest first.
-    def newest_asp_with_demo_listener() -> str | None:
+    def newest_asp_with_demo_evidence() -> str | None:
         asps = demo_asps()
-        if asps and any(l.get("port") == DEMO_PORT for l in listeners(asps[0]["asp_id"])):
-            return asps[0]["asp_id"]
+        if not asps:
+            return None
+        newest = asps[0]["asp_id"]
+        if (any(l.get("port") == DEMO_PORT for l in listeners(newest))
+                and any(f.get("path") == DEMO_SCRIPT and f.get("read") for f in files(newest))):
+            return newest
         return None
 
-    baseline = wait_for(f"the newest ASP records the agent listening on {DEMO_PORT}",
-                        newest_asp_with_demo_listener, 300)
+    baseline = wait_for(f"the newest ASP records the agent listening on {DEMO_PORT} "
+                        f"and reading {DEMO_SCRIPT}", newest_asp_with_demo_evidence, 300)
     print(f"      listeners: {json.dumps(listeners(baseline))}")
+    opened = files(baseline)
+    print(f"      files: {len(opened)} listed, "
+          f"{sum(1 for f in opened if f.get('write'))} written, "
+          f"{sum(1 for f in opened if f.get('exec'))} run")
 
     version = api(base, f"/api/asps/{baseline}/lock", token, {"version": f"ci-{time.time_ns()}"})
     api(base, f"/api/alignments/{version['alignment_version_id']}/switch", token, {})
@@ -174,7 +190,7 @@ def main() -> int:
         sys.exit("FAIL: the dashboard page has no Agent Security Profile panel")
     print("ok:   the dashboard serves its Agent Security Profile panel")
     print(json.dumps({"result": "PASS", "baseline": baseline, "drifted": drift["asp_id"],
-                      "demo_interactions": len(rows)}))
+                      "demo_interactions": len(rows), "baseline_files": len(opened)}))
     return 0
 
 

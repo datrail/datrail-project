@@ -39,8 +39,9 @@ hand:
 - **Agent Security Profile alignment.** RailMon scans `demo-agent` every
   60 seconds. A scan that finds something new arrives as a new ASP; a scan
   that finds nothing new keeps the same ASP rather than adding a copy. The
-  ASP's observed listeners include `127.0.0.1:8443`; click **Inspect
-  evidence** on the ASP to see them.
+  ASP's observed listeners include `127.0.0.1:8443`, and its observed file
+  access lists the files the agent opened to read, write or run; click
+  **Inspect evidence** on the ASP to see them.
 - **Drift.** Lock the newest ASP as the baseline, and it shows as
   **aligned**. Make the agent open a port it did not have before:
 
@@ -70,7 +71,9 @@ make clean                 # also delete the built images and an older stack ver
 flowchart LR
   agent[Your agent] -->|TLS calls| collect[railmon collect]
   agent -->|opens a port| listen[railmon listen]
+  agent -->|opens a file| files[railmon files]
   listen -->|listen.jsonl| scan[railmon scan --interval]
+  files -->|files.jsonl| scan
   agent -.->|config, environment| scan
   collect -->|interactions, webhook| dash[RailDash]
   scan -->|evidence bundle| dash
@@ -79,9 +82,9 @@ flowchart LR
 
 | Component | What it does |
 | --- | --- |
-| [RailMon](https://github.com/datrail/railmon#readme) | Collects evidence: captures the agent's TLS traffic, records the sockets it opens, and scans its environment into evidence bundles on an interval. |
+| [RailMon](https://github.com/datrail/railmon#readme) | Collects evidence: captures the agent's TLS traffic, records the sockets and files it opens, and scans its environment into evidence bundles on an interval. |
 | [RailDash](https://github.com/datrail/raildash#readme) | Local dashboard. Stores interactions and ASPs, locks baselines, and shows drift. |
-| [eBPF TLS Tap](https://github.com/datrail/ebpf-tls-tap#readme) | Standalone Linux eBPF probes: `sslsniff` (TLS plaintext), `listensnoop` (listening sockets, behind `railmon listen`) and `filesnoop` (file opens). |
+| [eBPF TLS Tap](https://github.com/datrail/ebpf-tls-tap#readme) | Standalone Linux eBPF probes: `sslsniff` (TLS plaintext), `listensnoop` (listening sockets, behind `railmon listen`) and `filesnoop` (file opens, behind `railmon files`). |
 | [DatRail Proxy](https://github.com/datrail/proxy#readme) | Sits between an agent and its MCP servers and attaches an `x-rail` identity ticket to each call. |
 | [DatRail Gateway](https://github.com/datrail/gateway#readme) | Sits in front of an MCP server, checks the `x-rail` ticket against policy, and forwards or refuses the call. |
 

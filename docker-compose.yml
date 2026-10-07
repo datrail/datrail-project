@@ -12,6 +12,7 @@
 #   railmon-collect captures the agent's TLS traffic (eBPF) and posts each
 #                   request/response pair to RailDash's webhook as it happens
 #   railmon-listen  records every socket the agent opens to accept traffic
+#   railmon-files   records every file the agent opens to read, write or run
 #   railmon-scan    scans the agent every SCAN_INTERVAL seconds and posts the
 #                   evidence bundle to RailDash, where it becomes an Agent
 #                   Security Profile (ASP)
@@ -101,12 +102,29 @@ services:
       RAIL_LISTEN_FILE: /listen/listen.jsonl
     command: ["listen"]
 
+  railmon-files:
+    <<: *railmon
+    # The same as railmon-listen, with the file-open probe (filesnoop): it
+    # follows the agent's container through restarts and appends one line
+    # the first time each of its processes opens a file for reading, writing
+    # or running. Paths and access only, never file contents.
+    privileged: true
+    pid: host
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - files-data:/files
+    environment:
+      RAIL_FILES_CONTAINER: ${AGENT_CONTAINER:-datrail-demo-agent}
+      RAIL_FILES_FILE: /files/files.jsonl
+    command: ["files"]
+
   railmon-scan:
     <<: *railmon
     volumes:
       # `scan --mode docker` inspects the agent's container through Docker.
       - /var/run/docker.sock:/var/run/docker.sock
       - listen-data:/listen:ro
+      - files-data:/files:ro
       # Read-only, for RailDash's token file only.
       - raildash-data:/raildash:ro
     environment:
@@ -114,6 +132,7 @@ services:
       AGENT_KEY: ${AGENT_KEY:-}
       SCAN_INTERVAL: ${SCAN_INTERVAL:-60}
       RAIL_LISTEN_FILE: /listen/listen.jsonl
+      RAIL_FILES_FILE: /files/files.jsonl
       RAIL_RAILDASH_URL: http://raildash:8000
       # Names this machine in every evidence bundle (the bundle requires
       # one). Set it to the value your other DatRail components report, if
@@ -136,6 +155,8 @@ services:
       raildash:
         condition: service_healthy
       railmon-listen:
+        condition: service_started
+      railmon-files:
         condition: service_started
 
   demo-agent:
@@ -165,9 +186,12 @@ services:
     depends_on:
       railmon-listen:
         condition: service_started
+      railmon-files:
+        condition: service_started
       railmon-collect:
         condition: service_started
 
 volumes:
   raildash-data:
   listen-data:
+  files-data:
