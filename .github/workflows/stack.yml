@@ -38,3 +38,28 @@ jobs:
           name: stack-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/stack
           if-no-files-found: error
+
+  # INSTALL.md's "Watch your own agent": the stack without the demo agent,
+  # pointed at a container started afterwards. Its job id is a required
+  # status check on master too; keep it.
+  own-agent:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    env:
+      COMPOSE_PROJECT_NAME: datrail-ci-own-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Watch your own agent, as INSTALL.md says
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/stack
+          STACK_MODE: own-agent
+        run: bash tests/stack-acceptance.sh
+      - name: Preserve service logs and results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: own-agent-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/stack
+          if-no-files-found: error

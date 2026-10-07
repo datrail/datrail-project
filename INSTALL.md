@@ -141,9 +141,9 @@ AGENT_CONTAINER=my-agent COLLECT_TARGET="--comm my-agent-bin" \
   docker compose up -d --scale demo-agent=0
 ```
 
-- `railmon-listen` waits for `my-agent` to start and attaches again whenever
-  it restarts. It only records sockets opened after it attaches, so start
-  the stack before the agent, or restart the agent once.
+- `railmon-listen` waits for `my-agent` to start, so either can start
+  first, and attaches again whenever it restarts. At each attach it records
+  the sockets the agent is already listening on, then each one it opens.
 - `COLLECT_TARGET` selects the agent's processes on the host. A process
   name (`--comm`) matches every process of that name on the machine, so pick
   one only your agent uses, or use `--pid` or `--uid`. An agent
@@ -179,7 +179,9 @@ features.
 
 This repository's CI runs the same stack from both default branches on every
 change and daily, and checks the walkthrough above end to end
-([`tests/stack-acceptance.sh`](tests/stack-acceptance.sh)).
+([`tests/stack-acceptance.sh`](tests/stack-acceptance.sh)). A second job
+follows [Watch your own agent](#watch-your-own-agent) with a `my-agent`
+container started after the stack (`STACK_MODE=own-agent`).
 
 ## Troubleshooting
 
@@ -202,8 +204,10 @@ probe restarted, so sockets opened while it was down may be missing. RailMon
 reports that as drift rather than "nothing new". Accept the new state once
 you have checked it.
 
-**The demo agent's listener is missing.** `railmon-listen` attached after
-the demo server started. Run `docker compose restart demo-agent`.
+**The agent's listener is missing.** The RailMon image predates recording
+the sockets an agent was already listening on when `railmon-listen`
+attached (an old local build, or an old checkout in `RAILMON_SRC`). Rebuild
+with `docker compose up -d --build`, updating that checkout first.
 
 **Interactions appear twice.** Expected for the demo agent: both ends of its
 HTTPS calls are tapped (see [Verify](#verify)).
