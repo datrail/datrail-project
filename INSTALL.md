@@ -216,12 +216,13 @@ the sockets an agent was already listening on when `railmon-listen`
 attached (an old local build, or an old checkout in `RAILMON_SRC`). Rebuild
 with `docker compose up -d --build`, updating that checkout first.
 
-**A baseline drifts once after an upgrade, on `observed_file_access`.** A
-stack from before 7 October 2026 ran no `railmon-files`, so its ASPs
-reported `observed_file_access` as `BLIND`. Once the upgraded stack records
-files, the attribute is no longer `BLIND`, so a baseline locked before the
-upgrade shows drift on it. Check the files listed and accept the new state
-as the new baseline; it happens once.
+**A baseline locked before an upgrade shows `CONTRACT_MISMATCH`.** A stack
+from before 7 October 2026 ran no `railmon-files`, so its ASPs reported
+`observed_file_access` as `BLIND`, and the RailMon it built wrote rule
+pack 6, which listed `/proc/<pid>` paths by number. The upgraded stack
+records files and writes pack 7, so RailDash doesn't compare the old
+baseline with the new ASPs at all rather than reporting drift. Check the
+newest ASP's evidence and lock it as the new baseline; it happens once.
 
 **`observed_file_access` lists new paths after the agent restarts.** A
 restarted agent may open files under new names (a new log file, a fresh
