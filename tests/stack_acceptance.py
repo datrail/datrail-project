@@ -3,7 +3,7 @@
 
 With nobody touching the stack after `docker compose up -d`:
 
-1. the demo agent's HTTPS calls reach RailDash as interactions (collect);
+1. the agent's HTTPS calls reach RailDash as interactions (collect);
 2. an evidence bundle arrives as an Agent Security Profile (scan
    --interval) and carries the agent's listening socket (listen);
 
@@ -15,6 +15,11 @@ then, driving RailDash's own HTTP routes the way the dashboard does:
 4. a port the agent opens afterwards makes the next interval scan deliver a
    new ASP, unprompted, that is DRIFT_DETECTED with observed_listeners among
    the changes. Any other new ASP in between must still be ALIGNED.
+
+The agent is the demo agent (`--agent compose:demo-agent`, which RailDash
+knows by its Compose project and service) or, for INSTALL.md's "Watch your
+own agent", a container the user started (`--agent key:my-agent`, known by
+the scanner's agent key). Either one serves the demo's HTTPS on 8443.
 
 The local write token comes from RAILDASH_TOKEN_VALUE, never argv.
 """
@@ -65,8 +70,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--url", required=True, help="RailDash base URL")
     parser.add_argument("--project", required=True, help="the compose project name")
+    parser.add_argument("--agent", default="compose:demo-agent",
+                        help="compose:<service> for a Compose service, key:<agent key> otherwise")
     parser.add_argument("--open-port", required=True,
-                        help="command that makes the demo agent open a new listening port")
+                        help="command that makes the agent open a new listening port")
     args = parser.parse_args()
     token = os.environ.get("RAILDASH_TOKEN_VALUE")
     if not token:
@@ -80,18 +87,28 @@ def main() -> int:
         return [r for r in rows if r.get("path") in ("/v1/demo", "/v1/demo/other")
                 and r.get("method") == "POST" and r.get("status_code") == 200]
 
-    rows = wait_for("the demo agent's HTTPS calls arrive as interactions, unprompted",
+    rows = wait_for("the agent's HTTPS calls arrive as interactions, unprompted",
                     demo_interactions, 300)
     print(f"      {len(rows)} demo interaction(s)")
 
-    # The demo agent runs under Compose, so RailDash keys it by its Compose
-    # project and service rather than the scanner's --agent-key fallback.
+    # A Compose service is keyed by its Compose project and service; any
+    # other container by the scanner's --agent-key, which defaults to the
+    # container's name.
+    how, _, name = args.agent.partition(":")
+    if how not in ("compose", "key") or not name:
+        parser.error("--agent is compose:<service> or key:<agent key>")
+
+    def ours(identity: dict) -> bool:
+        kind, value = identity.get("kind"), identity.get("value")
+        if how == "compose":
+            return (kind == "deployment_compose" and isinstance(value, dict)
+                    and value.get("project") == args.project and value.get("service") == name)
+        return (kind == "local_agent_key" and value == name) or (
+            kind == "local_agent_keys" and isinstance(value, list) and name in value)
+
     def demo_asps() -> list[dict]:
         items = api(base, "/api/asps?limit=500")["items"]
-        return [i for i in items
-                if (i.get("agent_identity") or {}).get("kind") == "deployment_compose"
-                and (i["agent_identity"].get("value") or {}).get("project") == args.project
-                and (i["agent_identity"].get("value") or {}).get("service") == "demo-agent"]
+        return [i for i in items if ours(i.get("agent_identity") or {})]
 
     def listeners(asp_id: str) -> list[dict]:
         attribute = api(base, f"/api/asps/{asp_id}/bundle", token)["attributes"]["observed_listeners"]
