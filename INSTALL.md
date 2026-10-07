@@ -219,7 +219,7 @@ with `docker compose up -d --build`, updating that checkout first.
 **A baseline locked before an upgrade shows `CONTRACT_MISMATCH`.** A stack
 from before 7 October 2026 ran no `railmon-files`, so its ASPs reported
 `observed_file_access` as `BLIND`, and the RailMon it built wrote rule
-pack 6, which listed `/proc/<pid>` paths by number. The upgraded stack
+pack 6 or earlier, which listed `/proc/<pid>` paths by number. The upgraded stack
 records files and writes pack 7, so RailDash doesn't compare the old
 baseline with the new ASPs at all rather than reporting drift. Check the
 newest ASP's evidence and lock it as the new baseline; it happens once.
