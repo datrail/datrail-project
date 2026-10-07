@@ -161,9 +161,9 @@ services:
 
   demo-agent:
     <<: *railmon
-    # Fixed so railmon-listen and railmon-scan can find it by name. To watch
-    # your own agent instead, set AGENT_CONTAINER and start the stack with
-    # `--scale demo-agent=0` (INSTALL.md).
+    # Fixed so railmon-listen, railmon-files and railmon-scan can find it by
+    # name. To watch your own agent instead, set AGENT_CONTAINER and start
+    # the stack with `--scale demo-agent=0` (INSTALL.md).
     container_name: datrail-demo-agent
     entrypoint: ["/bin/sh", "-c"]
     command:

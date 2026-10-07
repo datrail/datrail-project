@@ -50,8 +50,9 @@ hand:
   ```
 
   Within a minute the next ASP shows **drift detected**. The changed
-  attribute is `observed_listeners`, and "drift explained" shows the old and
-  new values. You can accept the new state as a new baseline, or switch back
+  attributes are `observed_listeners`, with the new port, and
+  `observed_file_access`, with the files the new server process read;
+  "drift explained" shows the old and new values. You can accept the new state as a new baseline, or switch back
   to an earlier one.
 
 To watch your own agent instead of the demo, see

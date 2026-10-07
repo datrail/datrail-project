@@ -12,10 +12,14 @@ then, driving RailDash's own HTTP routes the way the dashboard does:
 
 3. switching to a locked baseline makes the agent's newest ASP ALIGNED. An
    unchanged agent's later scans re-send that same bundle, which RailDash
-   keeps as one ASP (DR-157), so no new ASP is expected here;
+   keeps as one ASP (DR-157), so no new ASP is expected here, and any that
+   arrives while the agent keeps doing its normal work must be ALIGNED: the
+   evidence, the file list included, does not churn;
 4. a port the agent opens afterwards makes the next interval scan deliver a
    new ASP, unprompted, that is DRIFT_DETECTED with observed_listeners among
-   the changes. Any other new ASP in between must still be ALIGNED.
+   the changes. The command that opens it is a new process reading files of
+   its own before it listens, so a scan in between may deliver an ASP that
+   drifted on observed_file_access alone; any other new ASP must be ALIGNED.
 
 The agent is the demo agent (`--agent compose:demo-agent`, which RailDash
 knows by its Compose project and service) or, for INSTALL.md's "Watch your
@@ -78,6 +82,9 @@ def main() -> int:
                         help="compose:<service> for a Compose service, key:<agent key> otherwise")
     parser.add_argument("--open-port", required=True,
                         help="command that makes the agent open a new listening port")
+    parser.add_argument("--settle", type=float, default=30,
+                        help="seconds the newest ASP must stay the newest before it is locked, "
+                             "and that steady state is watched afterwards (a few scan intervals)")
     args = parser.parse_args()
     token = os.environ.get("RAILDASH_TOKEN_VALUE")
     if not token:
@@ -133,8 +140,19 @@ def main() -> int:
             return newest
         return None
 
-    baseline = wait_for(f"the newest ASP records the agent listening on {DEMO_PORT} "
-                        f"and reading {DEMO_SCRIPT}", newest_asp_with_demo_evidence, 300)
+    # The file list grows while the agent's first calls are still importing,
+    # so a baseline locked halfway through one would drift on the rest. Lock
+    # only an ASP that stayed the newest for --settle seconds: later scans
+    # found nothing new.
+    for _ in range(10):
+        baseline = wait_for(f"the newest ASP records the agent listening on {DEMO_PORT} "
+                            f"and reading {DEMO_SCRIPT}", newest_asp_with_demo_evidence, 300)
+        time.sleep(args.settle)
+        if demo_asps()[0]["asp_id"] == baseline:
+            break
+    else:
+        sys.exit(f"FAIL: the agent's evidence was still changing after 10 waits of {args.settle:.0f}s")
+    print(f"ok:   it stayed the newest ASP for {args.settle:.0f}s")
     print(f"      listeners: {json.dumps(listeners(baseline))}")
     opened = files(baseline)
     print(f"      files: {len(opened)} listed, "
@@ -164,10 +182,27 @@ def main() -> int:
         seen.update(i["asp_id"] for i in fresh)
         return {i["asp_id"]: api(base, f"/api/asps/{i['asp_id']}/state") for i in fresh}
 
+    def changed(state: dict) -> list:
+        return [c.get("name") for c in (state.get("drift") or {}).get("changes") or []]
+
+    # Steady state: the agent keeps making its calls, and nothing it does
+    # differs from the baseline, so nothing may drift.
+    time.sleep(args.settle)
+    for asp_id, state in (next_state() or {}).items():
+        if state.get("state") != "ALIGNED":
+            print(json.dumps(state, indent=1))
+            sys.exit(f"FAIL: {asp_id} is {state.get('state')} ({changed(state)}) while the agent "
+                     "only did its normal work, expected ALIGNED")
+    print(f"ok:   nothing drifted in {args.settle:.0f}s of the agent's normal work")
+
     subprocess.run(shlex.split(args.open_port), check=True)
 
     def drifted() -> dict | None:
         for asp_id, state in (next_state() or {}).items():
+            if state.get("state") == "DRIFT_DETECTED" and changed(state) == ["observed_file_access"]:
+                print(f"      {asp_id} drifted on observed_file_access only: the new process "
+                      "read its files before it listened")
+                continue
             if state.get("state") == "DRIFT_DETECTED":
                 return {"asp_id": asp_id, **state}
             if state.get("state") != "ALIGNED":
@@ -177,7 +212,7 @@ def main() -> int:
 
     drift = wait_for("the next interval scan delivers the opened port as drift, unprompted",
                      drifted, 180)
-    names = [c.get("name") for c in (drift.get("drift") or {}).get("changes") or []]
+    names = changed(drift)
     print(f"      changed: {names}")
     if "observed_listeners" not in names:
         print(json.dumps(drift, indent=1))
