@@ -69,17 +69,25 @@ services:
     <<: *railmon
     # The eBPF TLS probe needs privilege and the host's PID namespace to see
     # the agent's processes. This container runs root-equivalent on the host.
+    # The Docker socket is how it finds the agent's container, and finds it
+    # again after a restart.
     privileged: true
     pid: host
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      # Which processes to tap. A process name matches across the whole host
-      # (host PID namespace), so the default is a name only the demo agent
-      # uses. For your own agent see INSTALL.md (--comm, --pid, --uid,
-      # --binary-path).
-      COLLECT_TARGET: ${COLLECT_TARGET:---comm datrail-demo}
+      # The agent's container: the collector taps the TLS library its agent
+      # uses (a loaded libssl, or one built into the executable, as Node's
+      # is) for that container's processes only, and attaches again when it
+      # restarts.
+      RAIL_COLLECT_CONTAINER: ${AGENT_CONTAINER:-datrail-demo-agent}
+      # Set to choose the processes yourself instead (--comm, --pid, --uid,
+      # --binary-path; see INSTALL.md), e.g. for an agent not in a container.
+      COLLECT_TARGET: ${COLLECT_TARGET:-}
     entrypoint: ["/bin/sh", "-c"]
     command:
       - >-
+        if [ -n "$$COLLECT_TARGET" ]; then unset RAIL_COLLECT_CONTAINER; fi;
         exec railmon collect --mode http
         --webhook http://raildash:8000/webhook/http-interactions
         $$COLLECT_TARGET
@@ -170,9 +178,9 @@ services:
       - |
         set -eu
         demo=/opt/railmon/tools/local-demo
-        # Its own process name, so railmon-collect's default --comm taps the
-        # demo agent and nothing else on the host. Beside python3, so Python
-        # still finds its standard library.
+        # Its own process name, so the demo agent is easy to tell apart in
+        # `ps` on the host. Beside python3, so Python still finds its
+        # standard library.
         cp /usr/local/bin/python3 /usr/local/bin/datrail-demo
         certs=$$(mktemp -d)
         openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj /CN=127.0.0.1 \

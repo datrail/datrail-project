@@ -26,7 +26,7 @@ case "$mode" in
   own-agent)
     # INSTALL.md's command, word for word, plus --build.
     agent=my-agent
-    export AGENT_CONTAINER=my-agent COLLECT_TARGET="--comm my-agent-bin"
+    export AGENT_CONTAINER=my-agent
     up=(up -d --build --scale demo-agent=0)
     ;;
   *) echo "unknown STACK_MODE $mode" >&2; exit 2 ;;
@@ -118,3 +118,36 @@ RAILDASH_TOKEN_VALUE="$token" python3 tests/stack_acceptance.py \
   --open-port "docker exec -d $agent python3 -m http.server 9000 --bind 127.0.0.1" \
   --settle "$((SCAN_INTERVAL * 3))" \
   | tee "$EVIDENCE_DIR/acceptance.txt"
+
+if [[ $mode == own-agent ]]; then
+  # INSTALL says the collector follows the agent's container: after a
+  # restart, with a new PID nobody looked up, the calls must keep arriving
+  # (DR-187).
+  # Rows newer than any before the restart (the stopped collector's own
+  # flush can still add older calls), timed after it on the wall clock.
+  newest_before=$(curl -fsS "http://127.0.0.1:${RAILDASH_PORT:-8000}/api/interactions?limit=1" \
+    | python3 -c 'import json,sys; i=json.load(sys.stdin)["items"]; print(i[0]["id"] if i else 0)')
+  restarted_at=$(date -u +%Y-%m-%dT%H:%M:%S%z)
+  docker restart my-agent > /dev/null
+  python3 - "http://127.0.0.1:${RAILDASH_PORT:-8000}" "$newest_before" "$restarted_at" <<'PY' \
+    | tee -a "$EVIDENCE_DIR/acceptance.txt"
+import datetime, json, sys, time, urllib.request
+base, newest_before = sys.argv[1], int(sys.argv[2])
+restarted = datetime.datetime.strptime(sys.argv[3], "%Y-%m-%dT%H:%M:%S%z")
+def at(text):
+    t = datetime.datetime.fromisoformat(text.replace("Z", "+00:00"))
+    return t if t.tzinfo else t.replace(tzinfo=datetime.timezone.utc)
+deadline = time.time() + 180
+while time.time() < deadline:
+    with urllib.request.urlopen(f"{base}/api/interactions?limit=50", timeout=10) as r:
+        rows = json.load(r)["items"]
+    after = [x for x in rows if x["id"] > newest_before and x.get("path") == "/v1/demo"
+             and x.get("method") == "POST" and x.get("status_code") == 200
+             and x.get("timestamp") and at(x["timestamp"]) > restarted]
+    if after:
+        print(f"ok    the agent's calls arrive again after docker restart my-agent ({len(after)})")
+        sys.exit(0)
+    time.sleep(2)
+sys.exit("FAIL  no interaction from my-agent within 180 s of its restart")
+PY
+fi

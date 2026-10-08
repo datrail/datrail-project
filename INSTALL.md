@@ -106,9 +106,9 @@ All are optional.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `AGENT_CONTAINER` | `datrail-demo-agent` | The container to watch. `railmon-listen` and `railmon-files` attach to it and `railmon-scan` scans it. |
+| `AGENT_CONTAINER` | `datrail-demo-agent` | The container to watch. `railmon-collect`, `railmon-listen` and `railmon-files` attach to it and `railmon-scan` scans it. |
 | `AGENT_KEY` | the container name | The identity RailDash files ASPs under, when the agent has no deployment identity of its own (see [docs/glossary.md](docs/glossary.md#identity)). A container started by Compose is identified by its Compose project and service instead. |
-| `COLLECT_TARGET` | `--comm datrail-demo` | Which processes `railmon collect` taps. It matches across the whole host, so make it specific to your agent: `--comm NAME`, `--pid PID`, `--uid UID`, or `--binary-path PATH` for an agent with its TLS library linked in statically. |
+| `COLLECT_TARGET` | unset | Only to choose the processes `railmon collect` taps yourself, instead of `AGENT_CONTAINER`'s: `--comm NAME`, `--pid PID`, `--uid UID`, or `--binary-path PATH`. These match across the whole host. |
 | `SCAN_INTERVAL` | `60` | Seconds between scans. |
 | `RAIL_HOST_ID` | `datrail-local` | The name of this machine in every evidence bundle. |
 | `RAILDASH_PORT` | `8000` | The local port RailDash is published on (always on `127.0.0.1`). |
@@ -140,9 +140,17 @@ Run your agent in a container, then point the stack at it and leave the demo
 agent out:
 
 ```bash
-AGENT_CONTAINER=my-agent COLLECT_TARGET="--comm my-agent-bin" \
-  docker compose up -d --scale demo-agent=0
+AGENT_CONTAINER=my-agent docker compose up -d --scale demo-agent=0
 ```
+
+- `railmon-collect` finds the TLS library your agent uses: a `libssl` it
+  loads, or one built into its executable, as in Node, Bun and other
+  runtimes that bundle OpenSSL or BoringSSL. It captures the processes of
+  `my-agent`'s container that share that process's session and TLS file,
+  and attaches again whenever the container restarts, so there is no PID or
+  path to look up. `docker compose logs railmon-collect` names the process
+  and file it attached to. A second runtime in the same container, or a
+  process that starts a session of its own, is not captured.
 
 - `railmon-listen` waits for `my-agent` to start, so either can start
   first, and attaches again whenever it restarts. At each attach it records
@@ -150,16 +158,25 @@ AGENT_CONTAINER=my-agent COLLECT_TARGET="--comm my-agent-bin" \
 - `railmon-files` follows `my-agent` the same way. It sees a file when it is
   opened, so a file the agent opened only before `railmon-files` attached
   (at its start, if the agent started first) is not listed.
-- `COLLECT_TARGET` selects the agent's processes on the host. A process
-  name (`--comm`) matches every process of that name on the machine, so pick
-  one only your agent uses, or use `--pid` or `--uid`. An agent
-  binary with its own statically linked TLS library needs
-  `--binary-path /path/to/that/binary` as the host sees it.
 - Lock a baseline in RailDash once the agent has done its normal work for a
   while. Anything it does later that the baseline does not cover is drift.
 
 An agent not in a container can still be captured with `COLLECT_TARGET`; the
-listen, files and scan services need a container to attach to.
+listen, files and scan services need a container to attach to. A process
+name (`--comm`) matches every process of that name on the machine, and a
+`--pid` changes when the agent restarts. A runtime that bundles its own TLS
+(Node, for one) loads no `libssl`, so `--comm` alone captures nothing for
+it: give `--binary-path` the executable's path as the collector sees it,
+which for a process in a container is `/proc/<pid>/root/<path inside the
+container>`, with `<pid>` as `docker top <container>` shows it.
+
+The collector pairs each request with the next response on the same thread,
+and the probe does not say which connection a read came from. An agent that
+streams a model's reply while another connection on the same thread is busy,
+which is how a Node agent does all its TLS, can lose that reply. The request
+then appears after ten minutes as an incomplete interaction, with no
+response, and `railmon-collect`'s log counts it
+([railmon#70](https://github.com/datrail/railmon/issues/70)).
 
 ## Images
 
@@ -198,7 +215,9 @@ Right after Desktop starts, give the integration a moment to attach.
 **No interactions appear.** Check `docker compose logs railmon-collect`. The
 collector needs a privileged container, the host PID namespace, and an
 x86_64 kernel with BTF. On macOS, only processes inside Docker Desktop's VM
-are visible. For your own agent, check that `COLLECT_TARGET` matches its
+are visible. For your own agent, `docker compose logs railmon-collect` says
+which process and TLS file it attached to, or that none in the container
+uses TLS yet. With `COLLECT_TARGET` set, check that it matches the agent's
 processes.
 
 **No ASPs appear.** Check `docker compose logs railmon-scan`. `container not
