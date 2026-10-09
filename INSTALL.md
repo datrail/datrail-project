@@ -241,8 +241,13 @@ doesn't compare a baseline from an older pack with the new ASPs at all,
 rather than reporting each change as drift. A stack from before 7 October
 2026 ran no `railmon-files` and wrote pack 6 or earlier. Pack 7 lists
 `/proc/<pid>` paths as `/proc/*/`, and pack 8 (8 October 2026) adds the
-agent's type, owner, LLM provider, sandbox type and system and user info. Check the newest ASP's evidence and
-lock it as the new baseline; it happens once per upgrade.
+agent's type, owner, LLM provider, sandbox type and system and user info.
+Pack 9 (9 October 2026 UTC) adds `agent_instance`, where this copy runs:
+the agent container's hostname, id and host pid, and the scan's own fqdn,
+pid and working directory. RailDash leaves its value out of drift, so a new
+hostname, container id or pid on its own is not drift. Check the
+newest ASP's evidence and lock it as the new baseline; it happens once per
+upgrade.
 
 **`observed_file_access` lists new paths after the agent restarts.** A
 restarted agent may open files under new names (a new log file, a fresh
