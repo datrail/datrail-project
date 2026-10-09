@@ -112,7 +112,7 @@ All are optional.
 | `SCAN_INTERVAL` | `60` | Seconds between scans. |
 | `RAIL_HOST_ID` | `datrail-local` | The name of this machine in every evidence bundle. |
 | `RAILDASH_PORT` | `8000` | The local port RailDash is published on (always on `127.0.0.1`). |
-| `RAILDASH_TOKEN` | unset | RailDash's local write token, if you want to choose it (see below). |
+| `RAILDASH_TOKEN` | unset | RailDash's local write token, if you want to choose it (see below): at least 16 characters of `A-Z a-z 0-9 - _ . ~ + / =`, or RailDash does not start. |
 | `RAILMON_SRC`, `RAILDASH_SRC` | the GitHub repositories | Where to build each image from (see [Images](#images)). |
 | `DEMO_INTERVAL` | `30` | Seconds between the demo agent's calls. |
 
@@ -171,12 +171,14 @@ which for a process in a container is `/proc/<pid>/root/<path inside the
 container>`, with `<pid>` as `docker top <container>` shows it.
 
 The collector pairs each request with the next response on the same thread,
-and the probe does not say which connection a read came from. An agent that
-streams a model's reply while another connection on the same thread is busy,
-which is how a Node agent does all its TLS, can lose that reply. The request
-then appears after ten minutes as an incomplete interaction, with no
-response, and `railmon-collect`'s log counts it
-([railmon#70](https://github.com/datrail/railmon/issues/70)).
+and the probe does not say which connection a read came from; a Node agent
+does all its TLS on one thread. A read from another connection that arrives
+between two chunks of a streamed (chunked) reply is kept out of that reply,
+so the reply still comes through whole. Two HTTP connections busy on one
+thread, a read landing in the middle of a chunk, or a reply that is not
+chunked can still lose the reply. The request then appears after ten minutes
+as an incomplete interaction, with no response, and `railmon-collect`'s log
+counts it ([railmon#70](https://github.com/datrail/railmon/issues/70)).
 
 ## Images
 
@@ -220,8 +222,10 @@ which process and TLS file it attached to, or that none in the container
 uses TLS yet. With `COLLECT_TARGET` set, check that it matches the agent's
 processes.
 
-**No ASPs appear.** Check `docker compose logs railmon-scan`. `container not
-found` means `AGENT_CONTAINER` names a container that is not running;
+**No ASPs appear.** Check `docker compose logs railmon-scan`. `docker
+inspect failed for container: <name>` most often means `AGENT_CONTAINER`
+names a container that does not exist (check `docker ps -a`); otherwise check
+that the Docker socket is mounted and reachable;
 `HTTP 403` means a stale token (see [The RailDash token](#the-raildash-token)).
 
 **`observed_listeners` or `observed_file_access` is `PARTIAL`, or drifts
@@ -235,7 +239,8 @@ the sockets an agent was already listening on when `railmon-listen`
 attached (an old local build, or an old checkout in `RAILMON_SRC`). Rebuild
 with `docker compose up -d --build`, updating that checkout first.
 
-**A baseline locked before an upgrade shows `CONTRACT_MISMATCH`.** Each
+**After an upgrade, ASPs show Comparison unavailable, reason
+`CONTRACT_MISMATCH`.** Each
 time RailMon's evidence changes shape it writes a new rule pack, and RailDash
 doesn't compare a baseline from an older pack with the new ASPs at all,
 rather than reporting each change as drift. A stack from before 7 October

@@ -47,10 +47,11 @@ services:
       - raildash-data:/data
     environment:
       RAILDASH_DB: /data/raildash.db
-      # RailDash's local write token guards every route that changes state,
-      # including the one RailMon delivers evidence bundles to. RailDash
-      # writes it to /data/raildash.db.token, and railmon-scan reads it from
-      # there, so it never needs to be set. The file survives restarts. Set
+      # RailDash's local write token guards every route that changes ASP or
+      # baseline state, including the one RailMon delivers evidence bundles
+      # to (the interaction webhook railmon-collect posts to needs none).
+      # RailDash writes it to /data/raildash.db.token, and railmon-scan reads
+      # it from there, so it never needs to be set. The file survives restarts. Set
       # RAILDASH_TOKEN only to choose the token yourself (see INSTALL.md).
       RAILDASH_TOKEN: ${RAILDASH_TOKEN:-}
     healthcheck:

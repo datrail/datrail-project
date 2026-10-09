@@ -31,13 +31,14 @@ reads as performance profiling) and not "intent".
 
 Whether an agent still does what its [baseline](#baseline) says it does.
 RailDash compares every new ASP with the agent's active baseline as it
-arrives and gives it one state:
+arrives. Each ASP has one state:
 
 | State | Meaning |
 | --- | --- |
 | `ALIGNED` | The ASP matches the baseline. |
 | `DRIFT_DETECTED` | Something differs; the result lists each changed attribute (see [drift](#drift)). |
 | `NO_ACTIVE_ALIGNMENT` | The agent has no baseline yet. This is a warning, never a clean result. |
+| `ALIGNMENT_ACTIVE` | The agent has an active baseline, but this ASP has not been compared with it (it arrived before that baseline was switched in, or is the baseline itself). |
 | `COMPARISON_UNAVAILABLE` | The two ASPs cannot be compared safely: a different identity, evidence bundle version or scanner rule pack, an invalid bundle, or a baseline that fails its integrity check. Neither aligned nor drifted. |
 
 In RailDash this is the **Agent Security Profile alignment** panel.
