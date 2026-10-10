@@ -84,8 +84,8 @@ An agent's guardrail state is one of:
 | --- | --- |
 | Held | Every rule was checked on current evidence and nothing broke it. |
 | Violated | At least one rule was broken; each rule and item is one row. Acknowledging a row clears it until the same thing happens again. |
-| Unverified | A rule could not be checked on current evidence: the newest ASP is stale or the attribute was not fully observed, the collector's heartbeat stopped, or requests arrived that can't be tied to one agent. Never read as Held. |
-| No guardrail | None has been adopted. |
+| Unverified | A rule could not be checked on current evidence, for example: the newest ASP is stale or the attribute was not fully observed, the collector's heartbeat stopped, requests arrived that can't be tied to one agent, or the ASP covers several agents in one sandbox. Never read as Held. |
+| No guardrail | None is active: never adopted, or turned off. |
 
 A guardrail is not drift: [drift](#drift) reports any difference from the
 baseline, while a guardrail reports only what breaks a rule you approved.

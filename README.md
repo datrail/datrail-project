@@ -65,9 +65,10 @@ hand:
   every line is shown before you approve it. The proposal also lists what
   would be a violation under it. For the demo agent that is its own port
   8443 and its calls to `127.0.0.1`, which its configuration doesn't
-  declare (and port 9000, if you opened it above). Click **Adopt**, then
-  **Allow this** on each row you mean to allow. Once the next scan and
-  capture arrive (a minute or two), the agent reads **Held**. Now make the
+  declare. Click **Adopt**; within half a minute both show as rows. Click
+  **Allow this** on each row you mean to allow (port 9000 too, if it is
+  still open from the drift step). Once the next scan and capture arrive
+  (a minute or two), the agent reads **Held**. Now make the
   agent break a rule:
 
   ```bash
@@ -75,7 +76,8 @@ hand:
   docker exec datrail-demo-agent sh -c 'mkdir -p /data && echo report > /data/report.zip'
   # uploads and out_of_spec_calls: a POST with a body to a host on neither list.
   # It goes to the agent's own server with another Host header, so nothing
-  # leaves your machine.
+  # leaves your machine; the demo's certificate is a throwaway, hence no
+  # verification.
   docker exec datrail-demo-agent python3 -c '
   import http.client, ssl
   c = http.client.HTTPSConnection("127.0.0.1", 8443, context=ssl._create_unverified_context())
