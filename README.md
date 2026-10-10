@@ -65,7 +65,7 @@ hand:
   every line is shown before you approve it. The proposal also lists what
   would be a violation under it. For the demo agent that is its own port
   8443 and its calls to `127.0.0.1`, which its configuration doesn't
-  declare. Click **Adopt**; within half a minute both show as rows. Click
+  declare. Click **Adopt**; within a minute each shows as a row. Click
   **Allow this** on each row you mean to allow (port 9000 too, if it is
   still open from the drift step). Once the next scan and capture arrive
   (a minute or two), the agent reads **Held**. Now make the
