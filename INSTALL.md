@@ -124,8 +124,11 @@ Every RailDash route that changes ASP or baseline state, including the one
 evidence bundles are delivered to, requires RailDash's local write token in an
 `X-RailDash-Token` header. The dashboard page carries it for your browser.
 RailDash also writes it to `raildash.db.token` beside its database, and
-`railmon-scan` reads it from there (a read-only mount), so the stack needs
-no token configuration.
+`railmon-scan` and `railmon-collect` read it from there (a read-only mount),
+so the stack needs no token configuration. The collector sends it with every
+capture, which marks the capture as its own rather than anyone's who can
+reach the webhook, and with a heartbeat every 60 seconds while it is attached
+to the agent. A capture without the token is still shown.
 
 RailDash keeps the token in that file across restarts, so `railmon-scan`
 keeps delivering after either side restarts. Set `RAILDASH_TOKEN` to choose

@@ -10,7 +10,8 @@
 #
 #   raildash        the dashboard, on 127.0.0.1:8000 only
 #   railmon-collect captures the agent's TLS traffic (eBPF) and posts each
-#                   request/response pair to RailDash's webhook as it happens
+#                   request/response pair to RailDash's webhook as it happens,
+#                   with RailDash's token and a heartbeat while it is attached
 #   railmon-listen  records every socket the agent opens to accept traffic
 #   railmon-files   records every file the agent opens to read, write or run
 #   railmon-scan    scans the agent every SCAN_INTERVAL seconds and posts the
@@ -50,10 +51,12 @@ services:
       RAILDASH_DB: /data/raildash.db
       # RailDash's local write token guards every route that changes ASP or
       # baseline state, including the one RailMon delivers evidence bundles
-      # to (the interaction webhook railmon-collect posts to needs none).
-      # RailDash writes it to /data/raildash.db.token, and railmon-scan reads
-      # it from there, so it never needs to be set. The file survives restarts. Set
-      # RAILDASH_TOKEN only to choose the token yourself (see INSTALL.md).
+      # to. The interaction webhook needs none, but railmon-collect sends it
+      # anyway so RailDash knows its captures are the collector's.
+      # RailDash writes it to /data/raildash.db.token, and railmon-scan and
+      # railmon-collect read it from there, so it never needs to be set. The
+      # file survives restarts. Set RAILDASH_TOKEN only to choose the token
+      # yourself (see INSTALL.md).
       RAILDASH_TOKEN: ${RAILDASH_TOKEN:-}
     healthcheck:
       # The image has no curl, so the check uses Python's standard library.
@@ -77,7 +80,14 @@ services:
     pid: host
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      # Read-only, for RailDash's token file only.
+      - raildash-data:/raildash:ro
     environment:
+      # Sent with every capture, which marks it as this collector's rather
+      # than anyone's who can reach the webhook, and with a heartbeat while
+      # a tap is attached, so RailDash can tell a quiet agent from a stopped
+      # collector. Re-read on every batch.
+      RAIL_RAILDASH_TOKEN_FILE: /raildash/raildash.db.token
       # The agent's container: the collector taps the TLS library its agent
       # uses (a loaded libssl, or one built into the executable, as Node's
       # is) for that container's processes only, and attaches again when it
@@ -89,6 +99,7 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - >-
+        until [ -s "$$RAIL_RAILDASH_TOKEN_FILE" ]; do sleep 1; done;
         if [ -n "$$COLLECT_TARGET" ]; then unset RAIL_COLLECT_CONTAINER; fi;
         exec railmon collect --mode http
         --webhook http://raildash:8000/webhook/http-interactions

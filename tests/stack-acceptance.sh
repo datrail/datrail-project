@@ -119,6 +119,31 @@ RAILDASH_TOKEN_VALUE="$token" python3 tests/stack_acceptance.py \
   --settle "$((SCAN_INTERVAL * 3))" \
   | tee "$EVIDENCE_DIR/acceptance.txt"
 
+# The collector sends RailDash's token with its captures and, while a tap is
+# attached, a heartbeat every 60 s: what the Data Guardrail reads to tell a
+# quiet agent from a stopped collector (DR-184 M0). Read straight from
+# RailDash's database, read-only, since no unauthenticated route shows it.
+"${compose[@]}" exec -T raildash python3 - <<'PY' | tee -a "$EVIDENCE_DIR/acceptance.txt"
+import datetime, sqlite3, sys, time
+deadline = time.time() + 180
+while True:
+    db = sqlite3.connect("file:/data/raildash.db?mode=ro", uri=True)
+    try:
+        beat = db.execute("SELECT max(last_heartbeat_at) FROM collector_heartbeats").fetchone()[0]
+        authed = db.execute("SELECT count(*) FROM interactions WHERE authenticated = 1").fetchone()[0]
+    finally:
+        db.close()
+    if beat and authed:
+        age = datetime.datetime.now(datetime.timezone.utc) - datetime.datetime.fromisoformat(
+            beat.replace("Z", "+00:00"))
+        if age < datetime.timedelta(minutes=3):
+            print(f"ok    the collector's captures are authenticated ({authed}) and it heartbeats ({beat})")
+            sys.exit(0)
+    if time.time() > deadline:
+        sys.exit(f"FAIL  within 180 s: newest heartbeat {beat!r}, authenticated captures {authed}")
+    time.sleep(5)
+PY
+
 if [[ $mode == own-agent ]]; then
   # INSTALL says the collector follows the agent's container: after a
   # restart, with a new PID nobody looked up, the calls must keep arriving
