@@ -6,7 +6,9 @@ DatRail watches an AI agent while it runs: the APIs it calls, the files and
 data it touches, the ports it opens. It turns those observations into an
 **Agent Security Profile (ASP)**. Once you lock an ASP as the agent's baseline,
 every later observation is compared with it, and anything new is reported as
-drift.
+drift. A **Data Guardrail** adopted from that baseline then checks every ASP
+and every captured request against four rules you approve: allowed uploads,
+saved-file kinds, no service ports and no out-of-spec calls.
 
 This repository is the starting point. It runs the open-source DatRail stack
 on your own machine with one command, and links to every component.
@@ -58,6 +60,34 @@ hand:
   per-attribute detail under the drift list shows the old and new values.
   You can accept the new state as a new baseline, or switch back to an
   earlier one.
+- **Data Guardrail.** With a baseline locked, the **Data Guardrail** panel
+  proposes a guardrail from it: what the agent already did is allowed, and
+  every line is shown before you approve it. The proposal also lists what
+  would be a violation under it. For the demo agent that is its own port
+  8443 and its calls to `127.0.0.1`, which its configuration doesn't
+  declare (and port 9000, if you opened it above). Click **Adopt**, then
+  **Allow this** on each row you mean to allow. Once the next scan and
+  capture arrive (a minute or two), the agent reads **Held**. Now make the
+  agent break a rule:
+
+  ```bash
+  # saved_files: a file the guardrail doesn't allow
+  docker exec datrail-demo-agent sh -c 'mkdir -p /data && echo report > /data/report.zip'
+  # uploads and out_of_spec_calls: a POST with a body to a host on neither list.
+  # It goes to the agent's own server with another Host header, so nothing
+  # leaves your machine.
+  docker exec datrail-demo-agent python3 -c '
+  import http.client, ssl
+  c = http.client.HTTPSConnection("127.0.0.1", 8443, context=ssl._create_unverified_context())
+  c.request("POST", "/upload", body=b"{\"report\": 1}",
+            headers={"Host": "exfil.example", "Content-Type": "application/json"})
+  print(c.getresponse().status)'
+  ```
+
+  The agent turns **Violated**, with one row per rule and item. **Acknowledge**
+  a row to clear it until the same thing happens again; **Allow this** makes a
+  new guardrail version that allows it. Edit, switch to an earlier version or
+  turn the guardrail off from the same panel.
 
 To watch your own agent instead of the demo, see
 [INSTALL.md](INSTALL.md#watch-your-own-agent).
@@ -88,7 +118,7 @@ flowchart LR
 | Component | What it does |
 | --- | --- |
 | [RailMon](https://github.com/datrail/railmon#readme) | Collects evidence: captures the agent's TLS traffic, records the sockets and files it opens, and scans its environment into evidence bundles on an interval. |
-| [RailDash](https://github.com/datrail/raildash#readme) | Local dashboard. Stores interactions and ASPs, locks baselines, and shows drift. |
+| [RailDash](https://github.com/datrail/raildash#readme) | Local dashboard. Stores interactions and ASPs, locks baselines, shows drift, and runs the Data Guardrail. |
 | [eBPF TLS Tap](https://github.com/datrail/ebpf-tls-tap#readme) | Standalone Linux eBPF probes: `sslsniff` (TLS plaintext), `listensnoop` (listening sockets, behind `railmon listen`) and `filesnoop` (file opens, behind `railmon files`). |
 | [DatRail Proxy](https://github.com/datrail/proxy#readme) | Sits between an agent and its MCP servers and attaches an `x-rail` identity ticket to each call. |
 | [DatRail Gateway](https://github.com/datrail/gateway#readme) | Sits in front of an MCP server, checks the `x-rail` ticket against policy, and forwards or refuses the call. |
@@ -101,7 +131,7 @@ are deployed separately; their READMEs explain how.
 - [INSTALL.md](INSTALL.md): prerequisites, platform support, settings,
   watching your own agent, building from local checkouts, troubleshooting.
 - [docs/glossary.md](docs/glossary.md): evidence bundle, ASP, baseline,
-  alignment, drift, profile.
+  alignment, drift, Data Guardrail, profile.
 - [The DatRail organization](https://github.com/datrail): every repository,
   and the project's background.
 
