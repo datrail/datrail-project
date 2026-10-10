@@ -111,6 +111,8 @@ All are optional.
 | `COLLECT_TARGET` | unset | Only to choose the processes `railmon collect` taps yourself, instead of `AGENT_CONTAINER`'s: `--comm NAME`, `--pid PID`, `--uid UID`, or `--binary-path PATH`. These match across the whole host. |
 | `SCAN_INTERVAL` | `60` | Seconds between scans. |
 | `RAIL_HOST_ID` | `datrail-local` | The name of this machine in every evidence bundle. |
+| `RAIL_CENTER_URL` | unset | A Rail Center to send every evidence bundle to as well (see [Sending bundles to Rail Center](#sending-bundles-to-rail-center)). Unset, no bundle leaves this machine. |
+| `RAIL_AUTH_MODE`, `RAIL_AUTH_TOKEN`, `RAIL_AUTH_AUDIENCE` | `none` | The credential `railmon-scan` presents to Rail Center. Used only with `RAIL_CENTER_URL`. |
 | `RAILDASH_PORT` | `8000` | The local port RailDash is published on (always on `127.0.0.1`). |
 | `RAILDASH_TOKEN` | unset | RailDash's local write token, if you want to choose it (see below): at least 16 characters of `A-Z a-z 0-9 - _ . ~ + / =`, or RailDash does not start. |
 | `RAILMON_SRC`, `RAILDASH_SRC` | the GitHub repositories | Where to build each image from (see [Images](#images)). |
@@ -133,6 +135,34 @@ on every start instead; if `docker compose logs railmon-scan` then shows
 `HTTP 403` after RailDash restarted, rebuild with `docker compose up -d
 --build` (updating that checkout first), or run
 `docker compose restart railmon-scan`.
+
+### Sending bundles to Rail Center
+
+The stack is local by default. To also send each evidence bundle to a Rail
+Center, set `RAIL_CENTER_URL` to its base URL. `railmon-scan` then runs
+`railmon scan --register`, which POSTs the same bundle it delivers to RailDash
+to Rail Center's `/v1/agents/register`, every `SCAN_INTERVAL` seconds. An
+unchanged bundle is re-sent as the same bytes, so Rail Center records a
+duplicate rather than a new row.
+
+```bash
+RAIL_CENTER_URL=https://rail-center.example.com \
+RAIL_AUTH_MODE=bearer RAIL_AUTH_TOKEN=... docker compose up -d
+```
+
+`RAIL_AUTH_MODE` is `none` (the default, which sends no credential),
+`bearer` (sends `RAIL_AUTH_TOKEN`), or `gcp` (mints an identity token for
+`RAIL_AUTH_AUDIENCE` from the host's service account, on Google Cloud).
+Setting `RAIL_AUTH_TOKEN` with `none` is refused rather than ignored. The
+two deliveries are independent: if Rail Center is unreachable or refuses the
+bundle, `docker compose logs railmon-scan` says so, and RailDash still gets
+every bundle.
+
+Rail Center files the agent under its agent key (`AGENT_KEY`, or the
+container name). It accepts a key of up to 64 characters that starts with
+a lower-case letter or digit and continues with those, `.`, `_` or `-`.
+For a container named otherwise, set `AGENT_KEY` to such a name; until
+then registration fails on every scan and is logged.
 
 ## Watch your own agent
 

@@ -15,7 +15,8 @@
 #   railmon-files   records every file the agent opens to read, write or run
 #   railmon-scan    scans the agent every SCAN_INTERVAL seconds and posts the
 #                   evidence bundle to RailDash, where it becomes an Agent
-#                   Security Profile (ASP)
+#                   Security Profile (ASP); also to a Rail Center, only if
+#                   RAIL_CENTER_URL is set
 #   demo-agent      a small stand-in agent, so a first run has something to
 #                   watch; replace it with your own (INSTALL.md)
 #
@@ -147,6 +148,13 @@ services:
       # one). Set it to the value your other DatRail components report, if
       # any; the default only has to be stable.
       RAIL_HOST_ID: ${RAIL_HOST_ID:-datrail-local}
+      # Optional. Set RAIL_CENTER_URL to also send every bundle to a Rail
+      # Center, with the credential RAIL_AUTH_MODE names (INSTALL.md).
+      # Unset, the stack stays local and these are ignored.
+      RAIL_CENTER_URL: ${RAIL_CENTER_URL:-}
+      RAIL_AUTH_MODE: ${RAIL_AUTH_MODE:-}
+      RAIL_AUTH_TOKEN: ${RAIL_AUTH_TOKEN:-}
+      RAIL_AUTH_AUDIENCE: ${RAIL_AUTH_AUDIENCE:-}
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
@@ -155,11 +163,13 @@ services:
         until [ -s "$$token_file" ]; do sleep 1; done
         RAIL_RAILDASH_TOKEN=$$(cat "$$token_file")
         export RAIL_RAILDASH_TOKEN
+        set --
+        if [ -n "$$RAIL_CENTER_URL" ]; then set -- --register; fi
         exec railmon scan --mode docker --container "$$AGENT_CONTAINER" \
           --agent-key "$${AGENT_KEY:-$$AGENT_CONTAINER}" \
           --raildash-url "$$RAIL_RAILDASH_URL" \
           --output /tmp/registration-payload.json \
-          --interval "$$SCAN_INTERVAL"
+          --interval "$$SCAN_INTERVAL" "$$@"
     depends_on:
       raildash:
         condition: service_healthy
