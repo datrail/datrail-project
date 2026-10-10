@@ -32,7 +32,9 @@ then, driving RailDash's own HTTP routes the way the dashboard does:
    Acknowledge re-opens the row; a GET without a body to a second such host
    is an `out_of_spec_calls` violation only. The requests go to the agent's
    own HTTPS server with another Host header, which is what RailDash judges
-   them by, so no outside network is involved.
+   them by, so no outside network is involved. The collector follows only
+   the agent's own process session, not a `docker exec`, so they are seen
+   on the server's side, as the agent's server reads them.
 
 The agent is the demo agent (`--agent compose:demo-agent`, which RailDash
 knows by its Compose project and service) or, for INSTALL.md's "Watch your
@@ -91,9 +93,11 @@ EXFIL_HOST = "exfil.example"
 SECOND_HOST = "second.example"
 # Run in the agent with `python3 -c AGENT_REQUEST <method> <host>`: one HTTPS
 # request to the agent's own server on 8443 with that Host header, a JSON
-# body for POST and none for GET. The collector captures it like any of the
-# agent's calls; the demo server answers a GET with 501, which is still a
-# call. The certificate is the demo's throwaway one, hence no verification.
+# body for POST and none for GET. The collector doesn't capture this client
+# (a `docker exec` isn't the agent's session); it captures the agent's own
+# server reading the request, Host header and body included. The demo server
+# answers a GET with 501, which is still a call. The certificate is the
+# demo's throwaway one, hence no verification.
 AGENT_REQUEST = """
 import http.client, ssl, sys
 method, host = sys.argv[1], sys.argv[2]
@@ -126,6 +130,8 @@ class Guardrail:
 
     def adopt(self, alignment_version_id: str) -> None:
         proposal = self.detail()["proposal"]
+        if not proposal or not proposal.get("guardrail"):
+            sys.exit(f"FAIL: no guardrail was proposed for the agent: {proposal}")
         print(f"      proposal: {json.dumps(proposal['guardrail']['rules'])}")
         print(f"      would be violations: "
               f"{[(v['rule'], v['item']) for v in proposal['would_be_violations']]}")
@@ -142,7 +148,10 @@ class Guardrail:
         try:
             return wait_for(what, check, timeout)
         except SystemExit:
-            print(json.dumps(self.detail(), indent=1)[:20000])
+            try:
+                print(json.dumps(self.detail(), indent=1)[:20000])
+            except (URLError, OSError, ValueError) as error:
+                print(f"      (the guardrail's detail couldn't be read: {error})")
             raise
 
     def wait_for_rows(self, what: str, items: set[tuple[str, str]], *, exact: bool = False) -> None:
