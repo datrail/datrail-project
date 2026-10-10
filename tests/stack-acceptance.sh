@@ -116,6 +116,7 @@ RAILDASH_TOKEN_VALUE="$token" python3 tests/stack_acceptance.py \
   --project "$COMPOSE_PROJECT_NAME" \
   --agent "$([[ $mode == own-agent ]] && echo key:my-agent || echo compose:demo-agent)" \
   --open-port "docker exec -d $agent python3 -m http.server 9000 --bind 127.0.0.1" \
+  --agent-exec "docker exec $agent" \
   --settle "$((SCAN_INTERVAL * 3))" \
   | tee "$EVIDENCE_DIR/acceptance.txt"
 
