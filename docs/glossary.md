@@ -6,6 +6,7 @@ means in RailMon and RailDash today.
 - [Agent Security Profile (ASP)](#agent-security-profile-asp)
 - [Alignment](#alignment)
 - [Baseline](#baseline)
+- [Data Guardrail](#data-guardrail)
 - [Drift](#drift)
 - [Evidence](#evidence)
 - [Evidence bundle](#evidence-bundle)
@@ -55,6 +56,39 @@ back to an earlier version, or accept a drifted ASP as a new version, from the
 dashboard or with `raildash asp lock` / `raildash asp switch`. Nothing is
 locked automatically: a baseline always comes from a person deciding that this
 is how the agent should behave.
+
+## Data Guardrail
+
+Policy the user approved, checked on every [ASP](#agent-security-profile-asp)
+and every authenticated captured [interaction](#interaction) of one agent as
+it arrives. It has four rules:
+
+| Rule | Checks |
+| --- | --- |
+| `uploads` | A request carrying a body goes only to an allowed host, under that host's size cap if it has one, and the model never asks for a denied tool call. |
+| `saved_files` | Every file the agent writes matches an allowed path, and one of that path's allowed kinds (extensions) if it lists any. |
+| `service_ports` | The agent listens only where an allowed entry permits. The proposal allows none. |
+| `out_of_spec_calls` | Every call, with or without a body, goes to an allowed host, and every `mcp__<server>__<tool>` call the model asks for goes to an allowed MCP server. Both lists start from what the agent's configuration declared when the guardrail was proposed. |
+
+RailDash proposes the first guardrail from the agent's locked
+[baseline](#baseline): what the agent already did is allowed, except its
+listeners and undeclared calls, which it lists as would-be violations for you
+to allow. Nothing is checked until you adopt it. Like a baseline, every
+guardrail version is kept: **Allow this** on a violation and **Edit** each
+make a new version, and you can switch back to an earlier one or turn the
+guardrail off.
+
+An agent's guardrail state is one of:
+
+| State | Meaning |
+| --- | --- |
+| Held | Every rule was checked on current evidence and nothing broke it. |
+| Violated | At least one rule was broken; each rule and item is one row. Acknowledging a row clears it until the same thing happens again. |
+| Unverified | A rule could not be checked on current evidence, for example: the newest ASP is stale or the attribute was not fully observed, the collector's heartbeat stopped, requests arrived that can't be tied to one agent, or the ASP covers several agents in one sandbox. Never read as Held. |
+| No guardrail | None is active: never adopted, or turned off. |
+
+A guardrail is not drift: [drift](#drift) reports any difference from the
+baseline, while a guardrail reports only what breaks a rule you approved.
 
 ## Drift
 
