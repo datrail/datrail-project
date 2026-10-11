@@ -82,6 +82,8 @@ DEMO_MCP_CALL = "/opt/railmon/tools/local-demo/demo_mcp_call.py"
 MCP_ENDPOINT = "127.0.0.1/mcp"
 MCP_TOOL_PREFIX = f"mcp@{MCP_ENDPOINT}__"
 DATA_ACTIONS = "data_actions"
+EGRESS = "egress_containment"
+CONTAINED_LEVELS = ("allow_list_enforced", "no_network", "internal_network")
 # Past RailMon's (AgentSight's) 1 MiB HTTP body bound.
 BIG_CALL_BYTES = 1_500_000
 
@@ -187,8 +189,10 @@ class Guardrail:
         shown = {rule: r["state"] for rule, r in (detail["rules"] or {}).items()}
         wrong = {rule: state for rule, state in shown.items()
                  if (state == "violated") != (rule in counting)}
-        # Five rules: the proposal includes DR-205's data_actions (a v2 version).
-        if wrong or len(shown) != 5:
+        # Five rules: the proposal includes DR-205's data_actions (a v2
+        # version). Six once a version requires egress containment (DR-207):
+        # the proposal does for a contained agent, Require containment for any.
+        if wrong or len(shown) != (6 if EGRESS in shown else 5):
             sys.exit(f"FAIL: the rules shown {shown} disagree with the rules that have "
                      f"counting rows {sorted(counting)}")
 
@@ -252,6 +256,10 @@ def main() -> int:
                         help="a socket the agent's platform listens on in its container, such as "
                              "OpenShell's DNS (udp/127.0.0.53/53): a service_ports row the walk "
                              "expects and allows with the agent's own")
+    parser.add_argument("--expect-egress", required=True,
+                        choices=["allow_list_enforced", "no_network", "internal_network", "open",
+                                 "host_network"],
+                        help="the egress containment level RailMon reads for the agent (DR-207)")
     args = parser.parse_args()
     token = os.environ.get("RAILDASH_TOKEN_VALUE")
     if not token:
@@ -444,6 +452,9 @@ def main() -> int:
     expected = {"service_ports": "held", "saved_files": "violated",
                 "uploads": "violated", "out_of_spec_calls": "violated"}
     expected["data_actions"] = "held"
+    if EGRESS in shown:
+        # The proposal required containment: the baseline was contained.
+        expected[EGRESS] = "held"
     if shown != expected:
         sys.exit(f"FAIL: the rules read {shown}, expected {expected}")
     print(f"ok:   each rule's line agrees with its rows: {shown}")
@@ -503,6 +514,39 @@ def main() -> int:
             break
         time.sleep(5)
     print(f"measure: a {BIG_CALL_BYTES:,}-byte tools/call past the capture's 1 MiB bound was {outcome}")
+
+    # ---- 9. egress containment (DR-207) ---------------------------------------
+    # RailMon reads the agent's containment from Docker (rule pack 11), and
+    # the panel's Egress line shows it. A contained agent's proposal required
+    # it, so the adopted version holds; an open one's didn't, and Require
+    # containment makes a version it violates.
+    detail = guard.detail()
+    egress = detail.get("egress")
+    if egress is None:
+        # RailDash master before its DR-207 change: nothing to check yet.
+        print("skip: this RailDash has no Egress line yet (DR-207 M2)")
+    else:
+        reading = egress.get("reading") or {}
+        print(f"      egress: {json.dumps(reading)}")
+        if reading.get("status") != "ANSWERED" or reading.get("level") != args.expect_egress:
+            sys.exit(f"FAIL: the agent's egress reads {reading}, expected {args.expect_egress}")
+        print(f"ok:   the Egress line reads {args.expect_egress}, observed")
+        required = EGRESS in detail["active"]["guardrail"]["rules"]
+        if required != (args.expect_egress in CONTAINED_LEVELS):
+            sys.exit(f"FAIL: the adopted proposal {'required' if required else 'did not require'} "
+                     f"containment for a {args.expect_egress} agent")
+        if required:
+            if detail["rules"][EGRESS]["state"] != "held":
+                sys.exit(f"FAIL: containment is required and the rule reads {detail['rules'][EGRESS]}")
+            print("ok:   the proposal required containment, and the rule is held")
+        else:
+            made = api(base, f"/api/guardrails/{guard._agent_ref()}/egress-containment", token, {})
+            if made.get("starts_violated") is not True:
+                sys.exit(f"FAIL: Require containment on an open agent didn't say it starts Violated: {made}")
+            print(f"ok:   Require containment made {made['guardrail']['version']}, which starts Violated")
+            guard.wait_for_rows("(h) an open agent under a version that requires containment is an "
+                                "egress_containment violation",
+                                everything | {(EGRESS, args.expect_egress)}, exact=True)
 
     with urlopen(base + "/", timeout=30) as response:
         page = response.read().decode("utf-8", "replace")
