@@ -99,6 +99,10 @@ hand:
   violated. **Acknowledge** a row to clear it until the same thing happens
   again; **Allow this** makes a new guardrail version that allows it. Edit,
   switch to an earlier version or turn the guardrail off from the same panel.
+  The card's **Egress** line reads *Open*: the demo agent is on an ordinary
+  Docker network and can reach any host. **Require containment** adds a rule
+  it then violates. An agent in an OpenShell sandbox reads *Contained*
+  ([INSTALL](INSTALL.md#an-agent-in-an-openshell-sandbox)).
 - **Data actions.** The demo agent also talks to a small MCP server (at
   `/mcp` on its own port) that offers two tools, `read_doc` and
   `upload_file`, and it only ever reads. So the proposal you adopted allowed
