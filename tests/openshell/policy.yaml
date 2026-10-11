@@ -1,0 +1,25 @@
+# The sandbox policy for the demo agent (DR-206). OpenShell's quick-start
+# filesystem rules, plus /opt (RailMon's demo scripts) to read and /data (the
+# walk's saved_files step) to write. Its calls to its own server on
+# 127.0.0.1 need no rule: loopback stays inside the sandbox. The one network
+# rule lets the agent reach api.github.com, so one call goes through
+# OpenShell's supervisor, which terminates the agent's TLS and makes the
+# real connection itself.
+version: 1
+filesystem_policy:
+  include_workdir: true
+  read_only: [/bin, /usr, /lib, /proc, /dev/urandom, /etc, /var/log, /opt]
+  read_write: [/sandbox, /tmp, /dev/null, /data]
+landlock:
+  compatibility: best_effort
+network_policies:
+  github_api:
+    name: github-api-readonly
+    endpoints:
+      - host: api.github.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        access: read-only
+    binaries:
+      - { path: /usr/local/bin/my-agent-bin }

@@ -6,6 +6,11 @@
 # the stack starts without the demo agent, pointed at a container the user
 # starts afterwards with `docker run`, which listens on its port at once.
 #
+# STACK_MODE=openshell runs the same agent in an NVIDIA OpenShell sandbox
+# (DR-206), started before the stack, as INSTALL.md's "An agent in an
+# OpenShell sandbox" says. It needs OpenShell's gateway with the Docker
+# driver running (tests/openshell/install.sh on a CI host).
+#
 # Run only on a disposable host: RailMon's collector, listen probe and files
 # probe are privileged and share the host's PID namespace.
 set -euo pipefail
@@ -27,6 +32,14 @@ case "$mode" in
     # INSTALL.md's command, word for word, plus --build.
     agent=my-agent
     export AGENT_CONTAINER=my-agent
+    up=(up -d --build --scale demo-agent=0)
+    ;;
+  openshell)
+    # The sandbox's container is named after an id OpenShell generates, so
+    # it is looked up below, once the sandbox exists; the agent key keeps
+    # RailDash's name for the agent stable.
+    sandbox=my-agent
+    export AGENT_KEY=my-agent
     up=(up -d --build --scale demo-agent=0)
     ;;
   *) echo "unknown STACK_MODE $mode" >&2; exit 2 ;;
@@ -66,12 +79,25 @@ for row in db.execute("SELECT method, host, path, authenticated, raw FROM intera
     docker logs my-agent > "$EVIDENCE_DIR/my-agent.log" 2>&1 || true
     docker rm -f my-agent > /dev/null 2>&1 || true
   fi
+  if [[ $mode == openshell ]]; then
+    # The sandbox's image is built on RailMon's, which the reset removes.
+    openshell sandbox logs "$sandbox" > "$EVIDENCE_DIR/my-agent.log" 2>&1 || true
+    openshell sandbox delete "$sandbox" > "$EVIDENCE_DIR/sandbox-delete.log" 2>&1 || true
+    for _ in $(seq 30); do
+      [[ -z "$(sandbox_containers)" ]] && break
+      sleep 2
+    done
+    docker image rm -f datrail-openshell-agent:local > /dev/null 2>&1 || true
+  fi
   # The README's reset, so it is checked on every run: nothing of the
   # project's may survive it, including the older version's volume.
   { make clean && [[ -z "$(project_volumes)" ]] \
       && [[ -z "$(docker image ls -q datrail-railmon:local)$(docker image ls -q datrail-raildash:local)" ]]; } \
     > "$EVIDENCE_DIR/cleanup.log" 2>&1 || { [[ $result != 0 ]] || result=1; }
   exit "$result"
+}
+sandbox_containers() {
+  docker ps -aq --filter "label=openshell.ai/sandbox-name=${sandbox:-}"
 }
 trap cleanup EXIT
 
@@ -85,6 +111,39 @@ for repo in railmon raildash; do
 done | tee "$EVIDENCE_DIR/component-commits.txt"
 
 "${compose[@]}" config --quiet
+
+if [[ $mode == openshell ]]; then
+  [[ -z "$(sandbox_containers)" ]]
+  # The agent first, then the stack pointed at its container: the order a
+  # user with a sandbox already running follows. The demo agent's loop, as
+  # the own-agent job runs it, plus one GET to api.github.com per cycle once
+  # /sandbox/outbound exists, which only OpenShell's supervisor can carry.
+  "${compose[@]}" build railmon-collect 2>&1 | tee "$EVIDENCE_DIR/build.log"
+  docker build -t datrail-openshell-agent:local tests/openshell \
+    2>&1 | tee -a "$EVIDENCE_DIR/build.log"
+  openshell sandbox create --name "$sandbox" --from datrail-openshell-agent:local \
+    --policy tests/openshell/policy.yaml --detach --no-tty -- sh -c '
+    set -eu
+    demo=/opt/railmon/tools/local-demo
+    certs=$(mktemp -d)
+    openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj /CN=127.0.0.1 \
+      -keyout "$certs/key.pem" -out "$certs/cert.pem" >/dev/null 2>&1
+    my-agent-bin "$demo/demo_server.py" "$certs/cert.pem" "$certs/key.pem" &
+    while sleep '"$DEMO_INTERVAL"'; do
+      my-agent-bin "$demo/demo_client.py" || true
+      if [ -e /sandbox/outbound ]; then
+        my-agent-bin -c "import urllib.request; urllib.request.urlopen(\"https://api.github.com/zen\", timeout=10).read()" || true
+      fi
+    done
+  ' 2>&1 | tee "$EVIDENCE_DIR/sandbox-create.log"
+  agent=$(docker ps --format '{{.Names}}' --filter "label=openshell.ai/sandbox-name=$sandbox" \
+    --filter label=openshell.ai/isolation-role=sandbox)
+  [[ $agent == openshell-* && $agent != *$'\n'* ]] \
+    || { echo "no single running sandbox container for $sandbox: '$agent'" >&2; exit 1; }
+  docker inspect "$agent" > "$EVIDENCE_DIR/sandbox-container.json"
+  echo "sandbox container: $agent" | tee "$EVIDENCE_DIR/sandbox-container.txt"
+  export AGENT_CONTAINER=$agent
+fi
 "${compose[@]}" "${up[@]}" 2>&1 | tee "$EVIDENCE_DIR/up.log"
 
 if [[ $mode == own-agent ]]; then
@@ -122,7 +181,7 @@ done
 RAILDASH_TOKEN_VALUE="$token" python3 tests/stack_acceptance.py \
   --url "http://127.0.0.1:${RAILDASH_PORT:-8000}" \
   --project "$COMPOSE_PROJECT_NAME" \
-  --agent "$([[ $mode == own-agent ]] && echo key:my-agent || echo compose:demo-agent)" \
+  --agent "$([[ $mode == demo ]] && echo compose:demo-agent || echo key:my-agent)" \
   --open-port "docker exec -d $agent python3 -m http.server 9000 --bind 127.0.0.1" \
   --agent-exec "docker exec $agent" \
   --settle "$((SCAN_INTERVAL * 3))" \
@@ -183,5 +242,27 @@ while time.time() < deadline:
         sys.exit(0)
     time.sleep(2)
 sys.exit("FAIL  no interaction from my-agent within 180 s of its restart")
+PY
+fi
+
+if [[ $mode == openshell ]]; then
+  # A call that leaves the sandbox: OpenShell's supervisor terminates the
+  # agent's TLS with a CA of its own and makes the real connection, so the
+  # agent's own TLS still carries the plaintext the collector reads.
+  docker exec "$agent" touch /sandbox/outbound
+  python3 - "http://127.0.0.1:${RAILDASH_PORT:-8000}" <<'PY' | tee -a "$EVIDENCE_DIR/acceptance.txt"
+import json, sys, time, urllib.request
+base = sys.argv[1]
+deadline = time.time() + 180
+while time.time() < deadline:
+    with urllib.request.urlopen(f"{base}/api/interactions?limit=100", timeout=10) as r:
+        rows = json.load(r)["items"]
+    out = [x for x in rows if "api.github.com" in (x.get("host") or "") and x.get("path") == "/zen"
+           and x.get("method") == "GET" and x.get("status_code") == 200]
+    if out:
+        print(f"ok    the agent's GET to api.github.com through OpenShell's supervisor arrives ({len(out)})")
+        sys.exit(0)
+    time.sleep(3)
+sys.exit("FAIL  no GET https://api.github.com/zen from the sandboxed agent within 180 s")
 PY
 fi
