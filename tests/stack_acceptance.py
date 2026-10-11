@@ -15,17 +15,20 @@ then, driving RailDash's own HTTP routes the way the dashboard does:
    keeps as one ASP (DR-157), so no new ASP is expected here, and any that
    arrives while the agent keeps doing its normal work must be ALIGNED: the
    evidence, the file list included, does not churn;
-4. the Data Guardrail (DR-184 M4, the design's §6 step 4): adopting the
-   unedited proposal from that baseline is Violated by the agent's own
-   listener on 8443 and by its calls to 127.0.0.1, which its configuration
-   doesn't declare; Allow this on both is Held once the next scan, capture
-   and heartbeat arrive;
-5. a port the agent opens afterwards makes the next interval scan deliver a
-   new ASP, unprompted, that is DRIFT_DETECTED with observed_listeners among
-   the changes, and is a `service_ports` violation. The command that opens
-   it is a new process reading files of its own before it listens, so a
-   scan in between may deliver an ASP that drifted on observed_file_access
-   alone; any other new ASP must be ALIGNED;
+4. a port the agent opens afterwards (the README's drift step) makes the
+   next interval scan deliver a new ASP, unprompted, that is
+   DRIFT_DETECTED with observed_listeners among the changes. The command
+   that opens it is a new process reading files of its own before it
+   listens, so a scan in between may deliver an ASP that drifted on
+   observed_file_access alone; any other new ASP must be ALIGNED;
+5. the Data Guardrail (DR-184 M4, the design's §6 step 4), in the README's
+   order, after the drift step: adopting the unedited proposal from that
+   baseline is Violated by exactly the agent's own listener on 8443, the
+   port the drift step opened, and its calls to 127.0.0.1, which its
+   configuration doesn't declare. Nothing else: the Python commands the
+   walk runs in the agent write bytecode caches, which the proposal
+   allows (DR-201). Allow this on each is Held once the next scan,
+   capture and heartbeat arrive;
 6. then, in the agent: writing /data/report.zip is a `saved_files`
    violation; a POST with a body to a host outside both lists is an
    `uploads` and an `out_of_spec_calls` violation, and repeating it after
@@ -329,21 +332,7 @@ def main() -> int:
                      "only did its normal work, expected ALIGNED")
     print(f"ok:   nothing drifted in {args.settle:.0f}s of the agent's normal work")
 
-    # ---- 4. the Data Guardrail ---------------------------------------------
-    guard = Guardrail(base, token, ours)
-    guard.adopt(version["alignment_version_id"])
-    guard.wait_for_rows(
-        "adopting the unedited proposal is Violated by the agent's own listener and its "
-        "undeclared calls to 127.0.0.1",
-        {("service_ports", f"tcp/127.0.0.1/{DEMO_PORT}"), ("out_of_spec_calls", "127.0.0.1")},
-        exact=True,
-    )
-    for rule, item in (("service_ports", f"tcp/127.0.0.1/{DEMO_PORT}"),
-                       ("out_of_spec_calls", "127.0.0.1")):
-        guard.allow(rule, item)
-    guard.wait_for_state("held", "with both allowed, the next scan, capture and heartbeat are Held",
-                         timeout=240)
-
+    # ---- 4. the README's drift step ---------------------------------------
     subprocess.run(shlex.split(args.open_port), check=True)
 
     def drifted() -> dict | None:
@@ -367,40 +356,61 @@ def main() -> int:
         print(json.dumps(drift, indent=1))
         sys.exit("FAIL: observed_listeners is not among the drift changes")
     print("ok:   observed_listeners is among the changes")
-    guard.wait_for_rows("(a) the opened port is a service_ports violation",
-                        {("service_ports", "tcp/127.0.0.1/9000")})
+
+    # ---- 5. the Data Guardrail, adopted after the drift step -----------------
+    guard = Guardrail(base, token, ours)
+    guard.adopt(version["alignment_version_id"])
+    first = {("service_ports", f"tcp/127.0.0.1/{DEMO_PORT}"), ("service_ports", "tcp/127.0.0.1/9000"),
+             ("out_of_spec_calls", "127.0.0.1")}
+    guard.wait_for_rows(
+        "adopting the unedited proposal is Violated by exactly the agent's own listener, the "
+        "port the drift step opened, and its undeclared calls to 127.0.0.1",
+        first, exact=True,
+    )
+    for rule, item in sorted(first):
+        guard.allow(rule, item)
+    guard.wait_for_state("held", "with each allowed, the next scan, capture and heartbeat are Held",
+                         timeout=240)
 
     agent = shlex.split(args.agent_exec)
     subprocess.run([*agent, "sh", "-c", "mkdir -p /data && echo report > /data/report.zip"], check=True)
-    guard.wait_for_rows("(b) writing /data/report.zip is a saved_files violation",
-                        {("saved_files", "/data/report.zip")})
+    saved = {("saved_files", "/data/report.zip")}
+    guard.wait_for_rows("(a) writing /data/report.zip is a saved_files violation", saved, exact=True)
 
     send = lambda method, host: subprocess.run(  # noqa: E731
         [*agent, "python3", "-c", AGENT_REQUEST, method, host], check=True)
     send("POST", EXFIL_HOST)
-    guard.wait_for_rows("(c) a POST with a body to an unlisted host is an uploads and an "
-                        "out_of_spec_calls violation",
-                        {("uploads", EXFIL_HOST), ("out_of_spec_calls", EXFIL_HOST)})
+    exfil = saved | {("uploads", EXFIL_HOST), ("out_of_spec_calls", EXFIL_HOST)}
+    guard.wait_for_rows("(b) a POST with a body to an unlisted host is an uploads and an "
+                        "out_of_spec_calls violation", exfil, exact=True)
     guard.acknowledge("uploads", EXFIL_HOST)
     if guard.row("uploads", EXFIL_HOST)["counts"]:
         sys.exit("FAIL: an acknowledged row still counts")
     send("POST", EXFIL_HOST)
     guard.wait_for(
-        "(d) the same POST after Acknowledge re-opens the row",
+        "(c) the same POST after Acknowledge re-opens the row",
         lambda: (row := guard.row("uploads", EXFIL_HOST)) and row["counts"] and row["count"] >= 2,
     )
     send("GET", SECOND_HOST)
-    guard.wait_for_rows("(e) a GET without a body to a second unlisted host is an "
-                        "out_of_spec_calls violation", {("out_of_spec_calls", SECOND_HOST)})
+    final = exfil | {("out_of_spec_calls", SECOND_HOST)}
+    guard.wait_for_rows("(d) a GET without a body to a second unlisted host is an "
+                        "out_of_spec_calls violation", final, exact=True)
     if guard.row("uploads", SECOND_HOST) is not None:
         sys.exit(f"FAIL: a GET without a body to {SECOND_HOST} was judged an upload")
     print("ok:   ... and not an upload")
+    # The README's last line: what each rule then reads. Checked again after
+    # a few scan intervals: rows stay until acknowledged, so a row the Python
+    # commands' scans bring late (a bytecode cache the proposal didn't
+    # allow) would still be in that snapshot.
+    time.sleep(args.settle)
+    guard.wait_for_rows("after a few more scans, still exactly those rows", final, exact=True)
     detail = guard.detail()
     guard.check_rules(detail)
     shown = {rule: r["state"] for rule, r in detail["rules"].items()}
-    for rule in ("saved_files", "uploads", "out_of_spec_calls"):
-        if shown[rule] != "violated":
-            sys.exit(f"FAIL: {rule} reads {shown[rule]} beside its counting rows: {shown}")
+    expected = {"service_ports": "held", "saved_files": "violated",
+                "uploads": "violated", "out_of_spec_calls": "violated"}
+    if shown != expected:
+        sys.exit(f"FAIL: the rules read {shown}, expected {expected}")
     print(f"ok:   each rule's line agrees with its rows: {shown}")
 
     with urlopen(base + "/", timeout=30) as response:
