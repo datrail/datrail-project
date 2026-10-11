@@ -249,6 +249,13 @@ container: run the `docker compose up` line again so the stack follows it.
   with the agent's own.
 - Only the Docker driver is covered. Podman, Kubernetes and the MicroVM
   driver run the agent elsewhere.
+- RailDash's Data Guardrail panel shows the sandbox's **Egress** as
+  *Contained: OpenShell enforces an allow-list*. It's read from Docker:
+  OpenShell's sandbox labels together with a container that has no network
+  of its own, no runtime socket and no privilege. The allow-list itself
+  stays inside OpenShell, so datRail doesn't show what's on it. Because the
+  baseline is contained, the proposed guardrail requires containment, so a
+  sandbox that loses it is flagged.
 
 This repository's CI runs this with OpenShell 0.1.3 and the demo agent
 (`STACK_MODE=openshell`): the same walk as the own-agent job, then a call
@@ -324,8 +331,11 @@ agent's type, owner, LLM provider, sandbox type and system and user info.
 Pack 9 (9 October 2026 UTC) adds `agent_instance`, where this copy runs:
 the agent container's hostname, id and host pid, and the scan's own fqdn,
 pid and working directory. RailDash leaves its value out of drift, so a new
-hostname, container id or pid on its own is not drift. Check the
-newest ASP's evidence and lock it as the new baseline; it happens once per
+hostname, container id or pid on its own is not drift. Pack 10 (11 October
+2026 UTC) folds Python's bytecode-cache writes into `<dir>/__pycache__/*.pyc`.
+Pack 11 (11 October 2026) adds `egress_containment`, whether the agent's
+egress is contained as Docker shows it, and `egress_proxy_declared`, the proxy
+its environment declares. Check the newest ASP's evidence and lock it as the new baseline; it happens once per
 upgrade.
 
 **`observed_file_access` lists new paths after the agent restarts.** A

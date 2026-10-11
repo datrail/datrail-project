@@ -523,30 +523,28 @@ def main() -> int:
     detail = guard.detail()
     egress = detail.get("egress")
     if egress is None:
-        # RailDash master before its DR-207 change: nothing to check yet.
-        print("skip: this RailDash has no Egress line yet (DR-207 M2)")
+        sys.exit("FAIL: the guardrail's detail has no Egress line (DR-207)")
+    reading = egress.get("reading") or {}
+    print(f"      egress: {json.dumps(reading)}")
+    if reading.get("status") != "ANSWERED" or reading.get("level") != args.expect_egress:
+        sys.exit(f"FAIL: the agent's egress reads {reading}, expected {args.expect_egress}")
+    print(f"ok:   the Egress line reads {args.expect_egress}, observed")
+    required = EGRESS in detail["active"]["guardrail"]["rules"]
+    if required != (args.expect_egress in CONTAINED_LEVELS):
+        sys.exit(f"FAIL: the adopted proposal {'required' if required else 'did not require'} "
+                 f"containment for a {args.expect_egress} agent")
+    if required:
+        if detail["rules"][EGRESS]["state"] != "held":
+            sys.exit(f"FAIL: containment is required and the rule reads {detail['rules'][EGRESS]}")
+        print("ok:   the proposal required containment, and the rule is held")
     else:
-        reading = egress.get("reading") or {}
-        print(f"      egress: {json.dumps(reading)}")
-        if reading.get("status") != "ANSWERED" or reading.get("level") != args.expect_egress:
-            sys.exit(f"FAIL: the agent's egress reads {reading}, expected {args.expect_egress}")
-        print(f"ok:   the Egress line reads {args.expect_egress}, observed")
-        required = EGRESS in detail["active"]["guardrail"]["rules"]
-        if required != (args.expect_egress in CONTAINED_LEVELS):
-            sys.exit(f"FAIL: the adopted proposal {'required' if required else 'did not require'} "
-                     f"containment for a {args.expect_egress} agent")
-        if required:
-            if detail["rules"][EGRESS]["state"] != "held":
-                sys.exit(f"FAIL: containment is required and the rule reads {detail['rules'][EGRESS]}")
-            print("ok:   the proposal required containment, and the rule is held")
-        else:
-            made = api(base, f"/api/guardrails/{guard._agent_ref()}/egress-containment", token, {})
-            if made.get("starts_violated") is not True:
-                sys.exit(f"FAIL: Require containment on an open agent didn't say it starts Violated: {made}")
-            print(f"ok:   Require containment made {made['guardrail']['version']}, which starts Violated")
-            guard.wait_for_rows("(h) an open agent under a version that requires containment is an "
-                                "egress_containment violation",
-                                everything | {(EGRESS, args.expect_egress)}, exact=True)
+        made = api(base, f"/api/guardrails/{guard._agent_ref()}/egress-containment", token, {})
+        if made.get("starts_violated") is not True:
+            sys.exit(f"FAIL: Require containment on an open agent didn't say it starts Violated: {made}")
+        print(f"ok:   Require containment made {made['guardrail']['version']}, which starts Violated")
+        guard.wait_for_rows("(h) an open agent under a version that requires containment is an "
+                            "egress_containment violation",
+                            everything | {(EGRESS, args.expect_egress)}, exact=True)
 
     with urlopen(base + "/", timeout=30) as response:
         page = response.read().decode("utf-8", "replace")
