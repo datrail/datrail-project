@@ -52,6 +52,14 @@ cleanup() {
   # What railmon-files recorded: file paths of the CI agent, nothing secret.
   "${compose[@]}" cp railmon-files:/files/files.jsonl "$EVIDENCE_DIR/files.jsonl" \
     > /dev/null 2>&1 || true
+  # The demo's MCP exchanges as RailDash stored them (DR-205): real captures
+  # for RailDash's golden tests. Local, self-signed demo traffic only.
+  "${compose[@]}" exec -T raildash python3 -c '
+import json, sqlite3
+db = sqlite3.connect("file:/data/raildash.db?mode=ro", uri=True)
+for row in db.execute("SELECT method, host, path, authenticated, raw FROM interactions WHERE path LIKE ?", ("/mcp%",)):
+    print(json.dumps(dict(zip(("method", "host", "path", "authenticated", "raw"), row))))
+' > "$EVIDENCE_DIR/mcp-interactions.jsonl" 2>/dev/null || true
   if [[ $mode == own-agent ]]; then
     # The user's own container: not the stack's, so `make clean` leaves it,
     # and it holds the RailMon image the reset removes.
