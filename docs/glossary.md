@@ -61,7 +61,7 @@ is how the agent should behave.
 
 Policy the user approved, checked on every [ASP](#agent-security-profile-asp)
 and every authenticated captured [interaction](#interaction) of one agent as
-it arrives. It has four rules:
+it arrives. It has five rules:
 
 | Rule | Checks |
 | --- | --- |
@@ -69,11 +69,15 @@ it arrives. It has four rules:
 | `saved_files` | Every file the agent writes matches an allowed path, and one of that path's allowed kinds (extensions) if it lists any. |
 | `service_ports` | The agent listens only where an allowed entry permits. The proposal allows none. |
 | `out_of_spec_calls` | Every call, with or without a body, goes to an allowed host, and every `mcp__<server>__<tool>` call the model asks for goes to an allowed MCP server. Both lists start from what the agent's configuration declared when the guardrail was proposed. |
+| `data_actions` | Every MCP tool call does only what is allowed for that tool: `read`, `upload`, `update`, `delete` or `execute`, read from the schema the agent was given (the tool list in its model requests, its MCP server's `tools/list`). A tool nothing classifies, a call to a tool its server never listed, and a call to an MCP endpoint that can't be read are rows of their own. A guardrail adopted before this rule existed is offered it (**Add data actions**). |
 
 RailDash proposes the first guardrail from the agent's locked
 [baseline](#baseline): what the agent already did is allowed, except its
 listeners and undeclared calls, which it lists as would-be violations for you
-to allow. It also allows Python's bytecode caches (`**/__pycache__/*.pyc`),
+to allow. For data actions it allows what each MCP tool did while the agent
+was learning, and every declared tool that only reads; any other declared
+tool is listed as blocked until you allow it. It also allows Python's
+bytecode caches (`**/__pycache__/*.pyc`),
 which Python writes for the modules it imports, as a line you can remove.
 Nothing is checked until you adopt it. Like a baseline, every guardrail
 version is kept: **Allow this** on a violation, **Allow all** on one rule's

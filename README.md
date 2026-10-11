@@ -7,8 +7,10 @@ data it touches, the ports it opens. It turns those observations into an
 **Agent Security Profile (ASP)**. Once you lock an ASP as the agent's baseline,
 every later observation is compared with it, and anything new is reported as
 drift. A **Data Guardrail** adopted from that baseline then checks every ASP
-and every captured request against four rules you approve: allowed uploads,
-saved-file kinds, no service ports and no out-of-spec calls.
+and every captured request against five rules you approve: allowed uploads,
+saved-file kinds, no service ports, no out-of-spec calls, and what each MCP
+tool call may do with data (read, upload, update, delete, execute), read
+from the schema the agent was given.
 
 This repository is the starting point. It runs the open-source DatRail stack
 on your own machine with one command, and links to every component.
@@ -92,11 +94,29 @@ hand:
 
   The agent turns **Violated**, with one row per rule and item:
   `/data/report.zip` under Saved files, and `exfil.example` under both
-  Uploads and Out-of-spec calls. Above the rows, Service ports reads held
-  and Saved files, Uploads and Out-of-spec calls read violated. **Acknowledge**
-  a row to clear it until the same thing happens again; **Allow this** makes a
-  new guardrail version that allows it. Edit, switch to an earlier version or
-  turn the guardrail off from the same panel.
+  Uploads and Out-of-spec calls. Above the rows, Service ports and Data
+  actions read held, and Saved files, Uploads and Out-of-spec calls read
+  violated. **Acknowledge** a row to clear it until the same thing happens
+  again; **Allow this** makes a new guardrail version that allows it. Edit,
+  switch to an earlier version or turn the guardrail off from the same panel.
+- **Data actions.** The demo agent also talks to a small MCP server (at
+  `/mcp` on its own port) that offers two tools, `read_doc` and
+  `upload_file`, and it only ever reads. So the proposal you adopted allowed
+  `read_doc` and listed `upload_file` as blocked until allowed (see **Data
+  actions** in the observed profile for what each call did and why). Make
+  the agent use the tools it was never meant to:
+
+  ```bash
+  mcp="docker exec datrail-demo-agent python3 /opt/railmon/tools/local-demo/demo_mcp_call.py"
+  $mcp upload_file   # uploads a small PNG through upload_file
+  $mcp export_all    # a tool the server never listed
+  $mcp --garbage     # a POST to /mcp that isn't JSON-RPC
+  ```
+
+  Under Data actions: `mcp@127.0.0.1/mcp__upload_file · upload`, an upload
+  carrying an image; `mcp@127.0.0.1/mcp__export_all · unclassified`, then
+  about a minute later `… · not offered by 127.0.0.1/mcp`; and
+  `127.0.0.1/mcp · unreadable call`. Data actions now reads violated.
 
 To watch your own agent instead of the demo, see
 [INSTALL.md](INSTALL.md#watch-your-own-agent).

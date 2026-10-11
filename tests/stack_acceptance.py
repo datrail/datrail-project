@@ -38,7 +38,14 @@ then, driving RailDash's own HTTP routes the way the dashboard does:
    own HTTPS server with another Host header, which is what RailDash judges
    them by, so no outside network is involved. The collector follows only
    the agent's own process session, not a `docker exec`, so they are seen
-   on the server's side, as the agent's server reads them.
+   on the server's side, as the agent's server reads them;
+7. data actions (DR-205), the KubeCon step: the demo agent lists its MCP
+   server's tools (read_doc, upload_file) and reads through read_doc, so
+   the adopted proposal allows read_doc and blocks upload_file until
+   allowed. Then, in the agent: an upload_file with a PNG is a
+   `data_actions` upload violation carrying an image; a tool the server
+   never listed is unclassified, and "not offered" once the 60 s delay has
+   passed; a POST to /mcp that isn't JSON-RPC is an unreadable call.
 
 Whenever the guardrail is checked, each rule's shown state must agree with
 its rows: `violated` exactly while the rule has a counting row (DR-200).
@@ -68,6 +75,12 @@ DEMO_PORT = 8443
 # The agent runs this script for every call it makes (the RailMon image's
 # local demo), so railmon-files must report it read.
 DEMO_SCRIPT = "/opt/railmon/tools/local-demo/demo_client.py"
+# DR-205: the demo's MCP server is at /mcp on DEMO_PORT; the agent declares
+# no MCP server, so RailDash names its tools by endpoint.
+DEMO_MCP_CALL = "/opt/railmon/tools/local-demo/demo_mcp_call.py"
+MCP_ENDPOINT = "127.0.0.1/mcp"
+MCP_TOOL_PREFIX = f"mcp@{MCP_ENDPOINT}__"
+DATA_ACTIONS = "data_actions"
 
 
 def api(base: str, path: str, token: str | None = None, body: dict | None = None) -> Any:
@@ -171,9 +184,8 @@ class Guardrail:
         shown = {rule: r["state"] for rule, r in (detail["rules"] or {}).items()}
         wrong = {rule: state for rule, state in shown.items()
                  if (state == "violated") != (rule in counting)}
-        # Four rules in a v1 version; five once the proposal includes
-        # DR-205's data_actions (a v2 version).
-        if wrong or len(shown) not in (4, 5):
+        # Five rules: the proposal includes DR-205's data_actions (a v2 version).
+        if wrong or len(shown) != 5:
             sys.exit(f"FAIL: the rules shown {shown} disagree with the rules that have "
                      f"counting rows {sorted(counting)}")
 
@@ -423,12 +435,41 @@ def main() -> int:
     shown = {rule: r["state"] for rule, r in detail["rules"].items()}
     expected = {"service_ports": "held", "saved_files": "violated",
                 "uploads": "violated", "out_of_spec_calls": "violated"}
-    if "data_actions" in shown:
-        # The demo agent calls no MCP tool and asks no model: nothing for
-        # the data_actions rule (DR-205) to flag.
-        expected["data_actions"] = "held"
+    expected["data_actions"] = "held"
     if shown != expected:
         sys.exit(f"FAIL: the rules read {shown}, expected {expected}")
+    print(f"ok:   each rule's line agrees with its rows: {shown}")
+
+    # ---- 6. data actions (DR-205), the KubeCon step ---------------------------
+    # The demo agent's MCP server offers read_doc and upload_file; the agent
+    # only reads, so the adopted proposal allowed read_doc and blocked
+    # upload_file until allowed. The calls go to the agent's own server.
+    proposal = guard.detail()["active"]["guardrail"]["rules"]["data_actions"]
+    if {"tool": f"{MCP_TOOL_PREFIX}read_doc", "actions": ["read"]} not in proposal["allowed"]:
+        sys.exit(f"FAIL: the proposal didn't allow the read_doc the agent used: {proposal}")
+    print("ok:   the adopted proposal allows read_doc, the tool the agent read with")
+    mcp = lambda *what: subprocess.run([*agent, "python3", DEMO_MCP_CALL, *what], check=True)  # noqa: E731
+    mcp("upload_file")
+    upload = (DATA_ACTIONS, f"{MCP_TOOL_PREFIX}upload_file · upload")
+    uploaded = final | {upload}
+    guard.wait_for_rows("(e) upload_file, which the agent never used while learning, is a "
+                        "data_actions violation", uploaded, exact=True)
+    kinds = guard.row(*upload)["detail"].get("content_kinds")
+    if kinds != ["image"]:
+        sys.exit(f"FAIL: the upload's content kinds are {kinds}, expected ['image']")
+    print("ok:   ... and it carried an image")
+    mcp("export_all")
+    offered = uploaded | {(DATA_ACTIONS, f"{MCP_TOOL_PREFIX}export_all · unclassified"),
+                          (DATA_ACTIONS, f"{MCP_TOOL_PREFIX}export_all · not offered by {MCP_ENDPOINT}")}
+    guard.wait_for_rows("(f) a tool the server never listed is unclassified, and not offered "
+                        "once the 60 s delay has passed", offered, exact=True)
+    mcp("--garbage")
+    everything = offered | {(DATA_ACTIONS, f"{MCP_ENDPOINT} · unreadable call")}
+    guard.wait_for_rows("(g) a POST to the MCP endpoint that isn't JSON-RPC is an unreadable call",
+                        everything, exact=True)
+    shown = {rule: r["state"] for rule, r in guard.detail()["rules"].items()}
+    if shown.get("data_actions") != "violated":
+        sys.exit(f"FAIL: the rules read {shown}, expected data_actions violated")
     print(f"ok:   each rule's line agrees with its rows: {shown}")
 
     with urlopen(base + "/", timeout=30) as response:
