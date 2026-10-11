@@ -216,7 +216,11 @@ counts it ([railmon#70](https://github.com/datrail/railmon/issues/70)).
 ### An agent in an OpenShell sandbox
 
 With [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell)'s Docker
-driver, each sandbox is a container. Its name carries an id OpenShell
+driver, each sandbox is a container. OpenShell asks of the image a non-root
+user and a `/sandbox` directory that user can write, and of the sandbox's
+policy a `network_policies` entry for each outside host the agent calls
+([`tests/openshell/`](tests/openshell) has both for the demo agent). The
+container's name carries an id OpenShell
 generates, so look it up by the sandbox's name, and set `AGENT_KEY` so
 RailDash keeps one name for the agent across new sandboxes:
 
@@ -236,9 +240,11 @@ container: run the `docker compose up` line again so the stack follows it.
   with a CA of its own. The collector reads the agent's side either way,
   so each call appears as the agent made it, before OpenShell adds any
   provider credential.
-- OpenShell opens every socket for the agent, so `observed_listeners`
-  names `openshell-sandb` as the listening process, and lists OpenShell's
-  own DNS on `127.0.0.53:53` (TCP and UDP) with the agent's ports. The
+- OpenShell opens every socket for the agent, so a port that was already
+  listening when the stack started is listed under `openshell-sandb`, not
+  the agent's own process name. `observed_listeners` also lists
+  OpenShell's own DNS on `127.0.0.53:53` (TCP and UDP) with the agent's
+  ports. The
   Data Guardrail's proposal shows them as `service_ports` rows; allow them
   with the agent's own.
 - Only the Docker driver is covered. Podman, Kubernetes and the MicroVM

@@ -22,7 +22,8 @@ systemctl --user enable openshell-gateway
 systemctl --user restart openshell-gateway
 openshell gateway add https://127.0.0.1:17670 --local --name openshell
 for _ in $(seq 60); do
-  NO_COLOR=1 openshell status 2>/dev/null | grep -q 'Version:' && break
+  status=$(NO_COLOR=1 openshell status 2>/dev/null || true)
+  [[ $status == *Version:* ]] && break
   sleep 2
 done
 NO_COLOR=1 openshell status

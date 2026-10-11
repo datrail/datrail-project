@@ -155,8 +155,13 @@ if [[ $mode == openshell ]]; then
       fi
     done
   ' 2>&1 | tee "$EVIDENCE_DIR/sandbox-create.log"
-  agent=$(docker ps --format '{{.Names}}' --filter "label=openshell.ai/sandbox-name=$sandbox" \
-    --filter label=openshell.ai/isolation-role=sandbox)
+  # --detach returns as the container is created, so give it a moment to run.
+  for _ in $(seq 30); do
+    agent=$(docker ps --format '{{.Names}}' --filter "label=openshell.ai/sandbox-name=$sandbox" \
+      --filter label=openshell.ai/isolation-role=sandbox)
+    [[ -n $agent ]] && break
+    sleep 1
+  done
   [[ $agent == openshell-* && $agent != *$'\n'* ]] \
     || { echo "no single running sandbox container for $sandbox: '$agent'" >&2; exit 1; }
   docker inspect "$agent" > "$EVIDENCE_DIR/sandbox-container.json"
@@ -204,7 +209,7 @@ RAILDASH_TOKEN_VALUE="$token" python3 tests/stack_acceptance.py \
   --open-port "docker exec -d $agent python3 -m http.server 9000 --bind 127.0.0.1" \
   --agent-exec "docker exec $agent" \
   --settle "$((SCAN_INTERVAL * 3))" \
-  "${platform[@]}" \
+  ${platform[@]+"${platform[@]}"} \
   | tee "$EVIDENCE_DIR/acceptance.txt"
 
 # The collector sends RailDash's token with its captures and, while a tap is
@@ -277,8 +282,9 @@ deadline = time.time() + 180
 while time.time() < deadline:
     with urllib.request.urlopen(f"{base}/api/interactions?limit=100", timeout=10) as r:
         rows = json.load(r)["items"]
+    # Any answer will do: an unauthenticated runner can be rate limited.
     out = [x for x in rows if "api.github.com" in (x.get("host") or "") and x.get("path") == "/zen"
-           and x.get("method") == "GET" and x.get("status_code") == 200]
+           and x.get("method") == "GET" and x.get("status_code")]
     if out:
         print(f"ok    the agent's GET to api.github.com through OpenShell's supervisor arrives ({len(out)})")
         sys.exit(0)
