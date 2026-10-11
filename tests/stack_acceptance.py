@@ -171,7 +171,9 @@ class Guardrail:
         shown = {rule: r["state"] for rule, r in (detail["rules"] or {}).items()}
         wrong = {rule: state for rule, state in shown.items()
                  if (state == "violated") != (rule in counting)}
-        if wrong or len(shown) != 4:
+        # Four rules in a v1 version; five once the proposal includes
+        # DR-205's data_actions (a v2 version).
+        if wrong or len(shown) not in (4, 5):
             sys.exit(f"FAIL: the rules shown {shown} disagree with the rules that have "
                      f"counting rows {sorted(counting)}")
 
@@ -421,6 +423,10 @@ def main() -> int:
     shown = {rule: r["state"] for rule, r in detail["rules"].items()}
     expected = {"service_ports": "held", "saved_files": "violated",
                 "uploads": "violated", "out_of_spec_calls": "violated"}
+    if "data_actions" in shown:
+        # The demo agent calls no MCP tool and asks no model: nothing for
+        # the data_actions rule (DR-205) to flag.
+        expected["data_actions"] = "held"
     if shown != expected:
         sys.exit(f"FAIL: the rules read {shown}, expected {expected}")
     print(f"ok:   each rule's line agrees with its rows: {shown}")
