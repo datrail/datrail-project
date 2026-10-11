@@ -81,6 +81,8 @@ DEMO_MCP_CALL = "/opt/railmon/tools/local-demo/demo_mcp_call.py"
 MCP_ENDPOINT = "127.0.0.1/mcp"
 MCP_TOOL_PREFIX = f"mcp@{MCP_ENDPOINT}__"
 DATA_ACTIONS = "data_actions"
+# Past RailMon's (AgentSight's) 1 MiB HTTP body bound.
+BIG_CALL_BYTES = 1_500_000
 
 
 def api(base: str, path: str, token: str | None = None, body: dict | None = None) -> Any:
@@ -471,6 +473,30 @@ def main() -> int:
     if shown.get("data_actions") != "violated":
         sys.exit(f"FAIL: the rules read {shown}, expected data_actions violated")
     print(f"ok:   each rule's line agrees with its rows: {shown}")
+
+    # ---- 8. a measurement, not a check (DR-205 M4) -----------------------------
+    # What does the capture do with a tools/call past its 1 MiB HTTP body
+    # bound? Read as the upload it is, kept as an unreadable call, or dropped
+    # whole (a gap to file with AgentSight)? Only rows already expected can
+    # move, so the walk's exact rows hold whichever it is.
+    def count(item: tuple[str, str]) -> int:
+        row = guard.row(*item)
+        return row["count"] if row else 0
+
+    unreadable = (DATA_ACTIONS, f"{MCP_ENDPOINT} · unreadable call")
+    before = {"upload": count(upload), "unreadable": count(unreadable)}
+    mcp("--big", str(BIG_CALL_BYTES))
+    outcome = "dropped whole: neither row moved"
+    deadline = time.monotonic() + 90
+    while time.monotonic() < deadline:
+        if count(upload) > before["upload"]:
+            outcome = "read whole: the upload_file row counted it"
+            break
+        if count(unreadable) > before["unreadable"]:
+            outcome = "kept as an unreadable call"
+            break
+        time.sleep(5)
+    print(f"measure: a {BIG_CALL_BYTES:,}-byte tools/call past the capture's 1 MiB bound was {outcome}")
 
     with urlopen(base + "/", timeout=30) as response:
         page = response.read().decode("utf-8", "replace")
