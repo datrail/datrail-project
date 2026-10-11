@@ -27,8 +27,9 @@ then, driving RailDash's own HTTP routes the way the dashboard does:
    port the drift step opened, and its calls to 127.0.0.1, which its
    configuration doesn't declare. Nothing else: the Python commands the
    walk runs in the agent write bytecode caches, which the proposal
-   allows (DR-201). Allow this on each is Held once the next scan,
-   capture and heartbeat arrive;
+   allows (DR-201). Allow all on the two ports (one version, DR-202) and
+   Allow this on the host is Held once the next scan, capture and
+   heartbeat arrive;
 6. then, in the agent: writing /data/report.zip is a `saved_files`
    violation; a POST with a body to a host outside both lists is an
    `uploads` and an `out_of_spec_calls` violation, and repeating it after
@@ -203,6 +204,13 @@ class Guardrail:
         version = api(self.base, f"/api/guardrail-rows/{row['row_id']}/allow", self.token, {})
         print(f"ok:   Allow this on {rule} {item} made {version['guardrail']['version']}")
 
+    def allow_all(self, rule: str, items: set[str]) -> None:
+        """The panel's **Allow all** on one rule's rows (DR-202): one version."""
+        rows = [self.row(rule, item) for item in sorted(items)]
+        version = api(self.base, f"/api/guardrails/{self._agent_ref()}/allow-rows", self.token,
+                      {"row_ids": [row["row_id"] for row in rows]})
+        print(f"ok:   Allow all on {rule} {sorted(items)} made {version['guardrail']['version']}")
+
     def acknowledge(self, rule: str, item: str) -> None:
         row = self.row(rule, item)
         api(self.base, f"/api/guardrail-rows/{row['row_id']}/acknowledge", self.token, {})
@@ -367,8 +375,12 @@ def main() -> int:
         "port the drift step opened, and its undeclared calls to 127.0.0.1",
         first, exact=True,
     )
-    for rule, item in sorted(first):
-        guard.allow(rule, item)
+    # The README's clicks: Allow all on the two ports, Allow this on the host.
+    guard.allow_all("service_ports", {f"tcp/127.0.0.1/{DEMO_PORT}", "tcp/127.0.0.1/9000"})
+    guard.allow("out_of_spec_calls", "127.0.0.1")
+    versions = [v["guardrail"]["version"] for v in guard.detail()["versions"]]
+    if sorted(versions) != ["g1", "g2", "g3"]:
+        sys.exit(f"FAIL: three rows allowed in two clicks should make g2 and g3 only, got {versions}")
     guard.wait_for_state("held", "with each allowed, the next scan, capture and heartbeat are Held",
                          timeout=240)
 

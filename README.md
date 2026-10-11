@@ -66,12 +66,14 @@ hand:
   proposes a guardrail from it: what the agent already did is allowed, plus
   Python's bytecode caches, and every line is shown before you approve it.
   The proposal also lists what would be a violation under it. For the demo
-  agent, with the baseline you locked first, that is its own port 8443 and its calls to `127.0.0.1`, which its
-  configuration doesn't declare. Click **Adopt**; within a minute each
-  shows as a row, and so does port 9000, still open from the drift step:
-  three rows, nothing else. Click **Allow this** on each. Once the next
-  scan and capture arrive (a minute or two), the agent reads **Held**. Now
-  make the agent break a rule:
+  agent, with the baseline you locked first, that is its own port 8443 and
+  its calls to `127.0.0.1`, which its configuration doesn't declare. Click
+  **Adopt**; within a minute each shows as a row, and so does port 9000,
+  still open from the drift step: three rows, nothing else. Click **Allow
+  all 2** in the Service ports group (one new guardrail version for both
+  ports) and **Allow this** on the `127.0.0.1` row. Once the next scan and
+  capture arrive (a minute or two), the agent reads **Held**. Now make the
+  agent break a rule:
 
   ```bash
   # saved_files: a file the guardrail doesn't allow
