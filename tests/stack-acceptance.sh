@@ -23,6 +23,7 @@ mkdir -p "$EVIDENCE_DIR"
 export SCAN_INTERVAL="${SCAN_INTERVAL:-10}" DEMO_INTERVAL="${DEMO_INTERVAL:-5}"
 compose=(docker compose)
 mode="${STACK_MODE:-demo}"
+platform=()
 case "$mode" in
   demo)
     agent=datrail-demo-agent
@@ -40,6 +41,9 @@ case "$mode" in
     # RailDash's name for the agent stable.
     sandbox=my-agent
     export AGENT_KEY=my-agent
+    # OpenShell answers the sandbox's DNS itself, on 127.0.0.53 in the
+    # agent's own container: listeners the walk sees and allows.
+    platform=(--platform-listener tcp/127.0.0.53/53 --platform-listener udp/127.0.0.53/53)
     up=(up -d --build --scale demo-agent=0)
     ;;
   *) echo "unknown STACK_MODE $mode" >&2; exit 2 ;;
@@ -194,6 +198,7 @@ RAILDASH_TOKEN_VALUE="$token" python3 tests/stack_acceptance.py \
   --open-port "docker exec -d $agent python3 -m http.server 9000 --bind 127.0.0.1" \
   --agent-exec "docker exec $agent" \
   --settle "$((SCAN_INTERVAL * 3))" \
+  "${platform[@]}" \
   | tee "$EVIDENCE_DIR/acceptance.txt"
 
 # The collector sends RailDash's token with its captures and, while a tap is

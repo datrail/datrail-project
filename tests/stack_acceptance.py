@@ -24,10 +24,11 @@ then, driving RailDash's own HTTP routes the way the dashboard does:
 5. the Data Guardrail (DR-184 M4, the design's §6 step 4), in the README's
    order, after the drift step: adopting the unedited proposal from that
    baseline is Violated by exactly the agent's own listener on 8443, the
-   port the drift step opened, and its calls to 127.0.0.1, which its
-   configuration doesn't declare. Nothing else: the Python commands the
+   port the drift step opened, any --platform-listener (OpenShell's DNS),
+   and its calls to 127.0.0.1, which its configuration doesn't declare.
+   Nothing else: the Python commands the
    walk runs in the agent write bytecode caches, which the proposal
-   allows (DR-201). Allow all on the two ports (one version, DR-202) and
+   allows (DR-201). Allow all on the ports (one version, DR-202) and
    Allow this on the host is Held once the next scan, capture and
    heartbeat arrive;
 6. then, in the agent: writing /data/report.zip is a `saved_files`
@@ -246,6 +247,11 @@ def main() -> int:
     parser.add_argument("--settle", type=float, default=30,
                         help="seconds the newest ASP must stay the newest before it is locked, "
                              "and that steady state is watched afterwards (a few scan intervals)")
+    parser.add_argument("--platform-listener", action="append", default=[],
+                        metavar="PROTOCOL/ADDR/PORT",
+                        help="a socket the agent's platform listens on in its container, such as "
+                             "OpenShell's DNS (udp/127.0.0.53/53): a service_ports row the walk "
+                             "expects and allows with the agent's own")
     args = parser.parse_args()
     token = os.environ.get("RAILDASH_TOKEN_VALUE")
     if not token:
@@ -384,15 +390,15 @@ def main() -> int:
     # ---- 5. the Data Guardrail, adopted after the drift step -----------------
     guard = Guardrail(base, token, ours)
     guard.adopt(version["alignment_version_id"])
-    first = {("service_ports", f"tcp/127.0.0.1/{DEMO_PORT}"), ("service_ports", "tcp/127.0.0.1/9000"),
-             ("out_of_spec_calls", "127.0.0.1")}
+    ports = {f"tcp/127.0.0.1/{DEMO_PORT}", "tcp/127.0.0.1/9000", *args.platform_listener}
+    first = {("service_ports", port) for port in ports} | {("out_of_spec_calls", "127.0.0.1")}
     guard.wait_for_rows(
         "adopting the unedited proposal is Violated by exactly the agent's own listener, the "
-        "port the drift step opened, and its undeclared calls to 127.0.0.1",
+        "port the drift step opened, any platform listener, and its undeclared calls to 127.0.0.1",
         first, exact=True,
     )
-    # The README's clicks: Allow all on the two ports, Allow this on the host.
-    guard.allow_all("service_ports", {f"tcp/127.0.0.1/{DEMO_PORT}", "tcp/127.0.0.1/9000"})
+    # The README's clicks: Allow all on the ports, Allow this on the host.
+    guard.allow_all("service_ports", ports)
     guard.allow("out_of_spec_calls", "127.0.0.1")
     versions = [v["guardrail"]["version"] for v in guard.detail()["versions"]]
     if sorted(versions) != ["g1", "g2", "g3"]:
