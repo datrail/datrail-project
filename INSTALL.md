@@ -213,6 +213,41 @@ chunked can still lose the reply. The request then appears after ten minutes
 as an incomplete interaction, with no response, and `railmon-collect`'s log
 counts it ([railmon#70](https://github.com/datrail/railmon/issues/70)).
 
+### An agent in an OpenShell sandbox
+
+With [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell)'s Docker
+driver, each sandbox is a container. Its name carries an id OpenShell
+generates, so look it up by the sandbox's name, and set `AGENT_KEY` so
+RailDash keeps one name for the agent across new sandboxes:
+
+```bash
+openshell sandbox create --name my-agent --from <your image> --detach -- <your agent>
+AGENT_CONTAINER=$(docker ps --format '{{.Names}}' \
+  --filter label=openshell.ai/sandbox-name=my-agent \
+  --filter label=openshell.ai/isolation-role=sandbox) \
+AGENT_KEY=my-agent docker compose up -d --scale demo-agent=0
+```
+
+A new sandbox (`openshell sandbox delete` and `create` again) is a new
+container: run the `docker compose up` line again so the stack follows it.
+
+- OpenShell's supervisor makes every outside connection for the agent,
+  and unless an endpoint sets `tls: skip` it terminates the agent's TLS
+  with a CA of its own. The collector reads the agent's side either way,
+  so each call appears as the agent made it, before OpenShell adds any
+  provider credential.
+- OpenShell opens every socket for the agent, so `observed_listeners`
+  names `openshell-sandb` as the listening process, and lists OpenShell's
+  own DNS on `127.0.0.53:53` (TCP and UDP) with the agent's ports. The
+  Data Guardrail's proposal shows them as `service_ports` rows; allow them
+  with the agent's own.
+- Only the Docker driver is covered. Podman, Kubernetes and the MicroVM
+  driver run the agent elsewhere.
+
+This repository's CI runs this with OpenShell 0.1.3 and the demo agent
+(`STACK_MODE=openshell`): the same walk as the own-agent job, then a call
+to `api.github.com` through OpenShell's supervisor.
+
 ## Images
 
 Both images are built from source, from each repository's default branch:

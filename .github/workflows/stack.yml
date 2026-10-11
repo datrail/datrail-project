@@ -82,8 +82,6 @@ jobs:
         env:
           EVIDENCE_DIR: ${{ runner.temp }}/stack
           STACK_MODE: openshell
-          # TEMPORARY, before railmon#DR-206 merges: drop before this PR leaves draft.
-          RAILMON_SRC: https://github.com/datrail/railmon.git#DR-206-collector-thread-children
         run: bash tests/stack-acceptance.sh
       - name: Preserve OpenShell's gateway log
         if: always()
