@@ -65,6 +65,15 @@ cleanup() {
   # What railmon-files recorded: file paths of the CI agent, nothing secret.
   "${compose[@]}" cp railmon-files:/files/files.jsonl "$EVIDENCE_DIR/files.jsonl" \
     > /dev/null 2>&1 || true
+  # What railmon-listen recorded, and what the newest bundle made of it:
+  # sockets and process names of the CI agent, nothing secret.
+  "${compose[@]}" cp railmon-listen:/listen/listen.jsonl "$EVIDENCE_DIR/listen.jsonl" \
+    > /dev/null 2>&1 || true
+  "${compose[@]}" exec -T railmon-scan python3 -c '
+import json
+bundle = json.load(open("/.rail/railmon/evidence-bundle.json"))
+print(json.dumps(bundle["attributes"]["observed_listeners"], indent=1))
+' > "$EVIDENCE_DIR/observed-listeners.json" 2>&1 || true
   # The demo's MCP exchanges as RailDash stored them (DR-205): real captures
   # for RailDash's golden tests. Local, self-signed demo traffic only.
   "${compose[@]}" exec -T raildash python3 -c '
