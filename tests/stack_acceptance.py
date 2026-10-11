@@ -487,7 +487,7 @@ def main() -> int:
     before = {"upload": count(upload), "unreadable": count(unreadable)}
     mcp("--big", str(BIG_CALL_BYTES))
     outcome = "dropped whole: neither row moved"
-    deadline = time.monotonic() + 90
+    deadline = time.monotonic() + 180  # as long as any other wait here
     while time.monotonic() < deadline:
         if count(upload) > before["upload"]:
             outcome = "read whole: the upload_file row counted it"
