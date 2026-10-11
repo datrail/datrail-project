@@ -107,10 +107,12 @@ hand:
   the agent use the tools it was never meant to:
 
   ```bash
-  mcp="docker exec datrail-demo-agent python3 /opt/railmon/tools/local-demo/demo_mcp_call.py"
-  $mcp upload_file   # uploads a small PNG through upload_file
-  $mcp export_all    # a tool the server never listed
-  $mcp --garbage     # a POST to /mcp that isn't JSON-RPC
+  # upload_file: uploads a small PNG
+  docker exec datrail-demo-agent python3 /opt/railmon/tools/local-demo/demo_mcp_call.py upload_file
+  # export_all: a tool the server never listed
+  docker exec datrail-demo-agent python3 /opt/railmon/tools/local-demo/demo_mcp_call.py export_all
+  # a POST to /mcp that isn't JSON-RPC
+  docker exec datrail-demo-agent python3 /opt/railmon/tools/local-demo/demo_mcp_call.py --garbage
   ```
 
   Under Data actions: `mcp@127.0.0.1/mcp__upload_file · upload`, an upload
