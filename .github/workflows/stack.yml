@@ -63,3 +63,35 @@ jobs:
           name: own-agent-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/stack
           if-no-files-found: error
+
+  # The same agent in an NVIDIA OpenShell sandbox (DR-206), as INSTALL.md's
+  # "An agent in an OpenShell sandbox" says: a pinned OpenShell, its gateway
+  # on the Docker driver, the sandbox started first.
+  openshell:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    env:
+      COMPOSE_PROJECT_NAME: datrail-ci-os-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install OpenShell and start its gateway
+        run: bash tests/openshell/install.sh
+      - name: Watch an agent in an OpenShell sandbox
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/stack
+          STACK_MODE: openshell
+        run: bash tests/stack-acceptance.sh
+      - name: Preserve OpenShell's gateway log
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/stack"
+          journalctl --user -u openshell-gateway --no-pager > "$RUNNER_TEMP/stack/openshell-gateway.log" 2>&1 || true
+      - name: Preserve service logs and results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: openshell-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/stack
+          if-no-files-found: error
