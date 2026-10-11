@@ -9,5 +9,9 @@ FROM ${BASE}
 RUN cp /usr/local/bin/python3 /usr/local/bin/my-agent-bin \
     && groupadd --gid 1500 agent && useradd --uid 1500 --gid agent --create-home agent \
     && install -d -o agent -g agent /sandbox /data
+# Compose labelled the RailMon image with its project and service, and a
+# container inherits its image's labels, so RailDash would know the agent as
+# that service. A user's own image has none; blanked as the own-agent job does.
+LABEL com.docker.compose.project="" com.docker.compose.service=""
 WORKDIR /sandbox
 USER agent
