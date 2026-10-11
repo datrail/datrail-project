@@ -81,7 +81,7 @@ for row in db.execute("SELECT method, host, path, authenticated, raw FROM intera
   fi
   if [[ $mode == openshell ]]; then
     # The sandbox's image is built on RailMon's, which the reset removes.
-    openshell sandbox logs "$sandbox" > "$EVIDENCE_DIR/my-agent.log" 2>&1 || true
+    openshell logs "$sandbox" -n 2000 > "$EVIDENCE_DIR/my-agent.log" 2>&1 || true
     openshell sandbox delete "$sandbox" > "$EVIDENCE_DIR/sandbox-delete.log" 2>&1 || true
     for _ in $(seq 30); do
       [[ -z "$(sandbox_containers)" ]] && break
