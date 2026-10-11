@@ -36,6 +36,9 @@ then, driving RailDash's own HTTP routes the way the dashboard does:
    the agent's own process session, not a `docker exec`, so they are seen
    on the server's side, as the agent's server reads them.
 
+Whenever the guardrail is checked, each rule's shown state must agree with
+its rows: `violated` exactly while the rule has a counting row (DR-200).
+
 The agent is the demo agent (`--agent compose:demo-agent`, which RailDash
 knows by its Compose project and service) or, for INSTALL.md's "Watch your
 own agent", a container the user started (`--agent key:my-agent`, known by
@@ -154,13 +157,30 @@ class Guardrail:
                 print(f"      (the guardrail's detail couldn't be read: {error})")
             raise
 
+    @staticmethod
+    def check_rules(detail: dict) -> None:
+        """Each rule's shown state agrees with its rows (DR-200): `violated`
+        exactly while the rule has a counting row. The panel's rule line is
+        this map, so a rule reading "held" beside its own counting row is
+        the bug a user sees."""
+        counting = {r["rule"] for r in detail["rows"] if r["counts"]}
+        shown = {rule: r["state"] for rule, r in (detail["rules"] or {}).items()}
+        wrong = {rule: state for rule, state in shown.items()
+                 if (state == "violated") != (rule in counting)}
+        if wrong or len(shown) != 4:
+            sys.exit(f"FAIL: the rules shown {shown} disagree with the rules that have "
+                     f"counting rows {sorted(counting)}")
+
     def wait_for_rows(self, what: str, items: set[tuple[str, str]], *, exact: bool = False) -> None:
         def counting() -> bool:
             detail = self.detail()
             found = {(r["rule"], r["item"]) for r in detail["rows"] if r["counts"]}
             if exact and found - items:
                 sys.exit(f"FAIL: {what}: unexpected rows {sorted(found - items)}")
-            return detail["state"] == "violated" and items <= found
+            if detail["state"] == "violated" and items <= found:
+                self.check_rules(detail)
+                return True
+            return False
         self.wait_for(what, counting)
 
     def wait_for_state(self, state: str, what: str, timeout: float = 180) -> None:
@@ -169,7 +189,10 @@ class Guardrail:
             print(f"      {detail['state']}: "
                   f"{ {rule: r['reason'] for rule, r in (detail['rules'] or {}).items() if r['reason']} }",
                   flush=True)
-            return detail["state"] == state
+            if detail["state"] == state:
+                self.check_rules(detail)
+                return True
+            return False
         self.wait_for(what, reached, timeout)
 
     def allow(self, rule: str, item: str) -> None:
@@ -372,6 +395,13 @@ def main() -> int:
     if guard.row("uploads", SECOND_HOST) is not None:
         sys.exit(f"FAIL: a GET without a body to {SECOND_HOST} was judged an upload")
     print("ok:   ... and not an upload")
+    detail = guard.detail()
+    guard.check_rules(detail)
+    shown = {rule: r["state"] for rule, r in detail["rules"].items()}
+    for rule in ("saved_files", "uploads", "out_of_spec_calls"):
+        if shown[rule] != "violated":
+            sys.exit(f"FAIL: {rule} reads {shown[rule]} beside its counting rows: {shown}")
+    print(f"ok:   each rule's line agrees with its rows: {shown}")
 
     with urlopen(base + "/", timeout=30) as response:
         page = response.read().decode("utf-8", "replace")
