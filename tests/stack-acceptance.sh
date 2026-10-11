@@ -76,8 +76,14 @@ cleanup() {
   "${compose[@]}" exec -T railmon-scan python3 -c '
 import json
 bundle = json.load(open("/.rail/railmon/evidence-bundle.json"))
-print(json.dumps(bundle["attributes"]["observed_listeners"], indent=1))
-' > "$EVIDENCE_DIR/observed-listeners.json" 2>&1 || true
+attributes = bundle["attributes"]
+files = attributes["observed_file_access"]
+print(json.dumps({"observed_listeners": attributes["observed_listeners"],
+                  "observed_file_access": {k: v for k, v in files.items() if k != "value"},
+                  "files": [f["path"] for f in files.get("value") or []]}, indent=1))
+' > "$EVIDENCE_DIR/observed-evidence.json" 2>&1 || true
+  curl -fsS "http://127.0.0.1:${RAILDASH_PORT:-8000}/api/asps?limit=5" \
+    > "$EVIDENCE_DIR/asps.json" 2>&1 || true
   # The demo's MCP exchanges as RailDash stored them (DR-205): real captures
   # for RailDash's golden tests. Local, self-signed demo traffic only.
   "${compose[@]}" exec -T raildash python3 -c '
