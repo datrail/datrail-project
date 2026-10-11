@@ -56,20 +56,22 @@ hand:
 
   Within a minute the next ASP shows **drift detected**. The changed
   attributes are `observed_listeners`, with the new port, and
-  `observed_file_access`, with the files the new server process read; the
+  `observed_file_access`, with the files the new server process read (and
+  a `__pycache__/*.pyc` entry for any bytecode-cache directory new to the
+  baseline); the
   per-attribute detail under the drift list shows the old and new values.
   You can accept the new state as a new baseline, or switch back to an
   earlier one.
 - **Data Guardrail.** With a baseline locked, the **Data Guardrail** panel
-  proposes a guardrail from it: what the agent already did is allowed, and
-  every line is shown before you approve it. The proposal also lists what
-  would be a violation under it. For the demo agent that is its own port
-  8443 and its calls to `127.0.0.1`, which its configuration doesn't
-  declare. Click **Adopt**; within a minute each shows as a row. Click
-  **Allow this** on each row you mean to allow (port 9000 too, if it is
-  still open from the drift step). Once the next scan and capture arrive
-  (a minute or two), the agent reads **Held**. Now make the
-  agent break a rule:
+  proposes a guardrail from it: what the agent already did is allowed, plus
+  Python's bytecode caches, and every line is shown before you approve it.
+  The proposal also lists what would be a violation under it. For the demo
+  agent, with the baseline you locked first, that is its own port 8443 and its calls to `127.0.0.1`, which its
+  configuration doesn't declare. Click **Adopt**; within a minute each
+  shows as a row, and so does port 9000, still open from the drift step:
+  three rows, nothing else. Click **Allow this** on each. Once the next
+  scan and capture arrive (a minute or two), the agent reads **Held**. Now
+  make the agent break a rule:
 
   ```bash
   # saved_files: a file the guardrail doesn't allow
@@ -86,7 +88,10 @@ hand:
   print(c.getresponse().status)'
   ```
 
-  The agent turns **Violated**, with one row per rule and item. **Acknowledge**
+  The agent turns **Violated**, with one row per rule and item:
+  `/data/report.zip` under Saved files, and `exfil.example` under both
+  Uploads and Out-of-spec calls. Above the rows, Service ports reads held
+  and Saved files, Uploads and Out-of-spec calls read violated. **Acknowledge**
   a row to clear it until the same thing happens again; **Allow this** makes a
   new guardrail version that allows it. Edit, switch to an earlier version or
   turn the guardrail off from the same panel.

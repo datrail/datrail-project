@@ -73,8 +73,10 @@ it arrives. It has four rules:
 RailDash proposes the first guardrail from the agent's locked
 [baseline](#baseline): what the agent already did is allowed, except its
 listeners and undeclared calls, which it lists as would-be violations for you
-to allow. Nothing is checked until you adopt it. Like a baseline, every
-guardrail version is kept: **Allow this** on a violation and **Edit** each
+to allow. It also allows Python's bytecode caches (`**/__pycache__/*.pyc`),
+which Python writes for the modules it imports, as a line you can remove.
+Nothing is checked until you adopt it. Like a baseline, every guardrail
+version is kept: **Allow this** on a violation and **Edit** each
 make a new version, and you can switch back to an earlier one or turn the
 guardrail off.
 
