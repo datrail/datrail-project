@@ -64,6 +64,29 @@ jobs:
           path: ${{ runner.temp }}/stack
           if-no-files-found: error
 
+  # The quick start on arm64 Linux (DR-208), the architecture Docker
+  # Desktop's VM has on Apple Silicon. GitHub's arm64 runners stop at 24.04.
+  arm64:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    env:
+      COMPOSE_PROJECT_NAME: datrail-ci-arm-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Run the quick-start stack on arm64 and check what it shows
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/stack
+        run: bash tests/stack-acceptance.sh
+      - name: Preserve service logs and results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: arm64-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/stack
+          if-no-files-found: error
+
   # The same agent in an NVIDIA OpenShell sandbox (DR-206), as INSTALL.md's
   # "An agent in an OpenShell sandbox" says: a pinned OpenShell, its gateway
   # on the Docker driver, the sandbox started first.

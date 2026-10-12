@@ -121,7 +121,7 @@ sandbox_containers() {
 trap cleanup EXIT
 
 uname -a > "$EVIDENCE_DIR/kernel.txt"
-test "$(uname -m)" = x86_64
+[[ "$(uname -m)" =~ ^(x86_64|aarch64)$ ]]
 test -r /sys/kernel/btf/vmlinux
 
 # Which commits this run built: the default branch of each component.

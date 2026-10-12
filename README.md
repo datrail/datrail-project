@@ -17,10 +17,12 @@ on your own machine with one command, and links to every component.
 
 ## Quick start
 
-You need Linux on x86_64 with Docker Engine and Compose v2, and a kernel with
-BTF (`/sys/kernel/btf/vmlinux` exists). On Windows, use WSL2, with Docker
-Engine in the distro or Docker Desktop running with WSL integration on for
-it; [INSTALL.md](INSTALL.md#platform-support) says what each can watch. See
+You need Linux on x86_64 or arm64 with Docker Engine and Compose v2, and a
+kernel with BTF (`/sys/kernel/btf/vmlinux` exists). On Windows, use WSL2, with
+Docker Engine in the distro or Docker Desktop running with WSL integration on
+for it. On a Mac, Intel or Apple Silicon, Docker Desktop is expected to watch
+agents in containers. [INSTALL.md](INSTALL.md#platform-support) says what
+each can watch. See
 [INSTALL.md](INSTALL.md#prerequisites) for details.
 
 ```bash
