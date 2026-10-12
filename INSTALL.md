@@ -21,8 +21,10 @@ RailDash listens on `127.0.0.1` only.
   Run every command below inside that distro.
 - **`git`.** `make` is optional; the [Makefile](Makefile) only wraps
   `docker compose` commands.
-- **Linux on x86_64 with a BTF-enabled kernel** (`/sys/kernel/btf/vmlinux`
-  exists). See the platform table below.
+- **Linux on x86_64 or arm64 with a BTF-enabled kernel**
+  (`/sys/kernel/btf/vmlinux` exists). On a Mac or with Docker Desktop, that
+  is Docker Desktop's own Linux VM: `docker run --rm alpine ls
+  /sys/kernel/btf/vmlinux` checks it. See the platform table below.
 - **Network access to GitHub** for the first build. The images are built from
   the components' source (see [Images](#images)).
 
@@ -30,11 +32,10 @@ RailDash listens on `127.0.0.1` only.
 
 | Platform | Works | Notes |
 | --- | --- | --- |
-| **Linux (x86_64, native)** | Yes | Real kernel with BTF; the probes see host processes. |
-| **Windows, WSL2 with Docker Engine installed in the distro (x86_64)** | Yes | WSL2 runs a real Linux kernel with BTF; the probes see the distro's processes. |
-| **Windows, WSL2 with Docker Desktop (x86_64)** | Partly | Containers run in Docker Desktop's own Linux VM, so the probes see only what runs inside that VM. The demo agent works; an agent running natively in your WSL distro is not visible, so run it in a container. |
-| **macOS (Intel, Docker Desktop)** | Partly | Containers run in a Linux VM, so the probes see only what runs inside that VM. The demo agent works; an agent running natively on the Mac is not visible. |
-| **Apple Silicon / arm64** | No | AgentSight, RailMon's TLS probe, publishes no arm64 build, so nothing is captured. |
+| **Linux, native (x86_64 or arm64)** | Yes | Real kernel with BTF; the probes see host processes. CI runs the quick start on both architectures. |
+| **Windows, WSL2 with Docker Engine installed in the distro (Intel/AMD x86_64)** | Yes | WSL2 runs a real Linux kernel with BTF; the probes see the distro's processes. |
+| **Windows, WSL2 with Docker Desktop (Intel/AMD x86_64)** | Agents in containers | Containers run in Docker Desktop's own Linux VM, so the probes see only what runs inside that VM. The demo agent works; an agent running natively in your WSL distro is not visible, so run it in a container. |
+| **macOS, Intel or Apple Silicon, with Docker Desktop** | Agents in containers (expected; not yet run on a Mac) | Containers run in Docker Desktop's Linux VM (arm64 on Apple Silicon), so the probes see only what runs inside that VM: the demo agent and your own agent in a container, not an agent running natively on the Mac. The images are the ones CI runs on x86_64 and arm64 Linux; Docker Desktop's VM kernel needs BTF (the check under Prerequisites). |
 
 ## Run it
 
@@ -287,7 +288,8 @@ This repository's CI runs the same stack from both default branches on every
 change and daily, and checks the walkthrough above end to end
 ([`tests/stack-acceptance.sh`](tests/stack-acceptance.sh)). A second job
 follows [Watch your own agent](#watch-your-own-agent) with a `my-agent`
-container started after the stack (`STACK_MODE=own-agent`).
+container started after the stack (`STACK_MODE=own-agent`). A third runs the
+quick start on a native arm64 runner.
 
 ## Troubleshooting
 
@@ -297,7 +299,7 @@ Right after Desktop starts, give the integration a moment to attach.
 
 **No interactions appear.** Check `docker compose logs railmon-collect`. The
 collector needs a privileged container, the host PID namespace, and an
-x86_64 kernel with BTF. On macOS, only processes inside Docker Desktop's VM
+x86_64 or arm64 kernel with BTF. On macOS, only processes inside Docker Desktop's VM
 are visible. For your own agent, `docker compose logs railmon-collect` says
 which process and TLS file it attached to, or that none in the container
 uses TLS yet. With `COLLECT_TARGET` set, check that it matches the agent's

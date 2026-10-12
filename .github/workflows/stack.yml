@@ -64,15 +64,13 @@ jobs:
           path: ${{ runner.temp }}/stack
           if-no-files-found: error
 
-  # The quick start on arm64 (DR-208): what Apple Silicon runs under Docker
-  # Desktop, and arm64 Linux. GitHub's arm64 runners stop at 24.04.
+  # The quick start on arm64 Linux (DR-208), the architecture Docker
+  # Desktop's VM has on Apple Silicon. GitHub's arm64 runners stop at 24.04.
   arm64:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 45
     env:
       COMPOSE_PROJECT_NAME: datrail-ci-arm-${{ github.run_id }}-${{ github.run_attempt }}
-      # Until railmon's DR-208 branch merges; dropped before this PR does.
-      RAILMON_SRC: https://github.com/datrail/railmon.git#DR-208-agentsight-arm64
     steps:
       - uses: actions/checkout@v7
         with:
