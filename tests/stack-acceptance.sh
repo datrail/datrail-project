@@ -130,6 +130,12 @@ for repo in railmon raildash; do
 done | tee "$EVIDENCE_DIR/component-commits.txt"
 
 "${compose[@]}" config --quiet
+# Each image is built by one service only (DR-212). Compose builds services
+# in parallel, and on Docker Desktop every build of an image name after the
+# first fails; Docker on GitHub's runners lets them through, so check the file.
+"${compose[@]}" config --format json \
+  | jq -e '[.services[] | select(.build) | .image] | group_by(.) | all(length == 1)' >/dev/null \
+  || { echo "two services build the same image" >&2; exit 1; }
 
 if [[ $mode == openshell ]]; then
   [[ -z "$(sandbox_containers)" ]]

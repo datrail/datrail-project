@@ -35,7 +35,7 @@ RailDash listens on `127.0.0.1` only.
 | **Linux, native (x86_64 or arm64)** | Yes | Real kernel with BTF; the probes see host processes. CI runs the quick start on both architectures. |
 | **Windows, WSL2 with Docker Engine installed in the distro (Intel/AMD x86_64)** | Yes | WSL2 runs a real Linux kernel with BTF; the probes see the distro's processes. |
 | **Windows, WSL2 with Docker Desktop (Intel/AMD x86_64)** | Agents in containers | Containers run in Docker Desktop's own Linux VM, so the probes see only what runs inside that VM. The demo agent works; an agent running natively in your WSL distro is not visible, so run it in a container. |
-| **macOS, Intel or Apple Silicon, with Docker Desktop** | Agents in containers (expected; not yet run on a Mac) | Containers run in Docker Desktop's Linux VM (arm64 on Apple Silicon), so the probes see only what runs inside that VM: the demo agent and your own agent in a container, not an agent running natively on the Mac. The images are the ones CI runs on x86_64 and arm64 Linux; Docker Desktop's VM kernel needs BTF (the check under Prerequisites). |
+| **macOS, Intel or Apple Silicon, with Docker Desktop** | Agents in containers (run on Apple Silicon; not yet on an Intel Mac) | Containers run in Docker Desktop's Linux VM (arm64 on Apple Silicon), so the probes see only what runs inside that VM: the demo agent and your own agent in a container, not an agent running natively on the Mac. The images are the ones CI runs on x86_64 and arm64 Linux, and CI's own-agent job uses Docker Desktop's containerd image store; Docker Desktop's VM kernel needs BTF (the check under Prerequisites). |
 
 ## Run it
 
@@ -288,7 +288,8 @@ This repository's CI runs the same stack from both default branches on every
 change and daily, and checks the walkthrough above end to end
 ([`tests/stack-acceptance.sh`](tests/stack-acceptance.sh)). A second job
 follows [Watch your own agent](#watch-your-own-agent) with a `my-agent`
-container started after the stack (`STACK_MODE=own-agent`). A third runs the
+container started after the stack (`STACK_MODE=own-agent`), on Docker's
+containerd image store, the one Docker Desktop uses. A third runs the
 quick start on a native arm64 runner.
 
 ## Troubleshooting

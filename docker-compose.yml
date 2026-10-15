@@ -31,10 +31,11 @@
 # railmon checkout needs its submodules (`git clone --recursive`). A git URL
 # context is fetched with its submodules.
 
+# Every RailMon service runs one image, and only railmon-collect builds it.
+# Compose builds services in parallel, and on Docker Desktop's containerd
+# image store a second build of the same image name fails.
 x-railmon: &railmon
   image: datrail-railmon:local
-  build:
-    context: ${RAILMON_SRC:-https://github.com/datrail/railmon.git}
   restart: unless-stopped
 
 services:
@@ -72,6 +73,8 @@ services:
 
   railmon-collect:
     <<: *railmon
+    build:
+      context: ${RAILMON_SRC:-https://github.com/datrail/railmon.git}
     # The eBPF TLS probe needs privilege and the host's PID namespace to see
     # the agent's processes. This container runs root-equivalent on the host.
     # The Docker socket is how it finds the agent's container, and finds it
