@@ -51,9 +51,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      # Docker Desktop's image store (DR-212). With the runner's default
-      # overlay2 store, Compose building one image name twice at once
-      # succeeds; on the containerd store all but the first build fail.
+      # Docker Desktop's image store (DR-212), so this job runs the stack
+      # on the store a Mac user has rather than the runner's overlay2.
       - name: Use the containerd image store, as Docker Desktop does
         run: |
           # Keep whatever the runner image already configures.
