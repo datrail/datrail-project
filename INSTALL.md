@@ -19,14 +19,17 @@ RailDash listens on `127.0.0.1` only.
   Docker Desktop, the `docker` command exists inside the distro only while
   Desktop is running, and can take a moment to appear after Desktop starts.
   Run every command below inside that distro.
-- **`git`.** `make` is optional; the [Makefile](Makefile) only wraps
-  `docker compose` commands.
+- **`git`, or just `curl`.** `docker-compose.yml` is the whole install, so
+  downloading that one file is enough ([Without the
+  repository](#without-the-repository)). `make` is optional; the
+  [Makefile](Makefile) only wraps `docker compose` commands.
 - **Linux on x86_64 or arm64 with a BTF-enabled kernel**
   (`/sys/kernel/btf/vmlinux` exists). On a Mac or with Docker Desktop, that
   is Docker Desktop's own Linux VM: `docker run --rm alpine ls
   /sys/kernel/btf/vmlinux` checks it. See the platform table below.
-- **Network access to GitHub** for the first build. The images are built from
-  the components' source (see [Images](#images)).
+- **Network access to GitHub** for the first build, which builds the images
+  from the components' source, or to `ghcr.io` for
+  [published images](#published-images).
 
 ### Platform support
 
@@ -87,17 +90,18 @@ make clean                 # also delete the built images and any leftovers
 ```
 
 `docker compose down -v` removes only what the current `docker-compose.yml`
-declares. It keeps the two built images (`datrail-railmon:local` and
-`datrail-raildash:local`, about 540 MB together). It also keeps anything an
+declares. It keeps the stack's two images (`datrail-railmon:local` and
+`datrail-raildash:local` when built, about 540 MB together, or the
+[published images](#published-images) you named). It also keeps anything an
 older version of this stack created: the version before 3 October 2026 used
 the volumes `captures` and `raildash-db` and a `railmon` service, which
 survive an upgrade by `git pull`. `make clean` removes all of it: orphaned
-containers, every volume labelled with this Compose project, and the built
-images. Without `make`, run the commands in the [Makefile](Makefile)'s
+containers, every volume labelled with this Compose project, and the
+stack's two images, published ones included. Without `make`, run the commands in the [Makefile](Makefile)'s
 `clean` target. The older version's images are not this stack's, so `make
 clean` leaves them: the published `ghcr.io/datrail/railmon` and
-`ghcr.io/datrail/raildash`, or `railmon:local` and `raildash:local` if you
-built with `make stack-local`. Remove those with `docker image rm` if nothing
+`ghcr.io/datrail/raildash` it ran, unless this stack runs them too, or
+`railmon:local` and `raildash:local` if you built with `make stack-local`. Remove those with `docker image rm` if nothing
 else uses them.
 
 ## Settings
@@ -117,6 +121,7 @@ All are optional.
 | `RAILDASH_PORT` | `8000` | The local port RailDash is published on (always on `127.0.0.1`). |
 | `RAILDASH_TOKEN` | unset | RailDash's local write token, if you want to choose it (see below): at least 16 characters of `A-Z a-z 0-9 - _ . ~ + / =`, or RailDash does not start. |
 | `RAILMON_SRC`, `RAILDASH_SRC` | the GitHub repositories | Where to build each image from (see [Images](#images)). |
+| `RAILMON_IMAGE`, `RAILDASH_IMAGE` | `datrail-railmon:local`, `datrail-raildash:local` | The image each component runs. Set to a published image to pull it instead of building (see [Published images](#published-images)). |
 | `DEMO_INTERVAL` | `30` | Seconds between the demo agent's calls. |
 
 ### The RailDash token
@@ -278,11 +283,48 @@ git clone https://github.com/datrail/raildash.git
 RAILMON_SRC=../railmon RAILDASH_SRC=../raildash docker compose up -d --build
 ```
 
-The published images (`ghcr.io/datrail/railmon:0.1.0` and
-`ghcr.io/datrail/raildash:0.1.0`) predate interval scanning, `railmon listen`
-and RailDash's evidence-bundle route, so they cannot run this stack. The
-stack will switch to published images once a release contains these
-features.
+### Without the repository
+
+`docker-compose.yml` reads nothing else from this repository: the build
+contexts are git URLs and every volume is a named one. So one file is the
+whole install:
+
+```bash
+mkdir datrail && cd datrail
+curl -fsSLO https://raw.githubusercontent.com/datrail/datrail-project/master/docker-compose.yml
+docker compose up -d
+```
+
+The `docker compose` commands in this page work the same from that
+directory, and settings go in your shell or a `.env` file beside the
+downloaded file. There is no Makefile there: `make clean` is
+`docker compose down -v --remove-orphans --rmi all`. Compose names the
+project after the directory, so a stack started here doesn't share
+RailDash's database with one started from a clone. CI checks that the file
+reads nothing from its checkout.
+
+### Published images
+
+To pull published images from `ghcr.io/datrail` instead of building, name
+them and start without `--build`. Compose pulls an image it can find and
+builds only one it can't:
+
+```bash
+export RAILMON_IMAGE=ghcr.io/datrail/railmon:<tag> RAILDASH_IMAGE=ghcr.io/datrail/raildash:<tag>
+docker compose up -d
+```
+
+Set either one alone to pull that component and build the other. To update
+a tag that moves, `docker pull` the image and run `docker compose up -d`
+again. Don't use `--build` or `make update` while an image is set: Compose
+would build from source and tag the result with the published name.
+Name a version tag, not `latest`, which can be older than this file.
+
+An image has to be at least as new as this file. The `0.1.0` images
+predate interval scanning, `railmon listen` and RailDash's evidence-bundle
+route, so they can't run this stack. RailMon's images can from `0.1.0-m4`
+on. RailDash has no published image yet that can, so build it, the
+default, until one is tagged.
 
 This repository's CI runs the same stack from both default branches on every
 change and daily, and checks the walkthrough above end to end

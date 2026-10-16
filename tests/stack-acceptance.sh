@@ -6,6 +6,10 @@
 # the stack starts without the demo agent, pointed at a container the user
 # starts afterwards with `docker run`, which listens on its port at once.
 #
+# RAILMON_IMAGE / RAILDASH_IMAGE run published images instead of a build
+# (DR-214), as INSTALL.md's "Images" says: the stack starts without --build,
+# so Compose pulls them.
+#
 # STACK_MODE=openshell runs the same agent in an NVIDIA OpenShell sandbox
 # (DR-206), started before the stack, as INSTALL.md's "An agent in an
 # OpenShell sandbox" says. It needs OpenShell's gateway with the Docker
@@ -23,17 +27,21 @@ mkdir -p "$EVIDENCE_DIR"
 export SCAN_INTERVAL="${SCAN_INTERVAL:-10}" DEMO_INTERVAL="${DEMO_INTERVAL:-5}"
 compose=(docker compose)
 mode="${STACK_MODE:-demo}"
+railmon_image=${RAILMON_IMAGE:-datrail-railmon:local}
+raildash_image=${RAILDASH_IMAGE:-datrail-raildash:local}
+build=(--build)
+[[ -z ${RAILMON_IMAGE:-}${RAILDASH_IMAGE:-} ]] || build=()
 platform=()
 case "$mode" in
   demo)
     agent=datrail-demo-agent
-    up=(up -d --build)
+    up=(up -d "${build[@]}")
     ;;
   own-agent)
-    # INSTALL.md's command, word for word, plus --build.
+    # INSTALL.md's command, word for word, plus --build when building.
     agent=my-agent
     export AGENT_CONTAINER=my-agent
-    up=(up -d --build --scale demo-agent=0)
+    up=(up -d "${build[@]}" --scale demo-agent=0)
     ;;
   openshell)
     # The sandbox's container is named after an id OpenShell generates, so
@@ -44,7 +52,7 @@ case "$mode" in
     # OpenShell answers the sandbox's DNS itself, on 127.0.0.53 in the
     # agent's own container: listeners the walk sees and allows.
     platform=(--platform-listener tcp/127.0.0.53/53 --platform-listener udp/127.0.0.53/53)
-    up=(up -d --build --scale demo-agent=0)
+    up=(up -d "${build[@]}" --scale demo-agent=0)
     ;;
   *) echo "unknown STACK_MODE $mode" >&2; exit 2 ;;
 esac
@@ -111,7 +119,7 @@ for row in db.execute("SELECT method, host, path, authenticated, raw FROM intera
   # The README's reset, so it is checked on every run: nothing of the
   # project's may survive it, including the older version's volume.
   { make clean && [[ -z "$(project_volumes)" ]] \
-      && [[ -z "$(docker image ls -q datrail-railmon:local)$(docker image ls -q datrail-raildash:local)" ]]; } \
+      && [[ -z "$(docker image ls -q "$railmon_image")$(docker image ls -q "$raildash_image")" ]]; } \
     > "$EVIDENCE_DIR/cleanup.log" 2>&1 || { [[ $result != 0 ]] || result=1; }
   exit "$result"
 }
@@ -136,6 +144,11 @@ done | tee "$EVIDENCE_DIR/component-commits.txt"
 "${compose[@]}" config --format json \
   | jq -e '[.services[] | select(.build) | .image] | group_by(.) | all(length == 1)' >/dev/null \
   || { echo "two services build the same image" >&2; exit 1; }
+# docker-compose.yml alone is the install (DR-214): no service may read a
+# file from this checkout, so downloading the one file is enough.
+"${compose[@]}" config --format json \
+  | jq -e --arg d "$PWD" '[.. | strings | select(. == $d or startswith($d + "/"))] | length == 0' >/dev/null \
+  || { echo "docker-compose.yml reads a file from its repository" >&2; exit 1; }
 
 if [[ $mode == openshell ]]; then
   [[ -z "$(sandbox_containers)" ]]
@@ -143,8 +156,12 @@ if [[ $mode == openshell ]]; then
   # user with a sandbox already running follows. The demo agent's loop, as
   # the own-agent job runs it, plus one GET to api.github.com per cycle once
   # /sandbox/outbound exists, which only OpenShell's supervisor can carry.
-  "${compose[@]}" build railmon-collect 2>&1 | tee "$EVIDENCE_DIR/build.log"
-  docker build -t datrail-openshell-agent:local tests/openshell \
+  if [[ -n ${RAILMON_IMAGE:-} ]]; then
+    "${compose[@]}" pull railmon-collect 2>&1 | tee "$EVIDENCE_DIR/build.log"
+  else
+    "${compose[@]}" build railmon-collect 2>&1 | tee "$EVIDENCE_DIR/build.log"
+  fi
+  docker build -t datrail-openshell-agent:local --build-arg BASE="$railmon_image" tests/openshell \
     2>&1 | tee -a "$EVIDENCE_DIR/build.log"
   openshell sandbox create --name "$sandbox" --from datrail-openshell-agent:local \
     --policy tests/openshell/policy.yaml --detach --no-tty -- sh -c '
@@ -174,7 +191,32 @@ if [[ $mode == openshell ]]; then
   echo "sandbox container: $agent" | tee "$EVIDENCE_DIR/sandbox-container.txt"
   export AGENT_CONTAINER=$agent
 fi
+# With one image named, the other component is still built from its default
+# branch, as --build would; `up` then pulls the named one.
+if [[ ${#build[@]} == 0 && -z ${RAILMON_IMAGE:-} ]]; then
+  "${compose[@]}" build railmon-collect 2>&1 | tee -a "$EVIDENCE_DIR/build.log"
+elif [[ ${#build[@]} == 0 && -z ${RAILDASH_IMAGE:-} ]]; then
+  "${compose[@]}" build raildash 2>&1 | tee -a "$EVIDENCE_DIR/build.log"
+fi
 "${compose[@]}" "${up[@]}" 2>&1 | tee "$EVIDENCE_DIR/up.log"
+# A published image was pulled, not built under its name (Compose builds
+# when a pull fails): the local image carries the registry's own digest for
+# the tag. On the containerd store a local build has a digest too, just not
+# that one. Every service of the component runs it.
+for pair in "railmon ${RAILMON_IMAGE:-}" "raildash ${RAILDASH_IMAGE:-}"; do
+  read -r component image <<<"$pair"
+  [[ -n ${image:-} ]] || continue
+  remote=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$image")
+  docker image inspect --format '{{join .RepoDigests "\n"}}' "$image" | grep -qxF "${image%:*}@$remote" \
+    || { echo "$image was built here, not pulled ($remote)" >&2; exit 1; }
+  echo "$component ${image%:*}@$remote" | tee -a "$EVIDENCE_DIR/component-images.txt"
+  for id in $("${compose[@]}" ps -q); do
+    service=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.service"}}' "$id")
+    [[ $service == "$component"* || ($component == railmon && $service == demo-agent) ]] || continue
+    [[ $(docker inspect --format '{{.Config.Image}}' "$id") == "$image" ]] \
+      || { echo "$service does not run $image" >&2; exit 1; }
+  done
+done
 
 if [[ $mode == own-agent ]]; then
   [[ -z "$(docker ps -aq --filter "name=^datrail-demo-agent$")" ]] \
@@ -188,7 +230,7 @@ if [[ $mode == own-agent ]]; then
   # user's own image has none.
   docker run -d --name my-agent --entrypoint /bin/sh -e DEMO_INTERVAL \
     --label com.docker.compose.project= --label com.docker.compose.service= \
-    datrail-railmon:local -c '
+    "$railmon_image" -c '
     set -eu
     demo=/opt/railmon/tools/local-demo
     cp /usr/local/bin/python3 /usr/local/bin/my-agent-bin

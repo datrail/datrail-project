@@ -3,7 +3,8 @@ name: Stack from default branches
 # Runs docker-compose.yml the way the README's quick start does: both images
 # built from each component's default branch, nothing published involved.
 # The schedule catches a change in railmon or raildash that breaks the stack
-# even when nothing in this repository changed.
+# even when nothing in this repository changed. A manual run can name
+# published images instead (DR-214), as INSTALL.md's "Images" says.
 on:
   pull_request:
   push:
@@ -11,9 +12,23 @@ on:
   schedule:
     - cron: "17 6 * * *"
   workflow_dispatch:
+    inputs:
+      railmon_image:
+        description: "Published RailMon image to pull instead of building, e.g. ghcr.io/datrail/railmon:0.1.0-m4"
+        required: false
+        default: ""
+      raildash_image:
+        description: "Published RailDash image to pull instead of building"
+        required: false
+        default: ""
 
 permissions:
   contents: read
+
+# Empty unless a manual run names them; empty means build from source.
+env:
+  RAILMON_IMAGE: ${{ inputs.railmon_image }}
+  RAILDASH_IMAGE: ${{ inputs.raildash_image }}
 
 jobs:
   # The job id is the required status check on master; keep it.
