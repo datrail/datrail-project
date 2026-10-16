@@ -20,7 +20,8 @@ down:
 # Deletes everything the stack created: its containers, including ones only
 # an older docker-compose.yml declared; every volume labelled with this
 # Compose project, including an older version's (`captures`, `raildash-db`),
-# so RailDash's database and token go too; and the two built images.
+# so RailDash's database and token go too; and the stack's two images,
+# built or published.
 clean:
 	docker compose down -v --remove-orphans --rmi all
 	project=$$(docker compose config | sed -n 's/^name: //p') && \
