@@ -33,7 +33,7 @@ docker compose up -d
 
 The first run builds the RailMon and RailDash images from source, which takes
 several minutes. The clone is optional: `docker-compose.yml` alone is the
-whole install, and it can pull published images instead of building
+whole install, and it can pull a published image instead of building one
 ([INSTALL.md](INSTALL.md#images)). Then open **<http://127.0.0.1:8000>**.
 
 ### What you see in RailDash

@@ -90,17 +90,18 @@ make clean                 # also delete the built images and any leftovers
 ```
 
 `docker compose down -v` removes only what the current `docker-compose.yml`
-declares. It keeps the two built images (`datrail-railmon:local` and
-`datrail-raildash:local`, about 540 MB together). It also keeps anything an
+declares. It keeps the stack's two images (`datrail-railmon:local` and
+`datrail-raildash:local` when built, about 540 MB together, or the
+[published images](#published-images) you named). It also keeps anything an
 older version of this stack created: the version before 3 October 2026 used
 the volumes `captures` and `raildash-db` and a `railmon` service, which
 survive an upgrade by `git pull`. `make clean` removes all of it: orphaned
-containers, every volume labelled with this Compose project, and the built
-images. Without `make`, run the commands in the [Makefile](Makefile)'s
+containers, every volume labelled with this Compose project, and the
+stack's two images, published ones included. Without `make`, run the commands in the [Makefile](Makefile)'s
 `clean` target. The older version's images are not this stack's, so `make
 clean` leaves them: the published `ghcr.io/datrail/railmon` and
-`ghcr.io/datrail/raildash`, or `railmon:local` and `raildash:local` if you
-built with `make stack-local`. Remove those with `docker image rm` if nothing
+`ghcr.io/datrail/raildash` it ran, unless this stack runs them too, or
+`railmon:local` and `raildash:local` if you built with `make stack-local`. Remove those with `docker image rm` if nothing
 else uses them.
 
 ## Settings
@@ -294,9 +295,13 @@ curl -fsSLO https://raw.githubusercontent.com/datrail/datrail-project/master/doc
 docker compose up -d
 ```
 
-The commands in this page work the same from that directory. Settings go in
-your shell or a `.env` file beside the downloaded file. CI checks that the
-file reads nothing from its checkout.
+The `docker compose` commands in this page work the same from that
+directory, and settings go in your shell or a `.env` file beside the
+downloaded file. There is no Makefile there: `make clean` is
+`docker compose down -v --remove-orphans --rmi all`. Compose names the
+project after the directory, so a stack started here doesn't share
+RailDash's database with one started from a clone. CI checks that the file
+reads nothing from its checkout.
 
 ### Published images
 
@@ -307,12 +312,13 @@ builds only one it can't:
 ```bash
 export RAILMON_IMAGE=ghcr.io/datrail/railmon:<tag> RAILDASH_IMAGE=ghcr.io/datrail/raildash:<tag>
 docker compose up -d
-docker compose pull && docker compose up -d   # later, to update a moving tag
 ```
 
-Set either one alone to pull that component and build the other. Don't add
-`--build` while an image is set: Compose would build from source and tag
-the result with the published name.
+Set either one alone to pull that component and build the other. To update
+a tag that moves, `docker pull` the image and run `docker compose up -d`
+again. Don't use `--build` or `make update` while an image is set: Compose
+would build from source and tag the result with the published name.
+Name a version tag, not `latest`, which can be older than this file.
 
 An image has to be at least as new as this file. The `0.1.0` images
 predate interval scanning, `railmon listen` and RailDash's evidence-bundle

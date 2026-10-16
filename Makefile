@@ -5,7 +5,9 @@
 up:
 	docker compose up -d
 
-# Rebuild both images from the latest default branches, then restart.
+# Rebuild both images from the latest default branches, then restart. Not
+# with RAILMON_IMAGE / RAILDASH_IMAGE set: that would tag the build with the
+# published name (INSTALL.md, "Published images").
 update:
 	docker compose up -d --build
 

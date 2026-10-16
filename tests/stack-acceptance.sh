@@ -38,7 +38,7 @@ case "$mode" in
     up=(up -d "${build[@]}")
     ;;
   own-agent)
-    # INSTALL.md's command, word for word, plus --build.
+    # INSTALL.md's command, word for word, plus --build when building.
     agent=my-agent
     export AGENT_CONTAINER=my-agent
     up=(up -d "${build[@]}" --scale demo-agent=0)
@@ -191,15 +191,25 @@ if [[ $mode == openshell ]]; then
   echo "sandbox container: $agent" | tee "$EVIDENCE_DIR/sandbox-container.txt"
   export AGENT_CONTAINER=$agent
 fi
+# With one image named, the other component is still built from its default
+# branch, as --build would; `up` then pulls the named one.
+if [[ ${#build[@]} == 0 && -z ${RAILMON_IMAGE:-} ]]; then
+  "${compose[@]}" build railmon-collect 2>&1 | tee -a "$EVIDENCE_DIR/build.log"
+elif [[ ${#build[@]} == 0 && -z ${RAILDASH_IMAGE:-} ]]; then
+  "${compose[@]}" build raildash 2>&1 | tee -a "$EVIDENCE_DIR/build.log"
+fi
 "${compose[@]}" "${up[@]}" 2>&1 | tee "$EVIDENCE_DIR/up.log"
-# A published image was pulled, not built under its name: only a pulled
-# image has a registry digest. Every service of the component runs it.
+# A published image was pulled, not built under its name (Compose builds
+# when a pull fails): the local image carries the registry's own digest for
+# the tag. On the containerd store a local build has a digest too, just not
+# that one. Every service of the component runs it.
 for pair in "railmon ${RAILMON_IMAGE:-}" "raildash ${RAILDASH_IMAGE:-}"; do
   read -r component image <<<"$pair"
   [[ -n ${image:-} ]] || continue
-  digest=$(docker image inspect --format '{{index .RepoDigests 0}}' "$image" 2>/dev/null || true)
-  [[ -n $digest ]] || { echo "$image was built here, not pulled" >&2; exit 1; }
-  echo "$component $digest" | tee -a "$EVIDENCE_DIR/component-images.txt"
+  remote=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$image")
+  docker image inspect --format '{{join .RepoDigests "\n"}}' "$image" | grep -qxF "${image%:*}@$remote" \
+    || { echo "$image was built here, not pulled ($remote)" >&2; exit 1; }
+  echo "$component ${image%:*}@$remote" | tee -a "$EVIDENCE_DIR/component-images.txt"
   for id in $("${compose[@]}" ps -q); do
     service=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.service"}}' "$id")
     [[ $service == "$component"* || ($component == railmon && $service == demo-agent) ]] || continue
