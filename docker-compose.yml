@@ -24,23 +24,26 @@
 # Nothing needs a manual restart or import: every service keeps running and
 # delivers on its own.
 #
-# Images are built from source, from each repository's default branch. The
-# published 0.1.0 images predate interval scanning, `railmon listen` and
-# RailDash's evidence-bundle route, so they cannot run this stack. Point
-# RAILMON_SRC / RAILDASH_SRC at a local checkout to build that instead; a
-# railmon checkout needs its submodules (`git clone --recursive`). A git URL
-# context is fetched with its submodules.
+# Images are built from source, from each repository's default branch.
+# Point RAILMON_SRC / RAILDASH_SRC at a local checkout to build that instead;
+# a railmon checkout needs its submodules (`git clone --recursive`). A git
+# URL context is fetched with its submodules, so this file needs nothing else
+# from its repository: downloading it alone is enough.
+#
+# To run published images instead, set RAILMON_IMAGE / RAILDASH_IMAGE to
+# them and start without --build: Compose pulls an image it can find rather
+# than building it (INSTALL.md, "Images").
 
 # Every RailMon service runs one image, and only railmon-collect builds it.
 # Compose builds services in parallel, and on Docker Desktop's containerd
 # image store a second build of the same image name fails.
 x-railmon: &railmon
-  image: datrail-railmon:local
+  image: ${RAILMON_IMAGE:-datrail-railmon:local}
   restart: unless-stopped
 
 services:
   raildash:
-    image: datrail-raildash:local
+    image: ${RAILDASH_IMAGE:-datrail-raildash:local}
     build:
       context: ${RAILDASH_SRC:-https://github.com/datrail/raildash.git}
     restart: unless-stopped
