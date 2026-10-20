@@ -38,7 +38,7 @@ RailDash listens on `127.0.0.1` only.
 | **Linux, native (x86_64 or arm64)** | Yes | Real kernel with BTF; the probes see host processes. CI runs the quick start on both architectures. |
 | **Windows, WSL2 with Docker Engine installed in the distro (Intel/AMD x86_64)** | Yes | WSL2 runs a real Linux kernel with BTF; the probes see the distro's processes. |
 | **Windows, WSL2 with Docker Desktop (Intel/AMD x86_64)** | Agents in containers | Containers run in Docker Desktop's own Linux VM, so the probes see only what runs inside that VM. The demo agent works; an agent running natively in your WSL distro is not visible, so run it in a container. |
-| **macOS, Intel or Apple Silicon, with Docker Desktop** | Agents in containers (run on Apple Silicon; not yet on an Intel Mac) | Containers run in Docker Desktop's Linux VM (arm64 on Apple Silicon), so the probes see only what runs inside that VM: the demo agent and your own agent in a container, not an agent running natively on the Mac. The images are the ones CI runs on x86_64 and arm64 Linux, and CI's own-agent job uses Docker Desktop's containerd image store; Docker Desktop's VM kernel needs BTF (the check under Prerequisites). |
+| **macOS, Intel or Apple Silicon, with Docker Desktop** | Agents in containers (run on Apple Silicon; not yet on an Intel Mac) | Containers run in Docker Desktop's Linux VM (arm64 on Apple Silicon), so the probes see only what runs inside that VM: the demo agent and your own agent in a container, not an agent running natively on the Mac. The images are the ones CI runs on x86_64 and arm64 Linux, and CI's own-agent job uses Docker Desktop's containerd image store; Docker Desktop's VM kernel needs BTF (the check under Prerequisites). To check a Mac install, follow the [quick start](README.md#quick-start): `make test` runs on Linux only, since it checks the host's `/sys/kernel/btf/vmlinux`. |
 
 ## Run it
 
@@ -219,6 +219,16 @@ chunked can still lose the reply. The request then appears after ten minutes
 as an incomplete interaction, with no response, and `railmon-collect`'s log
 counts it ([railmon#70](https://github.com/datrail/railmon/issues/70)).
 
+### What a real agent looks like
+
+The demo agent is small and predictable. A real one, such as OpenClaw on
+Node, writes more files: `observed_file_access` is capped at 512 paths,
+reads dropped first, so it shows as `PARTIAL`, and an agent that writes a
+new randomly named file on each turn, outside the temp directories that
+are folded (see [Troubleshooting](#troubleshooting)), drifts after every
+turn. The Data Guardrail's Saved files rule then reads unverified, and
+then violated by the new names (seen in testing on 15 October 2026).
+
 ### An agent in an OpenShell sandbox
 
 With [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell)'s Docker
@@ -241,6 +251,12 @@ AGENT_KEY=my-agent docker compose up -d --scale demo-agent=0
 A new sandbox (`openshell sandbox delete` and `create` again) is a new
 container: run the `docker compose up` line again so the stack follows it.
 
+OpenShell's gateway runs as a user systemd service. On a machine with no
+desktop session, such as a cloud VM you reach over SSH, turn on lingering
+before installing OpenShell, or the gateway does not start:
+`sudo loginctl enable-linger $USER`. CI installs OpenShell with
+[`tests/openshell/install.sh`](tests/openshell/install.sh).
+
 - OpenShell's supervisor makes every outside connection for the agent,
   and unless an endpoint sets `tls: skip` it terminates the agent's TLS
   with a CA of its own. The collector reads the agent's side either way,
@@ -251,8 +267,8 @@ container: run the `docker compose up` line again so the stack follows it.
   the agent's own process name. `observed_listeners` also lists
   OpenShell's own DNS on `127.0.0.53:53` (TCP and UDP) with the agent's
   ports. The
-  Data Guardrail's proposal shows them as `service_ports` rows; allow them
-  with the agent's own.
+  Data Guardrail's proposal shows them as `service_ports` rows. They are
+  expected: allow them with the agent's own.
 - Only the Docker driver is covered. Podman, Kubernetes and the MicroVM
   driver run the agent elsewhere.
 - RailDash's Data Guardrail panel shows the sandbox's **Egress** as
