@@ -271,12 +271,13 @@ before installing OpenShell, or the gateway does not start:
   expected: allow them with the agent's own.
 - Only the Docker driver is covered. Podman, Kubernetes and the MicroVM
   driver run the agent elsewhere.
-- It needs native Linux. On Docker Desktop (a Mac, or Windows with WSL2)
-  the sandbox's supervisor looks for OpenShell's gateway at `127.0.0.1`
-  and doesn't find it, so the sandbox doesn't run. Docker Desktop still
-  runs the rest of the stack.
+- It doesn't run on Docker Desktop (a Mac, or Windows with Docker
+  Desktop): the sandbox's supervisor looks for OpenShell's gateway at
+  `127.0.0.1` and doesn't find it, so the sandbox doesn't start. Use
+  native Linux. Docker Desktop still runs the rest of the stack.
 - RailDash's Data Guardrail panel shows the sandbox's **Egress** as
-  *Contained: OpenShell enforces an allow-list*. It's read from Docker:
+  *Contained: it should not reach outside hosts itself; OpenShell
+  enforces an allow-list*. It's read from Docker:
   OpenShell's sandbox labels together with a container that has no network
   of its own, no runtime socket and no privilege. The allow-list itself
   stays inside OpenShell, so datRail doesn't show what's on it. Because the
