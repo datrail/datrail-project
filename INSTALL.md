@@ -37,8 +37,8 @@ RailDash listens on `127.0.0.1` only.
 | --- | --- | --- |
 | **Linux, native (x86_64 or arm64)** | Yes | Real kernel with BTF; the probes see host processes. CI runs the quick start on both architectures. |
 | **Windows, WSL2 with Docker Engine installed in the distro (Intel/AMD x86_64)** | Yes | WSL2 runs a real Linux kernel with BTF; the probes see the distro's processes. |
-| **Windows, WSL2 with Docker Desktop (Intel/AMD x86_64)** | Agents in containers | Containers run in Docker Desktop's own Linux VM, so the probes see only what runs inside that VM. The demo agent works; an agent running natively in your WSL distro is not visible, so run it in a container. |
-| **macOS, Intel or Apple Silicon, with Docker Desktop** | Agents in containers (run on Apple Silicon; not yet on an Intel Mac) | Containers run in Docker Desktop's Linux VM (arm64 on Apple Silicon), so the probes see only what runs inside that VM: the demo agent and your own agent in a container, not an agent running natively on the Mac. The images are the ones CI runs on x86_64 and arm64 Linux, and CI's own-agent job uses Docker Desktop's containerd image store; Docker Desktop's VM kernel needs BTF (the check under Prerequisites). To check a Mac install, follow the [quick start](README.md#quick-start): `make test` runs on Linux only, since it checks the host's `/sys/kernel/btf/vmlinux`. |
+| **Windows, WSL2 with Docker Desktop (Intel/AMD x86_64)** | Agents in containers | Containers run in Docker Desktop's own Linux VM, so the probes see only what runs inside that VM. The demo agent works; an agent running natively in your WSL distro is not visible, so run it in a container. An agent in an [OpenShell sandbox](#an-agent-in-an-openshell-sandbox) needs native Linux. |
+| **macOS, Intel or Apple Silicon, with Docker Desktop** | Agents in containers (run on Apple Silicon; not yet on an Intel Mac) | Containers run in Docker Desktop's Linux VM (arm64 on Apple Silicon), so the probes see only what runs inside that VM: the demo agent and your own agent in a container, not an agent running natively on the Mac. The images are the ones CI runs on x86_64 and arm64 Linux, and CI's own-agent job uses Docker Desktop's containerd image store; Docker Desktop's VM kernel needs BTF (the check under Prerequisites). To check a Mac install, follow the [quick start](README.md#quick-start): `make test` runs on Linux only, since it checks the host's `/sys/kernel/btf/vmlinux`. An agent in an [OpenShell sandbox](#an-agent-in-an-openshell-sandbox) needs native Linux. |
 
 ## Run it
 
@@ -271,8 +271,13 @@ before installing OpenShell, or the gateway does not start:
   expected: allow them with the agent's own.
 - Only the Docker driver is covered. Podman, Kubernetes and the MicroVM
   driver run the agent elsewhere.
+- It doesn't run on Docker Desktop (a Mac, or Windows with Docker
+  Desktop): the sandbox's supervisor looks for OpenShell's gateway at
+  `127.0.0.1` and doesn't find it, so the sandbox doesn't start. Use
+  native Linux. Docker Desktop still runs the rest of the stack.
 - RailDash's Data Guardrail panel shows the sandbox's **Egress** as
-  *Contained: OpenShell enforces an allow-list*. It's read from Docker:
+  *Contained: it should not reach outside hosts itself; OpenShell
+  enforces an allow-list*. It's read from Docker:
   OpenShell's sandbox labels together with a container that has no network
   of its own, no runtime socket and no privilege. The allow-list itself
   stays inside OpenShell, so datRail doesn't show what's on it. Because the
