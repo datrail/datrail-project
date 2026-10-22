@@ -222,12 +222,18 @@ counts it ([railmon#70](https://github.com/datrail/railmon/issues/70)).
 ### What a real agent looks like
 
 The demo agent is small and predictable. A real one, such as OpenClaw on
-Node, writes more files: `observed_file_access` is capped at 512 paths,
-reads dropped first, so it shows as `PARTIAL`, and an agent that writes a
-new randomly named file on each turn, outside the temp directories that
-are folded (see [Troubleshooting](#troubleshooting)), drifts after every
-turn. The Data Guardrail's Saved files rule then reads unverified, and
-then violated by the new names (seen in testing on 15 October 2026).
+Node, opens more files: `observed_file_access` is capped at 512 paths,
+reads dropped first, so it shows as `PARTIAL`. Every written file is
+still listed, so the Data Guardrail's Saved files rule is judged as usual
+and can read held. A read the capped baseline couldn't list is not drift,
+and neither is a file rewritten under a new uuid in its name: RailDash
+compares it, and the guardrail proposes and allows it, as that name with
+`*` for the uuid. A file written under some other new random name each turn, outside
+the temp directories that are folded (see
+[Troubleshooting](#troubleshooting)), still drifts after every turn and is
+a new Saved files row. A capped list makes Saved files read unverified
+only when it lost something else too, such as a write past the cap or a
+probe restart.
 
 ### An agent in an OpenShell sandbox
 
