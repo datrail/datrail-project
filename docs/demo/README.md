@@ -9,4 +9,4 @@ Working material for the datRail 0.2 demo and the four short videos. Drafts: wha
 | [CAPABILITIES_DEMO_TABLE.md](CAPABILITIES_DEMO_TABLE.md) | The 16 capabilities delivered in 0.2, each with the command that produces its drift or violation and where the step is scripted (runbook part, CI step in `tests/stack_acceptance.py`). |
 | [videos/](videos/) | One script per video: intro, port drift, tool misuse, egress containment. |
 
-Every demo step is one the stack CI runs on every merge (`tests/stack-acceptance.sh`), so a step that works here works in CI and the other way round.
+Parts A and C of the runbook mirror the steps the stack CI runs on every merge (`tests/stack-acceptance.sh`); Part B2 (a real OpenClaw agent), the VM recipe and the optional clicks in A5 are manual.

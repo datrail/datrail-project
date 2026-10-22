@@ -8,7 +8,7 @@ Why a VM: RailMon's probes need a Linux kernel with BTF and privileged container
 | --- | --- |
 | Project / zone | `<your-project>`, `us-east1-b` (any project you have Compute Admin on works) |
 | Machine | `e2-standard-4` (4 vCPU, 16 GB), Ubuntu 24.04 LTS (`ubuntu-2404-lts-amd64`), 50 GB pd-balanced |
-| Network | no external IP (org policy `compute.vmExternalIpAccess` forbids it): SSH through IAP, outbound through a Cloud NAT |
+| Network | no external IP (not needed, and many org policies forbid one): SSH through IAP, outbound through a Cloud NAT |
 | Kernel | 7.0.0-1011-gcp, BTF present (`/sys/kernel/btf/vmlinux`) |
 | Docker | Engine 29.9, Compose v5.6, from Docker's apt repo |
 

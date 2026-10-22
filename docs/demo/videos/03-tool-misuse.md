@@ -2,7 +2,7 @@
 
 Target length: under 2 minutes. Starts from the end of video 2 (guardrail HELD).
 
-1. `docker exec datrail-demo-agent sh -c 'echo report > /data/report.zip'` → Saved files VIOLATED within 30 s.
+1. `docker exec datrail-demo-agent sh -c 'mkdir -p /data && echo report > /data/report.zip'` → Saved files VIOLATED at the next scan.
 2. The exfil.example POST from the runbook → Uploads and Out-of-spec calls VIOLATED.
 3. The three MCP calls, a few seconds apart:
    - `demo_mcp_call.py upload_file` → DATA ACTIONS `upload_file · upload` (carrying an image)

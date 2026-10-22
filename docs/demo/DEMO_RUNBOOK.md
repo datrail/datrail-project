@@ -12,14 +12,15 @@ Prerequisites (INSTALL.md): Docker Engine or Docker Desktop with Compose v2, a k
 
 | Host | What works | Notes |
 | --- | --- | --- |
-| Linux x86_64 or arm64 with Docker Engine | everything, including `make test` and OpenShell (Part C) | what CI uses |
+| Linux x86_64 with Docker Engine | everything, including `make test` and OpenShell (Part C) | what CI uses |
+| Linux arm64 with Docker Engine | Parts A and B, `make test` | OpenShell ships an amd64 .deb only, so no Part C |
 | A GCP VM | everything | recipe below; about $0.13 an hour while running |
-| Mac, Apple Silicon or Intel, Docker Desktop | Parts A and B; the probes see agents in containers only | `make test` does not run on the Mac itself (see Troubleshooting); OpenShell has no Mac package |
+| Mac with Docker Desktop (Apple Silicon, run 10/15 and 10/20; Intel expected, not yet run) | Parts A and B; the probes see agents in containers only | `make test` does not run on the Mac itself (see Troubleshooting); OpenShell has no Mac package |
 | Windows, WSL2 with Docker Engine in the distro | Parts A and B, `make test` | Docker Desktop on WSL2: agents in containers only |
 
 ### A GCP VM in five commands
 
-No external IP (the org policy forbids it): SSH goes through IAP and outbound traffic through a Cloud NAT. Replace `datrail-demo-...` with your own names and `<your-project>` with a project you have Compute Admin on.
+No external IP (the VM does not need one, and many org policies forbid it): SSH goes through IAP and outbound traffic through a Cloud NAT. Replace `datrail-demo-...` with your own names and `<your-project>` with a project you have Compute Admin on.
 
 ```bash
 gcloud auth login
@@ -70,7 +71,7 @@ Once the second ASP is in, click **Lock this as your alignment baseline** on the
 docker exec -d datrail-demo-agent python3 -m http.server 9000 --bind 127.0.0.1
 ```
 
-Within a minute: **DRIFT DETECTED**, listing `observed_listeners` (9000/python3 added) and `observed_file_access` (what http.server read, plus `__pycache__`). Expand Before/After. Do not click Accept; keep v1.0.
+At the next scan (`SCAN_INTERVAL`, 60 s by default; CI runs at 10 s): **DRIFT DETECTED**, listing `observed_listeners` (9000/python3 added) and `observed_file_access` (what http.server read, plus `__pycache__`). Expand Before/After. Do not click Accept; keep v1.0.
 
 ### A4. Data Guardrail (2 minutes)
 
@@ -143,18 +144,15 @@ AGENT_CONTAINER=my-agent docker compose up -d --scale demo-agent=0
 docker run -d --name my-agent <your image> <your agent>
 ```
 
-RailDash names the agent by the scanner's agent key (`AGENT_KEY`, default the container name). The collector finds the agent's TLS on its own (a loaded libssl, or one built into the executable as in Node) and re-attaches after `docker restart my-agent`. Everything in A1 to A7 then applies, with `datrail-demo-agent` replaced by your container's name.
+RailDash names the agent by the scanner's agent key (`AGENT_KEY`, default the container name). The collector finds the agent's TLS on its own (a loaded libssl, or one built into the executable as in Node) and re-attaches after `docker restart my-agent`. A1, A2 and A7 then apply as written, and drift and the guardrail follow whatever your agent does. A3 to A6 as written need the RailMon demo image (its `python3`, the 8443 server and `demo_mcp_call.py`), which is why CI's own-agent mode runs that image as `my-agent`.
 
-### B2. A real agent (OpenClaw on Node, run on a Mac on 10/15)
+### B2. A real agent (OpenClaw on Node, run on a Mac on 10/15 and 10/20)
 
-What we ran: the local Rail Center demo's `rc-demo-agent-one` (OpenClaw, Node 22, model calls to Gemini's OpenAI-compatible endpoint).
+What we ran: an OpenClaw agent in a container (Node 22, model calls to Gemini's OpenAI-compatible endpoint), `<your-agent>` below.
 
 ```bash
-docker compose build railmon-collect raildash
-RAILDASH_PORT=18000 AGENT_CONTAINER=rc-demo-agent-one docker compose up -d --scale demo-agent=0
+RAILDASH_PORT=18000 AGENT_CONTAINER=<your-agent> docker compose up -d --build --scale demo-agent=0
 ```
-
-The explicit `build` first is the workaround for datrail-project#39: on Docker Desktop, `up -d --build` fails with `datrail-railmon:local already exists` because four services build the same image name concurrently.
 
 Check the attach in the logs:
 
@@ -162,18 +160,18 @@ Check the attach in the logs:
 docker compose logs railmon-collect | grep attaching
 ```
 
-Expected: `attaching to rc-demo-agent-one: pid <n> (openclaw-gatewa) has TLS built into /usr/local/bin/node`. Then drive one turn:
+Expected: `attaching to <your-agent>: pid <n> (openclaw-gatewa) has TLS built into /usr/local/bin/node`. Then drive one turn:
 
 ```bash
-docker exec rc-demo-agent-one openclaw agent --agent main --json --timeout 300 --message "Reply with the single word READY."
+docker exec <your-agent> openclaw agent --agent main --json --timeout 300 --message "Reply with the single word READY."
 ```
 
-Within seconds the Interaction log shows `POST generativelanguage.googleapis.com /v1beta/openai/chat/completions 200`, about 55 KB out and 2 KB in. The first ASP names the agent `rc-demo-agent-zone / agent-one`, with `sandbox_type: nemo_claw` and the listener `0.0.0.0:18789`.
+Within seconds the Interaction log shows `POST generativelanguage.googleapis.com /v1beta/openai/chat/completions 200`, about 55 KB out and 2 KB in. The first ASP names the agent after its compose project and service (or `AGENT_KEY`), with the listener `0.0.0.0:18789`.
 
 What a real agent looks like today (so nobody is surprised):
 
-- `observed_file_access` is capped at 512 entries and reads PARTIAL; the proposal lists OpenClaw's session files by exact path. After locking a baseline, the next turn shows DRIFT DETECTED on that attribute (new uuid-named `.tmp` files, and a different set of reads dropped by the cap), and the Saved files rule reads unverified, then violated. Filed as railmon#97.
-- `tool_calls` is 0 and Uploads and Data actions read "unverified — a response's tool calls couldn't be read": Gemini gzips the streamed reply and the body is stored compressed (railmon#93).
+- `observed_file_access` is capped at 512 entries and reads PARTIAL, and OpenClaw writes uuid-named `.tmp` session files on every turn. Until raildash#92 (DR-229, merged 10/22) that made every turn read as drift and the Saved files rule unverified; RailDash now compares the capped list as a window and allows the uuid name as a glob (railmon#97).
+- Gemini gzips its streamed reply; since railmon#94 (DR-213) it is decoded before parsing, so the model's tool calls show under Data actions. The traffic view's `tool_calls` count still reads a streamed reply as 0.
 - Host, path, model, sizes and the tool list the model was given are all read; every reply pairs.
 
 ---
@@ -190,11 +188,15 @@ The gateway is a user systemd service, so on a headless host it needs linger or 
 sudo loginctl enable-linger $USER
 ```
 
+Install OpenShell with its own installer (https://github.com/NVIDIA/OpenShell; amd64 Linux only), then point it at Docker and register the local gateway:
+
 ```bash
-cd ~/datrail-project && bash tests/openshell/install.sh
+printf 'OPENSHELL_COMPUTE_DRIVER=docker\n' >> ~/.config/openshell/gateway.env
+systemctl --user enable --now openshell-gateway
+openshell gateway add https://127.0.0.1:17670 --local --name openshell
 ```
 
-The script installs the pinned 0.1.3 .deb, writes `~/.config/openshell/gateway.env` (Docker driver, telemetry off), starts the service and registers the local gateway. Check:
+(`tests/openshell/install.sh` does the same with a pinned 0.1.3 .deb, but it is written for CI hosts; its header says so.) Check:
 
 ```bash
 openshell status
@@ -272,7 +274,7 @@ AGENT_CONTAINER=$A AGENT_KEY=my-agent docker compose up -d --scale demo-agent=0
 
 - The first ASP's `observed_listeners` has three rows, all under the process name `openshell-sandb`: `127.0.0.1:8443`, `127.0.0.53:53 tcp`, `127.0.0.53:53 udp`. OpenShell opens the agent's sockets, and 53 is its own DNS.
 - The agent is named `my-agent` (the key).
-- The Data Guardrail card's Egress reads **Contained: OpenShell enforces an allow-list**, read from Docker (sandbox labels, no network of its own, no runtime socket, no privilege). The proposal already requires containment, so there is no Require containment click.
+- The Data Guardrail card's Egress reads **Contained: it should not reach outside hosts itself; OpenShell enforces an allow-list**, read from Docker (sandbox labels, no network of its own, no runtime socket, no privilege). The proposal already requires containment, so there is no Require containment click.
 
 ### C7. Lock, drift, guardrail, violations, data actions
 
@@ -303,20 +305,21 @@ docker compose down -v
 - `openshell status` not reachable: restart the gateway (C1). Still down: `loginctl show-user $USER -p Linger` must say `Linger=yes`.
 - `sandbox create` says already exists: C2 was skipped.
 - `railmon-collect` keeps restarting: `docker compose logs railmon-collect`; usually `$A` was empty (C5's echo printed nothing).
-- `datrail-railmon:local already exists` on `up --build` (Docker Desktop): datrail-project#39; build one service first (B2).
 - Nothing arrives for a Node agent started with `COLLECT_TARGET="--comm ..."`: Node bundles its TLS; use `AGENT_CONTAINER` instead (railmon#70, datrail-project#18).
 - `make test` exits after one second on a Mac: `tests/stack-acceptance.sh` checks `/sys/kernel/btf/vmlinux` on the host running it, which macOS has not. It is the CI script for Linux hosts; on a Mac walk Part A by hand (every step of it was run through RailDash's own routes on 10/20 and matched).
 
 ## Timings measured
+
+Measured at CI's `SCAN_INTERVAL=10`. The stack's default is 60 s, so on a default install anything that waits for a scan takes up to a minute.
 
 | Step | Measured |
 | --- | --- |
 | First build from source, VM e2-standard-4 | 4 min 51 s |
 | railmon build on an M-series Mac, cold cache | about 2 min |
 | First ASP after `up` | about 1 min |
-| Drift after opening a port | within 15 s |
+| Drift after opening a port | within 15 s at `SCAN_INTERVAL=10`; up to a minute at the default |
 | Held after Allow | seconds to 1 min |
-| Violations after the commands | within 30 s |
+| Violations after the commands | within 30 s at `SCAN_INTERVAL=10`; up to a minute at the default |
 | Data-action rows | seconds; `not offered` after 1 min |
 | GET through OpenShell's supervisor | 10 to 30 s after `touch /sandbox/outbound` |
 | `make test`: demo / own-agent / openshell | 417 s / 433 s / 464 s (10/15); 696 s (with rebuild) / 422 s / 438 s on 10/20; image-only demo run 426 s |
