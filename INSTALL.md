@@ -227,8 +227,9 @@ reads dropped first, so it shows as `PARTIAL`. Every written file is
 still listed, so the Data Guardrail's Saved files rule is judged as usual
 and can read held. A read the capped baseline couldn't list is not drift,
 and neither is a file rewritten under a new uuid in its name: RailDash
-compares it, and the guardrail proposes and allows it, as that name with
-`*` for the uuid. A file written under some other new random name each turn, outside
+compares it as that name with `*` for the uuid, and when at least three
+letters or digits come before the uuid, the guardrail proposes and allows
+it that way too. A file written under some other new random name each turn, outside
 the temp directories that are folded (see
 [Troubleshooting](#troubleshooting)), still drifts after every turn and is
 a new Saved files row. A capped list makes Saved files read unverified
