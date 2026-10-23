@@ -435,6 +435,13 @@ AgentSight v1.0.35 too. Check the
 newest ASP's evidence and lock it as the new baseline; it happens once per
 upgrade.
 
+**A Codex agent's guardrail turns Violated or Unverified after upgrading to
+RailDash `0.2.0-rc.4`.** From that version on, RailDash reads the MCP calls
+Codex makes from inside its code-mode `exec` tool, which it couldn't see
+before. A call to a server the guardrail doesn't allow is now a violation,
+and a script that reaches a tool through a name it doesn't spell keeps the
+rules Unverified for a while. Allow the server if it belongs there.
+
 **`observed_file_access` lists new paths after the agent restarts.** A
 restarted agent may open files under new names (a new log file, a fresh
 directory of its own). A randomly named temp file under `/tmp`, `/var/tmp`
