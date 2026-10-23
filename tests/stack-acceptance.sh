@@ -247,8 +247,10 @@ if [[ $mode == own-agent ]]; then
   # Compose service, so RailDash knows it by the scanner's agent key. Compose
   # labelled the image it built with its project and service, and a
   # container inherits its image's labels, so they are blanked here: a
-  # user's own image has none.
+  # user's own image has none. It declares the demo's MCP server as the
+  # demo agent does (DR-237).
   docker run -d --name my-agent --entrypoint /bin/sh -e DEMO_INTERVAL \
+    -e AGENT_MCP_NAME=demo -e AGENT_MCP_URL=https://127.0.0.1:8443/mcp \
     --label com.docker.compose.project= --label com.docker.compose.service= \
     "$railmon_image" -c '
     set -eu

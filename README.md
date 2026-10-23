@@ -72,14 +72,14 @@ hand:
   proposes a guardrail from it: what the agent already did is allowed, plus
   Python's bytecode caches, and every line is shown before you approve it.
   The proposal also lists what would be a violation under it. For the demo
-  agent, with the baseline you locked first, that is its own port 8443 and
-  its calls to `127.0.0.1`, which its configuration doesn't declare. Click
-  **Adopt**; within a minute each shows as a row, and so does port 9000,
-  still open from the drift step: three rows, nothing else. Click **Allow
-  all 2** in the Service ports group (one new guardrail version for both
-  ports) and **Allow this** on the `127.0.0.1` row. Once the next scan and
-  capture arrive (a minute or two), the agent reads **Held**. Now make the
-  agent break a rule:
+  agent, with the baseline you locked first, that is its own port 8443. Its
+  calls to `127.0.0.1` are in spec: its configuration declares its MCP
+  server, `demo` at `https://127.0.0.1:8443/mcp`. Click **Adopt**; within a
+  minute port 8443 shows as a row, and so does port 9000, still open from
+  the drift step: two rows, nothing else. Click **Allow all 2** in the
+  Service ports group (one new guardrail version for both ports). Once the
+  next scan and capture arrive (a minute or two), the agent reads **Held**.
+  Now make the agent break a rule:
 
   ```bash
   # saved_files: a file the guardrail doesn't allow
@@ -107,12 +107,12 @@ hand:
   Docker network and can reach any host. **Require containment** adds a rule
   it then violates. An agent in an OpenShell sandbox reads *Contained*
   ([INSTALL](INSTALL.md#an-agent-in-an-openshell-sandbox)).
-- **Data actions.** The demo agent also talks to a small MCP server (at
-  `/mcp` on its own port) that offers two tools, `read_doc` and
+- **Data actions.** The demo agent also talks to a small MCP server, `demo`
+  (at `/mcp` on its own port), that offers two tools, `read_doc` and
   `upload_file`, and it only ever reads. So the proposal you adopted allowed
-  `read_doc` and listed `upload_file` as blocked until allowed (see **Data
-  actions** in the observed profile for what each call did and why). Make
-  the agent use the tools it was never meant to:
+  `mcp__demo__read_doc` and listed `mcp__demo__upload_file` as blocked until
+  allowed (see **Data actions** in the observed profile for what each call
+  did and why). Make the agent use the tools it was never meant to:
 
   ```bash
   # upload_file: uploads a small PNG
@@ -123,8 +123,8 @@ hand:
   docker exec datrail-demo-agent python3 /opt/railmon/tools/local-demo/demo_mcp_call.py --garbage
   ```
 
-  Under Data actions: `mcp@127.0.0.1/mcp__upload_file · upload`, an upload
-  carrying an image; `mcp@127.0.0.1/mcp__export_all · unclassified`, then
+  Under Data actions: `mcp__demo__upload_file · upload`, an upload
+  carrying an image; `mcp__demo__export_all · unclassified`, then
   about a minute later `… · not offered by 127.0.0.1/mcp`; and
   `127.0.0.1/mcp · unreadable call`. Data actions now reads violated.
 

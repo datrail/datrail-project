@@ -24,13 +24,13 @@ then, driving RailDash's own HTTP routes the way the dashboard does:
 5. the Data Guardrail (DR-184 M4, the design's §6 step 4), in the README's
    order, after the drift step: adopting the unedited proposal from that
    baseline is Violated by exactly the agent's own listener on 8443, the
-   port the drift step opened, any --platform-listener (OpenShell's DNS),
-   and its calls to 127.0.0.1, which its configuration doesn't declare.
-   Nothing else: the Python commands the
-   walk runs in the agent write bytecode caches, which the proposal
-   allows (DR-201). Allow all on the ports (one version, DR-202) and
-   Allow this on the host is Held once the next scan, capture and
-   heartbeat arrive;
+   port the drift step opened and any --platform-listener (OpenShell's
+   DNS). Its calls to 127.0.0.1 are not out of spec: the agent declares
+   its MCP server, https://127.0.0.1:8443/mcp, so the proposal seeds
+   127.0.0.1 and `demo` from its configuration (DR-237). Nothing else: the
+   Python commands the walk runs in the agent write bytecode caches, which
+   the proposal allows (DR-201). Allow all on the ports (one version,
+   DR-202) is Held once the next scan, capture and heartbeat arrive;
 6. then, in the agent: a port opened after Held (the design's step 4(a),
    DR-236) is exactly one `service_ports` violation, and Violated; Allow
    this on it is Held again, so the steps after it start from Held. Then
@@ -43,13 +43,17 @@ then, driving RailDash's own HTTP routes the way the dashboard does:
    them by, so no outside network is involved. The collector follows only
    the agent's own process session, not a `docker exec`, so they are seen
    on the server's side, as the agent's server reads them;
-7. data actions (DR-205), the KubeCon step: the demo agent lists its MCP
-   server's tools (read_doc, upload_file) and reads through read_doc, so
-   the adopted proposal allows read_doc and blocks upload_file until
-   allowed. Then, in the agent: an upload_file with a PNG is a
-   `data_actions` upload violation carrying an image; a tool the server
-   never listed is unclassified, and "not offered" once the 60 s delay has
-   passed; a POST to /mcp that isn't JSON-RPC is an unreadable call.
+7. data actions (DR-205), the KubeCon step: the demo agent declares its
+   MCP server as `demo`, lists its tools (read_doc, upload_file) and reads
+   through read_doc, so the proposal allows mcp__demo__read_doc and lists
+   mcp__demo__upload_file as blocked until allowed. The demo client also
+   opens the server's GET stream and ends its session with a DELETE every
+   cycle; neither is a call, and the exact-row checks, run while it does,
+   prove neither makes a row (DR-237). Then, in the agent: an upload_file
+   with a PNG is a `data_actions` upload violation with bytes, carrying an
+   image; a tool the server never listed is unclassified, and "not
+   offered" once the 60 s delay has passed; a POST to /mcp that isn't
+   JSON-RPC is an unreadable call.
 
 Whenever the guardrail is checked, each rule's shown state must agree with
 its rows: `violated` exactly while the rule has a counting row (DR-200).
@@ -84,11 +88,14 @@ NEW_PORT = 9100
 # The agent runs this script for every call it makes (the RailMon image's
 # local demo), so railmon-files must report it read.
 DEMO_SCRIPT = "/opt/railmon/tools/local-demo/demo_client.py"
-# DR-205: the demo's MCP server is at /mcp on DEMO_PORT; the agent declares
-# no MCP server, so RailDash names its tools by endpoint.
+# DR-205: the demo's MCP server is at /mcp on DEMO_PORT. The agent declares
+# it as `demo` (AGENT_MCP_NAME/AGENT_MCP_URL, DR-237), so RailDash names its
+# tools mcp__demo__<tool>; the endpoint still names the unreadable and "not
+# offered" rows.
 DEMO_MCP_CALL = "/opt/railmon/tools/local-demo/demo_mcp_call.py"
+MCP_SERVER = "demo"
 MCP_ENDPOINT = "127.0.0.1/mcp"
-MCP_TOOL_PREFIX = f"mcp@{MCP_ENDPOINT}__"
+MCP_TOOL_PREFIX = f"mcp__{MCP_SERVER}__"
 DATA_ACTIONS = "data_actions"
 EGRESS = "egress_containment"
 CONTAINED_LEVELS = ("allow_list_enforced", "no_network", "internal_network")
@@ -129,8 +136,8 @@ SECOND_HOST = "second.example"
 # body for POST and none for GET. The collector doesn't capture this client
 # (a `docker exec` isn't the agent's session); it captures the agent's own
 # server reading the request, Host header and body included. The demo server
-# answers a GET with 501, which is still a call. The certificate is the
-# demo's throwaway one, hence no verification.
+# answers a GET to /upload with 404, which is still a call. The certificate
+# is the demo's throwaway one, hence no verification.
 AGENT_REQUEST = """
 import http.client, ssl, sys
 method, host = sys.argv[1], sys.argv[2]
@@ -161,7 +168,9 @@ class Guardrail:
     def detail(self) -> dict:
         return api(self.base, f"/api/guardrails/{self._agent_ref()}", self.token)
 
-    def adopt(self, alignment_version_id: str) -> None:
+    def adopt(self, alignment_version_id: str) -> dict:
+        """Adopt the unedited proposal; returns that proposal (only shown
+        while no version is active)."""
         proposal = self.detail()["proposal"]
         if not proposal or not proposal.get("guardrail"):
             sys.exit(f"FAIL: no guardrail was proposed for the agent: {proposal}")
@@ -170,6 +179,7 @@ class Guardrail:
               f"{[(v['rule'], v['item']) for v in proposal['would_be_violations']]}")
         adopted = api(self.base, f"/api/alignments/{alignment_version_id}/guardrail", self.token, {})
         print(f"ok:   adopted the unedited proposal as {adopted['guardrail']['version']}")
+        return proposal
 
     def rows(self) -> dict[tuple[str, str], dict]:
         return {(r["rule"], r["item"]): r for r in self.detail()["rows"]}
@@ -408,20 +418,32 @@ def main() -> int:
 
     # ---- 5. the Data Guardrail, adopted after the drift step -----------------
     guard = Guardrail(base, token, ours)
-    guard.adopt(version["alignment_version_id"])
+    proposed = guard.adopt(version["alignment_version_id"])
+    # DR-237: the agent declares its MCP server, so the proposal seeds its
+    # host and name as in spec, and blocks the tool it never used.
+    spec = proposed["guardrail"]["rules"]["out_of_spec_calls"]
+    if "127.0.0.1" not in spec["allowed_hosts"] or MCP_SERVER not in spec["allowed_mcp_servers"]:
+        sys.exit(f"FAIL: the proposal didn't seed the declared MCP server {MCP_SERVER} at "
+                 f"127.0.0.1: {spec}")
+    print(f"ok:   the proposal seeds the declared MCP server: {spec['seeded_from_declared']}")
+    blocked = [b["tool"] for b in proposed.get("data_actions_blocked") or []]
+    print(f"      data actions blocked until allowed: {blocked}")
+    if f"{MCP_TOOL_PREFIX}upload_file" not in blocked or f"{MCP_TOOL_PREFIX}read_doc" in blocked:
+        sys.exit(f"FAIL: the proposal should block {MCP_TOOL_PREFIX}upload_file until allowed, "
+                 f"and not {MCP_TOOL_PREFIX}read_doc: {blocked}")
+    print(f"ok:   {MCP_TOOL_PREFIX}upload_file is blocked until allowed")
     ports = {f"tcp/127.0.0.1/{DEMO_PORT}", f"tcp/127.0.0.1/{DRIFT_PORT}", *args.platform_listener}
-    first = {("service_ports", port) for port in ports} | {("out_of_spec_calls", "127.0.0.1")}
+    first = {("service_ports", port) for port in ports}
     guard.wait_for_rows(
         "adopting the unedited proposal is Violated by exactly the agent's own listener, the "
-        "port the drift step opened, any platform listener, and its undeclared calls to 127.0.0.1",
+        "port the drift step opened and any platform listener",
         first, exact=True,
     )
-    # The README's clicks: Allow all on the ports, Allow this on the host.
+    # The README's click: Allow all on the ports.
     guard.allow_all("service_ports", ports)
-    guard.allow("out_of_spec_calls", "127.0.0.1")
     versions = [v["guardrail"]["version"] for v in guard.detail()["versions"]]
-    if sorted(versions) != ["g1", "g2", "g3"]:
-        sys.exit(f"FAIL: three rows allowed in two clicks should make g2 and g3 only, got {versions}")
+    if sorted(versions) != ["g1", "g2"]:
+        sys.exit(f"FAIL: the ports allowed in one click should make g2 only, got {versions}")
     guard.wait_for_state("held", "with each allowed, the next scan, capture and heartbeat are Held",
                          timeout=240)
 
@@ -467,10 +489,21 @@ def main() -> int:
     if guard.row("uploads", SECOND_HOST) is not None:
         sys.exit(f"FAIL: a GET without a body to {SECOND_HOST} was judged an upload")
     print("ok:   ... and not an upload")
+    # DR-237: the demo client opens the MCP server's GET stream and ends its
+    # session with a DELETE every cycle. Seen here, so the exact rows below,
+    # checked a few cycles later, prove neither made a row.
+    def mcp_stream_and_delete() -> Any:
+        items = api(base, "/api/interactions?limit=500")["items"]
+        on_mcp = {r.get("method") for r in items if (r.get("path") or "").startswith("/mcp")}
+        return {"GET", "DELETE"} <= on_mcp and on_mcp
+    methods = wait_for("the demo client's MCP GET stream and session DELETE are captured",
+                       mcp_stream_and_delete, 180)
+    print(f"      methods captured on /mcp: {sorted(m for m in methods if m)}")
     # The README's last line: what each rule then reads. Checked again after
     # a few scan intervals: rows stay until acknowledged, so a row the Python
     # commands' scans bring late (a bytecode cache the proposal didn't
-    # allow) would still be in that snapshot.
+    # allow), or one an MCP GET or DELETE made, would still be in that
+    # snapshot.
     time.sleep(args.settle)
     guard.wait_for_rows("after a few more scans, still exactly those rows", final, exact=True)
     detail = guard.detail()
@@ -489,7 +522,8 @@ def main() -> int:
     # ---- 6. data actions (DR-205), the KubeCon step ---------------------------
     # The demo agent's MCP server offers read_doc and upload_file; the agent
     # only reads, so the adopted proposal allowed read_doc and blocked
-    # upload_file until allowed. The calls go to the agent's own server.
+    # upload_file until allowed (checked at adoption). The calls go to the
+    # agent's own server.
     proposal = guard.detail()["active"]["guardrail"]["rules"]["data_actions"]
     if {"tool": f"{MCP_TOOL_PREFIX}read_doc", "actions": ["read"]} not in proposal["allowed"]:
         sys.exit(f"FAIL: the proposal didn't allow the read_doc the agent used: {proposal}")
@@ -500,10 +534,13 @@ def main() -> int:
     uploaded = final | {upload}
     guard.wait_for_rows("(f) upload_file, which the agent never used while learning, is a "
                         "data_actions violation", uploaded, exact=True)
-    kinds = guard.row(*upload)["detail"].get("content_kinds")
+    detail = guard.row(*upload)["detail"]
+    kinds, size = detail.get("content_kinds"), detail.get("bytes")
     if kinds != ["image"]:
         sys.exit(f"FAIL: the upload's content kinds are {kinds}, expected ['image']")
-    print("ok:   ... and it carried an image")
+    if not isinstance(size, int) or size <= 0:
+        sys.exit(f"FAIL: the upload row's bytes are {size!r}, expected more than 0")
+    print(f"ok:   ... and it carried an image, {size} bytes")
     mcp("export_all")
     offered = uploaded | {(DATA_ACTIONS, f"{MCP_TOOL_PREFIX}export_all · unclassified"),
                           (DATA_ACTIONS, f"{MCP_TOOL_PREFIX}export_all · not offered by {MCP_ENDPOINT}")}

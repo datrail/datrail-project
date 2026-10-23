@@ -219,6 +219,12 @@ services:
         done
     environment:
       DEMO_INTERVAL: ${DEMO_INTERVAL:-30}
+      # The demo's MCP server, declared the way an agent with one server
+      # does: `railmon-scan` reads these from the container's environment,
+      # so the ASP names the server and RailDash shows its tools as
+      # mcp__demo__<tool>.
+      AGENT_MCP_NAME: demo
+      AGENT_MCP_URL: https://127.0.0.1:8443/mcp
     depends_on:
       railmon-listen:
         condition: service_started
