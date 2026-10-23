@@ -169,6 +169,12 @@ guesses from resemblance:
    `?agent_key=` on delivery);
 4. for a multi-agent bundle, its set of agent keys.
 
+In a multi-agent sandbox (one that already has a multi-agent bundle stored
+for the same `host_id` and sandbox name), a single-agent bundle delivered
+with its own agent key is filed under that key, ahead of 1 and 2, so the
+container's agents stay apart. Without a key, or with `default`, it is refused
+(`MULTI_AGENT_KEY_REQUIRED`).
+
 ## Interaction
 
 One request and its response, captured from the agent's TLS traffic by
