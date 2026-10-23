@@ -115,6 +115,81 @@ jobs:
           path: ${{ runner.temp }}/stack
           if-no-files-found: error
 
+  # The components' own acceptance against the same pinned images, nothing
+  # built (DR-233, DR-235): RailDash's ASP v1 oracle inside its image (replay,
+  # drift, switch away and back, rule-pack mismatch), then RailMon's two-agent
+  # and multi-agent drift scenarios from the pinned tag's tests/, run in the
+  # pinned RailMon image against the pinned RailDash.
+  published-acceptance:
+    if: inputs.railmon_image == '' && inputs.raildash_image == ''
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Pull the pinned images
+        id: pins
+        run: |
+          pinned=$(docker compose config --format json)
+          railmon=$(jq -r '.services["railmon-collect"].image' <<<"$pinned")
+          raildash=$(jq -r '.services.raildash.image' <<<"$pinned")
+          [[ $railmon == ghcr.io/datrail/railmon:* && $raildash == ghcr.io/datrail/raildash:* ]]
+          docker pull "$railmon"
+          docker pull "$raildash"
+          {
+            echo "railmon=$railmon"
+            echo "raildash=$raildash"
+            echo "railmon_tag=v${railmon##*:}"
+          } >> "$GITHUB_OUTPUT"
+      # Test scripts only, from the tag the RailMon image was built from;
+      # nothing here is built.
+      - uses: actions/checkout@v7
+        with:
+          repository: datrail/railmon
+          ref: ${{ steps.pins.outputs.railmon_tag }}
+          path: railmon
+          sparse-checkout: tests
+          persist-credentials: false
+      - name: ASP v1 acceptance inside the RailDash image
+        env:
+          RAILDASH_IMAGE: ${{ steps.pins.outputs.raildash }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/acceptance"
+          docker run --rm --entrypoint python3 "$RAILDASH_IMAGE" -m raildash.acceptance \
+            | tee "$RUNNER_TEMP/acceptance/asp-v1.json"
+          jq -e '.acceptance == "passed" and ([.checks[]] | all and length == 6)' \
+            "$RUNNER_TEMP/acceptance/asp-v1.json"
+      - name: Two agents and multi-agent drift, RailMon image against RailDash image
+        env:
+          RAILMON_IMAGE: ${{ steps.pins.outputs.railmon }}
+          RAILDASH_IMAGE: ${{ steps.pins.outputs.raildash }}
+        run: |
+          docker network create published
+          docker run -d --name raildash --network published -p 127.0.0.1:8000:8000 "$RAILDASH_IMAGE"
+          for _ in $(seq 60); do
+            token=$(docker exec raildash cat /data/raildash.db.token 2>/dev/null || true)
+            [[ -n $token ]] && curl -fsS http://127.0.0.1:8000/webhook/health > /dev/null 2>&1 && break
+            sleep 0.5
+          done
+          [[ -n $token ]] || { docker logs raildash; exit 1; }
+          run() {
+            docker run --rm --network published --user 0 --entrypoint python3 \
+              -e RAILMON_BIN=/usr/local/bin/railmon-collector \
+              -v "$PWD/railmon/tests:/tests:ro" "$RAILMON_IMAGE" "$@"
+          }
+          run /tests/two_agent_acceptance.py --raildash http://raildash:8000 \
+            | tee "$RUNNER_TEMP/acceptance/two-agent.txt" || { docker logs raildash; exit 1; }
+          run /tests/multi_agent_drift_acceptance.py --raildash http://raildash:8000 --token "$token" \
+            | tee "$RUNNER_TEMP/acceptance/multi-agent-drift.txt" || { docker logs raildash; exit 1; }
+      - name: Preserve results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: published-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/acceptance
+          if-no-files-found: error
+
   # The quick start on arm64 Linux (DR-208), the architecture Docker
   # Desktop's VM has on Apple Silicon. GitHub's arm64 runners stop at 24.04.
   arm64:
