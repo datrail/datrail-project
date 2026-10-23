@@ -27,9 +27,9 @@ RailDash listens on `127.0.0.1` only.
   (`/sys/kernel/btf/vmlinux` exists). On a Mac or with Docker Desktop, that
   is Docker Desktop's own Linux VM: `docker run --rm alpine ls
   /sys/kernel/btf/vmlinux` checks it. See the platform table below.
-- **Network access to GitHub** for the first build, which builds the images
-  from the components' source, or to `ghcr.io` for
-  [published images](#published-images).
+- **Network access to `ghcr.io`** for the first run, which pulls the
+  [published images](#images), or to GitHub if you
+  [build from source](#build-from-source).
 
 ### Platform support
 
@@ -90,9 +90,9 @@ make clean                 # also delete the built images and any leftovers
 ```
 
 `docker compose down -v` removes only what the current `docker-compose.yml`
-declares. It keeps the stack's two images (`datrail-railmon:local` and
-`datrail-raildash:local` when built, about 540 MB together, or the
-[published images](#published-images) you named). It also keeps anything an
+declares. It keeps the stack's two images (the pinned
+[published images](#images), or `datrail-railmon:local` and
+`datrail-raildash:local` when built, about 540 MB together). It also keeps anything an
 older version of this stack created: the version before 3 October 2026 used
 the volumes `captures` and `raildash-db` and a `railmon` service, which
 survive an upgrade by `git pull`. `make clean` removes all of it: orphaned
@@ -120,8 +120,8 @@ All are optional.
 | `RAIL_AUTH_MODE`, `RAIL_AUTH_TOKEN`, `RAIL_AUTH_AUDIENCE` | `none` | The credential `railmon-scan` presents to Rail Center. Used only with `RAIL_CENTER_URL`. |
 | `RAILDASH_PORT` | `8000` | The local port RailDash is published on (always on `127.0.0.1`). |
 | `RAILDASH_TOKEN` | unset | RailDash's local write token, if you want to choose it (see below): at least 16 characters of `A-Z a-z 0-9 - _ . ~ + / =`, or RailDash does not start. |
-| `RAILMON_SRC`, `RAILDASH_SRC` | the GitHub repositories | Where to build each image from (see [Images](#images)). |
-| `RAILMON_IMAGE`, `RAILDASH_IMAGE` | `datrail-railmon:local`, `datrail-raildash:local` | The image each component runs. Set to a published image to pull it instead of building (see [Published images](#published-images)). |
+| `RAILMON_IMAGE`, `RAILDASH_IMAGE` | `ghcr.io/datrail/railmon:0.1.0-m5`, `ghcr.io/datrail/raildash:0.2.0-rc.1` | The image each component runs (see [Images](#images)). |
+| `RAILMON_SRC`, `RAILDASH_SRC` | the GitHub repositories | Where to build each image from, when you build (see [Build from source](#build-from-source)). |
 | `DEMO_INTERVAL` | `30` | Seconds between the demo agent's calls. |
 
 ### The RailDash token
@@ -297,18 +297,50 @@ to `api.github.com` through OpenShell's supervisor.
 
 ## Images
 
-Both images are built from source, from each repository's default branch:
-`docker compose up -d` builds them the first time, and
-`docker compose up -d --build` updates them. A git URL build context is
-fetched with its submodules, which RailMon needs.
+Each component runs a fixed published tag from `ghcr.io/datrail`, pinned in
+`docker-compose.yml`. RailMon and RailDash carry their own tags:
 
-To build from local checkouts instead, clone them (RailMon with its
-submodules):
+| Component | Image |
+| --- | --- |
+| RailMon | `ghcr.io/datrail/railmon:0.1.0-m5` |
+| RailDash | `ghcr.io/datrail/raildash:0.2.0-rc.1` |
+
+`docker compose up -d` pulls them the first time. A newer version of this
+file pins newer tags; `git pull` (or download the file again) and run
+`docker compose up -d`. To run another published tag, name it:
+
+```bash
+export RAILMON_IMAGE=ghcr.io/datrail/railmon:<tag> RAILDASH_IMAGE=ghcr.io/datrail/raildash:<tag>
+docker compose up -d
+```
+
+An image has to be at least as new as this file. The `0.1.0` images
+predate interval scanning, `railmon listen` and RailDash's evidence-bundle
+route, so they can't run this stack. RailMon's images can from `0.1.0-m4`
+on, RailDash's from `0.2.0-rc.1`. Name a version tag rather than `latest`,
+which can be older than this file.
+
+### Build from source
+
+To run each repository's default branch instead, build under local names:
+
+```bash
+make update
+# which is:
+RAILMON_IMAGE=datrail-railmon:local RAILDASH_IMAGE=datrail-raildash:local docker compose up -d --build
+```
+
+Keep both names set (in your shell or `.env`) for later `docker compose`
+commands, or they go back to the pinned tags. Don't use `--build` without
+them: Compose would tag the build with the published name. A git URL build
+context is fetched with its submodules, which RailMon needs. To build from
+local checkouts instead, clone them (RailMon with its submodules):
 
 ```bash
 git clone --recursive https://github.com/datrail/railmon.git
 git clone https://github.com/datrail/raildash.git
-RAILMON_SRC=../railmon RAILDASH_SRC=../raildash docker compose up -d --build
+RAILMON_SRC=../railmon RAILDASH_SRC=../raildash \
+RAILMON_IMAGE=datrail-railmon:local RAILDASH_IMAGE=datrail-raildash:local docker compose up -d --build
 ```
 
 ### Without the repository
@@ -331,31 +363,13 @@ project after the directory, so a stack started here doesn't share
 RailDash's database with one started from a clone. CI checks that the file
 reads nothing from its checkout.
 
-### Published images
+### What CI proves
 
-To pull published images from `ghcr.io/datrail` instead of building, name
-them and start without `--build`. Compose pulls an image it can find and
-builds only one it can't:
-
-```bash
-export RAILMON_IMAGE=ghcr.io/datrail/railmon:<tag> RAILDASH_IMAGE=ghcr.io/datrail/raildash:<tag>
-docker compose up -d
-```
-
-Set either one alone to pull that component and build the other. To update
-a tag that moves, `docker pull` the image and run `docker compose up -d`
-again. Don't use `--build` or `make update` while an image is set: Compose
-would build from source and tag the result with the published name.
-Name a version tag, not `latest`, which can be older than this file.
-
-An image has to be at least as new as this file. The `0.1.0` images
-predate interval scanning, `railmon listen` and RailDash's evidence-bundle
-route, so they can't run this stack. RailMon's images can from `0.1.0-m4`
-on. RailDash has no published image yet that can, so build it, the
-default, until one is tagged.
-
-This repository's CI runs the same stack from both default branches on every
-change and daily, and checks the walkthrough above end to end
+This repository's CI runs the install exactly as pinned, pulling both
+published images and building nothing (`STACK_IMAGES=pinned`), on every
+change and daily. It also runs the same stack built from both default
+branches, so a change there that would break the next pin shows first, and
+checks the walkthrough above end to end
 ([`tests/stack-acceptance.sh`](tests/stack-acceptance.sh)). A second job
 follows [Watch your own agent](#watch-your-own-agent) with a `my-agent`
 container started after the stack (`STACK_MODE=own-agent`), on Docker's

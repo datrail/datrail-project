@@ -6,9 +6,13 @@
 # the stack starts without the demo agent, pointed at a container the user
 # starts afterwards with `docker run`, which listens on its port at once.
 #
+# By default both images are built from each component's default branch,
+# under local names, so a change there that breaks the stack shows up here.
 # RAILMON_IMAGE / RAILDASH_IMAGE run published images instead of a build
 # (DR-214), as INSTALL.md's "Images" says: the stack starts without --build,
-# so Compose pulls them.
+# so Compose pulls them. STACK_IMAGES=pinned runs the published tags
+# docker-compose.yml pins, which is what `docker compose up -d` installs
+# (DR-137).
 #
 # STACK_MODE=openshell runs the same agent in an NVIDIA OpenShell sandbox
 # (DR-206), started before the stack, as INSTALL.md's "An agent in an
@@ -27,10 +31,26 @@ mkdir -p "$EVIDENCE_DIR"
 export SCAN_INTERVAL="${SCAN_INTERVAL:-10}" DEMO_INTERVAL="${DEMO_INTERVAL:-5}"
 compose=(docker compose)
 mode="${STACK_MODE:-demo}"
-railmon_image=${RAILMON_IMAGE:-datrail-railmon:local}
-raildash_image=${RAILDASH_IMAGE:-datrail-raildash:local}
+if [[ ${STACK_IMAGES:-} == pinned ]]; then
+  [[ -z ${RAILMON_IMAGE:-}${RAILDASH_IMAGE:-} ]] \
+    || { echo "STACK_IMAGES=pinned runs docker-compose.yml's own tags; unset RAILMON_IMAGE/RAILDASH_IMAGE" >&2; exit 2; }
+  pinned=$("${compose[@]}" config --format json)
+  RAILMON_IMAGE=$(jq -r '.services["railmon-collect"].image' <<<"$pinned")
+  RAILDASH_IMAGE=$(jq -r '.services.raildash.image' <<<"$pinned")
+  [[ $RAILMON_IMAGE == ghcr.io/datrail/railmon:* && $RAILDASH_IMAGE == ghcr.io/datrail/raildash:* ]] \
+    || { echo "docker-compose.yml pins no published image: $RAILMON_IMAGE $RAILDASH_IMAGE" >&2; exit 1; }
+fi
+# The images this run pulls; empty means that component is built.
+pull_railmon=${RAILMON_IMAGE:-}
+pull_raildash=${RAILDASH_IMAGE:-}
+# docker-compose.yml defaults to the pinned published tags, so a build is
+# named locally rather than under the published name.
+export RAILMON_IMAGE=${RAILMON_IMAGE:-datrail-railmon:local}
+export RAILDASH_IMAGE=${RAILDASH_IMAGE:-datrail-raildash:local}
+railmon_image=$RAILMON_IMAGE
+raildash_image=$RAILDASH_IMAGE
 build=(--build)
-[[ -z ${RAILMON_IMAGE:-}${RAILDASH_IMAGE:-} ]] || build=()
+[[ -z $pull_railmon$pull_raildash ]] || build=()
 platform=()
 case "$mode" in
   demo)
@@ -156,7 +176,7 @@ if [[ $mode == openshell ]]; then
   # user with a sandbox already running follows. The demo agent's loop, as
   # the own-agent job runs it, plus one GET to api.github.com per cycle once
   # /sandbox/outbound exists, which only OpenShell's supervisor can carry.
-  if [[ -n ${RAILMON_IMAGE:-} ]]; then
+  if [[ -n $pull_railmon ]]; then
     "${compose[@]}" pull railmon-collect 2>&1 | tee "$EVIDENCE_DIR/build.log"
   else
     "${compose[@]}" build railmon-collect 2>&1 | tee "$EVIDENCE_DIR/build.log"
@@ -193,9 +213,9 @@ if [[ $mode == openshell ]]; then
 fi
 # With one image named, the other component is still built from its default
 # branch, as --build would; `up` then pulls the named one.
-if [[ ${#build[@]} == 0 && -z ${RAILMON_IMAGE:-} ]]; then
+if [[ ${#build[@]} == 0 && -z $pull_railmon ]]; then
   "${compose[@]}" build railmon-collect 2>&1 | tee -a "$EVIDENCE_DIR/build.log"
-elif [[ ${#build[@]} == 0 && -z ${RAILDASH_IMAGE:-} ]]; then
+elif [[ ${#build[@]} == 0 && -z $pull_raildash ]]; then
   "${compose[@]}" build raildash 2>&1 | tee -a "$EVIDENCE_DIR/build.log"
 fi
 "${compose[@]}" "${up[@]}" 2>&1 | tee "$EVIDENCE_DIR/up.log"
@@ -203,7 +223,7 @@ fi
 # when a pull fails): the local image carries the registry's own digest for
 # the tag. On the containerd store a local build has a digest too, just not
 # that one. Every service of the component runs it.
-for pair in "railmon ${RAILMON_IMAGE:-}" "raildash ${RAILDASH_IMAGE:-}"; do
+for pair in "railmon $pull_railmon" "raildash $pull_raildash"; do
   read -r component image <<<"$pair"
   [[ -n ${image:-} ]] || continue
   remote=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$image")

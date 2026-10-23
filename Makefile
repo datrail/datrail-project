@@ -5,11 +5,12 @@
 up:
 	docker compose up -d
 
-# Rebuild both images from the latest default branches, then restart. Not
-# with RAILMON_IMAGE / RAILDASH_IMAGE set: that would tag the build with the
-# published name (INSTALL.md, "Published images").
+# Build both images from the latest default branches under local names, then
+# restart on them. Without the names, docker-compose.yml's pinned published
+# tags would label the build (INSTALL.md, "Images").
 update:
-	docker compose up -d --build
+	RAILMON_IMAGE=datrail-railmon:local RAILDASH_IMAGE=datrail-raildash:local \
+	  docker compose up -d --build
 
 logs:
 	docker compose logs -f --tail=50

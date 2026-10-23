@@ -1,6 +1,6 @@
 # DatRail: RailMon and RailDash, always on, from one command.
 #
-#   docker compose up -d            # the first run builds both images
+#   docker compose up -d            # the first run pulls both images
 #   open http://127.0.0.1:8000
 #   docker compose down             # stop (add -v to delete the data too)
 #
@@ -24,26 +24,26 @@
 # Nothing needs a manual restart or import: every service keeps running and
 # delivers on its own.
 #
-# Images are built from source, from each repository's default branch.
-# Point RAILMON_SRC / RAILDASH_SRC at a local checkout to build that instead;
-# a railmon checkout needs its submodules (`git clone --recursive`). A git
-# URL context is fetched with its submodules, so this file needs nothing else
-# from its repository: downloading it alone is enough.
-#
-# To run published images instead, set RAILMON_IMAGE / RAILDASH_IMAGE to
-# them and start without --build: Compose pulls an image it can find rather
-# than building it (INSTALL.md, "Images").
+# Each component runs a fixed published tag, pinned below: RailMon and
+# RailDash each carry their own. Set RAILMON_IMAGE / RAILDASH_IMAGE to run
+# another published tag. To build from source instead, name local images
+# and build: `make update` does that, from each repository's default branch
+# (INSTALL.md, "Images"). Point RAILMON_SRC / RAILDASH_SRC at a local
+# checkout to build that instead; a railmon checkout needs its submodules
+# (`git clone --recursive`). A git URL context is fetched with its
+# submodules, so this file needs nothing else from its repository:
+# downloading it alone is enough.
 
 # Every RailMon service runs one image, and only railmon-collect builds it.
 # Compose builds services in parallel, and on Docker Desktop's containerd
 # image store a second build of the same image name fails.
 x-railmon: &railmon
-  image: ${RAILMON_IMAGE:-datrail-railmon:local}
+  image: ${RAILMON_IMAGE:-ghcr.io/datrail/railmon:0.1.0-m5}
   restart: unless-stopped
 
 services:
   raildash:
-    image: ${RAILDASH_IMAGE:-datrail-raildash:local}
+    image: ${RAILDASH_IMAGE:-ghcr.io/datrail/raildash:0.2.0-rc.1}
     build:
       context: ${RAILDASH_SRC:-https://github.com/datrail/raildash.git}
     restart: unless-stopped
