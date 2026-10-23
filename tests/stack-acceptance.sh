@@ -275,6 +275,7 @@ RAILDASH_TOKEN_VALUE="$token" python3 tests/stack_acceptance.py \
   --project "$COMPOSE_PROJECT_NAME" \
   --agent "$([[ $mode == demo ]] && echo compose:demo-agent || echo key:my-agent)" \
   --open-port "docker exec -d $agent python3 -m http.server 9000 --bind 127.0.0.1" \
+  --open-new-port "docker exec -d $agent python3 -m http.server 9100 --bind 127.0.0.1" \
   --agent-exec "docker exec $agent" \
   --settle "$((SCAN_INTERVAL * 3))" \
   --expect-egress "$([[ $mode == openshell ]] && echo allow_list_enforced || echo open)" \

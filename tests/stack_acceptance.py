@@ -31,7 +31,10 @@ then, driving RailDash's own HTTP routes the way the dashboard does:
    allows (DR-201). Allow all on the ports (one version, DR-202) and
    Allow this on the host is Held once the next scan, capture and
    heartbeat arrive;
-6. then, in the agent: writing /data/report.zip is a `saved_files`
+6. then, in the agent: a port opened after Held (the design's step 4(a),
+   DR-236) is exactly one `service_ports` violation, and Violated; Allow
+   this on it is Held again, so the steps after it start from Held. Then
+   writing /data/report.zip is a `saved_files`
    violation; a POST with a body to a host outside both lists is an
    `uploads` and an `out_of_spec_calls` violation, and repeating it after
    Acknowledge re-opens the row; a GET without a body to a second such host
@@ -73,6 +76,11 @@ from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 DEMO_PORT = 8443
+# The port the drift step opens, which the guardrail is adopted with.
+DRIFT_PORT = 9000
+# DR-236: the port --open-new-port opens once the guardrail is Held, which
+# no version allowed: not DEMO_PORT, DRIFT_PORT or a platform listener.
+NEW_PORT = 9100
 # The agent runs this script for every call it makes (the RailMon image's
 # local demo), so railmon-files must report it read.
 DEMO_SCRIPT = "/opt/railmon/tools/local-demo/demo_client.py"
@@ -246,6 +254,9 @@ def main() -> int:
                         help="compose:<service> for a Compose service, key:<agent key> otherwise")
     parser.add_argument("--open-port", required=True,
                         help="command that makes the agent open a new listening port")
+    parser.add_argument("--open-new-port", required=True,
+                        help=f"command that makes the agent open a listening port on {NEW_PORT} "
+                             "(127.0.0.1), once the guardrail is Held")
     parser.add_argument("--agent-exec", required=True,
                         help="command prefix that runs a command in the agent, e.g. 'docker exec my-agent'")
     parser.add_argument("--settle", type=float, default=30,
@@ -398,7 +409,7 @@ def main() -> int:
     # ---- 5. the Data Guardrail, adopted after the drift step -----------------
     guard = Guardrail(base, token, ours)
     guard.adopt(version["alignment_version_id"])
-    ports = {f"tcp/127.0.0.1/{DEMO_PORT}", "tcp/127.0.0.1/9000", *args.platform_listener}
+    ports = {f"tcp/127.0.0.1/{DEMO_PORT}", f"tcp/127.0.0.1/{DRIFT_PORT}", *args.platform_listener}
     first = {("service_ports", port) for port in ports} | {("out_of_spec_calls", "127.0.0.1")}
     guard.wait_for_rows(
         "adopting the unedited proposal is Violated by exactly the agent's own listener, the "
@@ -414,28 +425,44 @@ def main() -> int:
     guard.wait_for_state("held", "with each allowed, the next scan, capture and heartbeat are Held",
                          timeout=240)
 
+    # (a) DR-236: a port opened after Held is a service_ports violation. The
+    # same command as the drift step's, on a port no version allowed; the
+    # modules it imports were already imported (and their bytecode cached)
+    # for that step, so it brings no other row.
+    new_port = f"tcp/127.0.0.1/{NEW_PORT}"
+    if new_port in ports:
+        sys.exit(f"FAIL: {new_port} is already allowed, so it can't prove a new port")
+    subprocess.run(shlex.split(args.open_new_port), check=True)
+    guard.wait_for_rows(f"(a) a port opened after Held, {NEW_PORT}, is exactly one "
+                        "service_ports violation", {("service_ports", new_port)}, exact=True)
+    print(f"ok:   the guardrail is Violated by service_ports {new_port} alone")
+    # Allow this on it, so the steps below start from Held, as they did.
+    guard.allow("service_ports", new_port)
+    guard.wait_for_state("held", f"with {NEW_PORT} allowed, the next scan, capture and "
+                         "heartbeat are Held again", timeout=240)
+
     agent = shlex.split(args.agent_exec)
     subprocess.run([*agent, "sh", "-c", "mkdir -p /data && echo report > /data/report.zip"], check=True)
     saved = {("saved_files", "/data/report.zip")}
-    guard.wait_for_rows("(a) writing /data/report.zip is a saved_files violation", saved, exact=True)
+    guard.wait_for_rows("(b) writing /data/report.zip is a saved_files violation", saved, exact=True)
 
     send = lambda method, host: subprocess.run(  # noqa: E731
         [*agent, "python3", "-c", AGENT_REQUEST, method, host], check=True)
     send("POST", EXFIL_HOST)
     exfil = saved | {("uploads", EXFIL_HOST), ("out_of_spec_calls", EXFIL_HOST)}
-    guard.wait_for_rows("(b) a POST with a body to an unlisted host is an uploads and an "
+    guard.wait_for_rows("(c) a POST with a body to an unlisted host is an uploads and an "
                         "out_of_spec_calls violation", exfil, exact=True)
     guard.acknowledge("uploads", EXFIL_HOST)
     if guard.row("uploads", EXFIL_HOST)["counts"]:
         sys.exit("FAIL: an acknowledged row still counts")
     send("POST", EXFIL_HOST)
     guard.wait_for(
-        "(c) the same POST after Acknowledge re-opens the row",
+        "(d) the same POST after Acknowledge re-opens the row",
         lambda: (row := guard.row("uploads", EXFIL_HOST)) and row["counts"] and row["count"] >= 2,
     )
     send("GET", SECOND_HOST)
     final = exfil | {("out_of_spec_calls", SECOND_HOST)}
-    guard.wait_for_rows("(d) a GET without a body to a second unlisted host is an "
+    guard.wait_for_rows("(e) a GET without a body to a second unlisted host is an "
                         "out_of_spec_calls violation", final, exact=True)
     if guard.row("uploads", SECOND_HOST) is not None:
         sys.exit(f"FAIL: a GET without a body to {SECOND_HOST} was judged an upload")
@@ -471,7 +498,7 @@ def main() -> int:
     mcp("upload_file")
     upload = (DATA_ACTIONS, f"{MCP_TOOL_PREFIX}upload_file · upload")
     uploaded = final | {upload}
-    guard.wait_for_rows("(e) upload_file, which the agent never used while learning, is a "
+    guard.wait_for_rows("(f) upload_file, which the agent never used while learning, is a "
                         "data_actions violation", uploaded, exact=True)
     kinds = guard.row(*upload)["detail"].get("content_kinds")
     if kinds != ["image"]:
@@ -480,11 +507,11 @@ def main() -> int:
     mcp("export_all")
     offered = uploaded | {(DATA_ACTIONS, f"{MCP_TOOL_PREFIX}export_all · unclassified"),
                           (DATA_ACTIONS, f"{MCP_TOOL_PREFIX}export_all · not offered by {MCP_ENDPOINT}")}
-    guard.wait_for_rows("(f) a tool the server never listed is unclassified, and not offered "
+    guard.wait_for_rows("(g) a tool the server never listed is unclassified, and not offered "
                         "once the 60 s delay has passed", offered, exact=True)
     mcp("--garbage")
     everything = offered | {(DATA_ACTIONS, f"{MCP_ENDPOINT} · unreadable call")}
-    guard.wait_for_rows("(g) a POST to the MCP endpoint that isn't JSON-RPC is an unreadable call",
+    guard.wait_for_rows("(h) a POST to the MCP endpoint that isn't JSON-RPC is an unreadable call",
                         everything, exact=True)
     shown = {rule: r["state"] for rule, r in guard.detail()["rules"].items()}
     if shown.get("data_actions") != "violated":
@@ -542,7 +569,7 @@ def main() -> int:
         if made.get("starts_violated") is not True:
             sys.exit(f"FAIL: Require containment on an open agent didn't say it starts Violated: {made}")
         print(f"ok:   Require containment made {made['guardrail']['version']}, which starts Violated")
-        guard.wait_for_rows("(h) an open agent under a version that requires containment is an "
+        guard.wait_for_rows("(i) an open agent under a version that requires containment is an "
                             "egress_containment violation",
                             everything | {(EGRESS, args.expect_egress)}, exact=True)
 
