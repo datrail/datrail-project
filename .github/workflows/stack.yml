@@ -184,7 +184,7 @@ jobs:
           }
           run /tests/two_agent_acceptance.py --raildash http://raildash:8000 \
             | tee "$RUNNER_TEMP/acceptance/two-agent.txt" || { docker logs raildash; exit 1; }
-          run /tests/multi_agent_drift_acceptance.py --raildash http://raildash:8000 --token "$token" \
+          run /tests/multi_agent_drift_acceptance.py --raildash http://raildash:8000 --token="$token" \
             | tee "$RUNNER_TEMP/acceptance/multi-agent-drift.txt" || { docker logs raildash; exit 1; }
       - name: Preserve results
         if: always()
