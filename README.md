@@ -17,13 +17,26 @@ on your own machine with one command, and links to every component.
 
 ## Quick start
 
-You need Linux on x86_64 or arm64 with Docker Engine and Compose v2, and a
-kernel with BTF (`/sys/kernel/btf/vmlinux` exists). On Windows, use WSL2, with
-Docker Engine in the distro or Docker Desktop running with WSL integration on
-for it. On a Mac, Docker Desktop watches agents in containers (run on Apple
-Silicon; not yet on an Intel Mac). [INSTALL.md](INSTALL.md#platform-support) says what
-each can watch. See
-[INSTALL.md](INSTALL.md#prerequisites) for details.
+DatRail runs on Linux, on Windows with WSL2, and on a Mac with Docker Desktop:
+
+| Your computer | Does DatRail work? | What it can watch |
+| --- | --- | --- |
+| Linux, Intel/AMD (x86_64) or ARM (arm64) | Yes | Every agent on the machine |
+| Windows (Intel/AMD), WSL2 with Docker Engine installed in the distro | Yes | Every agent in your WSL distro |
+| Windows (Intel/AMD), WSL2 with Docker Desktop | Yes, for agents in containers | Agents running in Docker containers |
+| Mac with an Intel chip, Docker Desktop | Expected, for agents in containers (not yet tested) | Agents running in Docker containers |
+| Mac with Apple Silicon, Docker Desktop | Yes, for agents in containers | Agents running in Docker containers |
+
+With Docker Desktop, DatRail sees only what runs in containers, not an agent
+running directly in WSL or on the Mac. An agent in an NVIDIA OpenShell sandbox
+needs native Linux (tested on x86_64).
+
+Every setup needs Docker with Compose v2 and a Linux kernel with BTF
+(`/sys/kernel/btf/vmlinux` exists). On Windows and on a Mac, that kernel is the
+one inside WSL2 or Docker Desktop. On Windows, use Docker Engine in the distro,
+or Docker Desktop running with WSL integration on for it.
+[INSTALL.md](INSTALL.md#platform-support) says more about what each can watch,
+and [INSTALL.md](INSTALL.md#prerequisites) has the details.
 
 ```bash
 git clone https://github.com/datrail/datrail-project.git
