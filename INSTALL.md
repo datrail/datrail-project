@@ -121,7 +121,7 @@ All are optional.
 | `RAIL_AUTH_MODE`, `RAIL_AUTH_TOKEN`, `RAIL_AUTH_AUDIENCE` | `none` | The credential `railmon-scan` presents to Rail Center. Used only with `RAIL_CENTER_URL`. |
 | `RAILDASH_PORT` | `8000` | The local port RailDash is published on (always on `127.0.0.1`). |
 | `RAILDASH_TOKEN` | unset | RailDash's local write token, if you want to choose it (see below): at least 16 characters of `A-Z a-z 0-9 - _ . ~ + / =`, or RailDash does not start. |
-| `RAILMON_IMAGE`, `RAILDASH_IMAGE` | `ghcr.io/datrail/railmon:0.1.0-m7`, `ghcr.io/datrail/raildash:0.2.0-rc.3` | The image each component runs (see [Images](#images)). |
+| `RAILMON_IMAGE`, `RAILDASH_IMAGE` | `ghcr.io/datrail/railmon:0.1.0-m7`, `ghcr.io/datrail/raildash:0.2.0-rc.4` | The image each component runs (see [Images](#images)). |
 | `RAILMON_SRC`, `RAILDASH_SRC` | the GitHub repositories | Where to build each image from, when you build (see [Build from source](#build-from-source)). |
 | `DEMO_INTERVAL` | `30` | Seconds between the demo agent's calls. |
 
@@ -304,7 +304,7 @@ Each component runs a fixed published tag from `ghcr.io/datrail`, pinned in
 | Component | Image |
 | --- | --- |
 | RailMon | `ghcr.io/datrail/railmon:0.1.0-m7` |
-| RailDash | `ghcr.io/datrail/raildash:0.2.0-rc.3` |
+| RailDash | `ghcr.io/datrail/raildash:0.2.0-rc.4` |
 
 `docker compose up -d` pulls them the first time. A newer version of this
 file pins newer tags; `git pull` (or download the file again) and run
@@ -434,6 +434,14 @@ attributes; its TLS capture, behind `observed_destinations`, moves to
 AgentSight v1.0.35 too. Check the
 newest ASP's evidence and lock it as the new baseline; it happens once per
 upgrade.
+
+**A Codex agent's guardrail turns Violated or Unverified after upgrading to
+RailDash `0.2.0-rc.4`.** From that version on, RailDash reads the MCP calls
+Codex makes from inside its code-mode `exec` tool, which it couldn't see
+before. A call to a server the guardrail doesn't allow is now a violation,
+and a script that reaches a tool through a name it doesn't spell keeps the
+rules Unverified for a while. If the server belongs there, use **Allow this**
+on its row.
 
 **`observed_file_access` lists new paths after the agent restarts.** A
 restarted agent may open files under new names (a new log file, a fresh
