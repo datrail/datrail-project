@@ -13,5 +13,8 @@ RUN cp /usr/local/bin/python3 /usr/local/bin/my-agent-bin \
 # container inherits its image's labels, so RailDash would know the agent as
 # that service. A user's own image has none; blanked as the own-agent job does.
 LABEL com.docker.compose.project="" com.docker.compose.service=""
+# The demo's MCP server, declared as docker-compose.yml's demo-agent does
+# (DR-237): the scanner reads it from the container's environment.
+ENV AGENT_MCP_NAME=demo AGENT_MCP_URL=https://127.0.0.1:8443/mcp
 WORKDIR /sandbox
 USER agent

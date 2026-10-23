@@ -38,12 +38,12 @@
 # Compose builds services in parallel, and on Docker Desktop's containerd
 # image store a second build of the same image name fails.
 x-railmon: &railmon
-  image: ${RAILMON_IMAGE:-ghcr.io/datrail/railmon:0.1.0-m5}
+  image: ${RAILMON_IMAGE:-ghcr.io/datrail/railmon:0.1.0-m6}
   restart: unless-stopped
 
 services:
   raildash:
-    image: ${RAILDASH_IMAGE:-ghcr.io/datrail/raildash:0.2.0-rc.1}
+    image: ${RAILDASH_IMAGE:-ghcr.io/datrail/raildash:0.2.0-rc.2}
     build:
       context: ${RAILDASH_SRC:-https://github.com/datrail/raildash.git}
     restart: unless-stopped
@@ -219,6 +219,12 @@ services:
         done
     environment:
       DEMO_INTERVAL: ${DEMO_INTERVAL:-30}
+      # The demo's MCP server, declared the way an agent with one server
+      # does: `railmon-scan` reads these from the container's environment,
+      # so the ASP names the server and RailDash shows its tools as
+      # mcp__demo__<tool>.
+      AGENT_MCP_NAME: demo
+      AGENT_MCP_URL: https://127.0.0.1:8443/mcp
     depends_on:
       railmon-listen:
         condition: service_started
