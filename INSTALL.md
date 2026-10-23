@@ -318,9 +318,7 @@ docker compose up -d
 An image has to be at least as new as this file. The `0.1.0` images
 predate interval scanning, `railmon listen` and RailDash's evidence-bundle
 route, so they can't run this stack. RailMon's images can from `0.1.0-m4`
-on, RailDash's from `0.2.0-rc.1`; the README's walkthrough, with the demo's
-MCP tools named `mcp__demo__…`, needs the pinned `0.1.0-m6` and
-`0.2.0-rc.2`. Name a version tag rather than `latest`,
+on, RailDash's from `0.2.0-rc.1`. Name a version tag rather than `latest`,
 which can be older than this file.
 
 ### Build from source
