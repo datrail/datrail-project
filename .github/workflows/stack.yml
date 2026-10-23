@@ -1,10 +1,11 @@
 name: Stack from default branches
 
-# Runs docker-compose.yml the way the README's quick start does: both images
-# built from each component's default branch, nothing published involved.
-# The schedule catches a change in railmon or raildash that breaks the stack
-# even when nothing in this repository changed. A manual run can name
-# published images instead (DR-214), as INSTALL.md's "Images" says.
+# Runs docker-compose.yml with both images built from each component's
+# default branch, so the schedule catches a change in railmon or raildash
+# that breaks the stack even when nothing in this repository changed. The
+# `published` job runs the install as users get it: the fixed tags
+# docker-compose.yml pins, pulled, nothing built (DR-137). A manual run can
+# name other published images instead (DR-214), as INSTALL.md's "Images" says.
 on:
   pull_request:
   push:
@@ -85,6 +86,32 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: own-agent-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/stack
+          if-no-files-found: error
+
+  # The quick start exactly as pinned: docker-compose.yml's published tags,
+  # pulled and checked to be the registry's own digests, nothing built.
+  # Skipped when a manual run names images, which the other jobs then run.
+  published:
+    if: inputs.railmon_image == '' && inputs.raildash_image == ''
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    env:
+      COMPOSE_PROJECT_NAME: datrail-ci-pub-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Run the pinned published images and check what they show
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/stack
+          STACK_IMAGES: pinned
+        run: bash tests/stack-acceptance.sh
+      - name: Preserve service logs and results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: published-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/stack
           if-no-files-found: error
 
