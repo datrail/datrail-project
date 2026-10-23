@@ -38,7 +38,7 @@
 # Compose builds services in parallel, and on Docker Desktop's containerd
 # image store a second build of the same image name fails.
 x-railmon: &railmon
-  image: ${RAILMON_IMAGE:-ghcr.io/datrail/railmon:0.1.0-m6}
+  image: ${RAILMON_IMAGE:-ghcr.io/datrail/railmon:0.1.0-m7}
   restart: unless-stopped
 
 services:
@@ -116,9 +116,10 @@ services:
 
   railmon-listen:
     <<: *railmon
-    # Privileged and in the host PID namespace so it can enter the agent's
-    # PID namespace and attach the probe there; the Docker socket is how it
-    # finds the agent's container, and finds it again after a restart.
+    # Privileged and in the host PID namespace so it can run AgentSight's
+    # process probe scoped to the agent's PID namespace, out of the agent's
+    # reach; the Docker socket is how it finds the agent's container, and
+    # finds it again after a restart.
     privileged: true
     pid: host
     volumes:
@@ -131,7 +132,7 @@ services:
 
   railmon-files:
     <<: *railmon
-    # The same as railmon-listen, with the file-open probe (filesnoop): it
+    # The same as railmon-listen, recording file opens from the same probe: it
     # follows the agent's container through restarts and appends one line
     # the first time each of its processes opens a file for reading, writing
     # or running. Paths and access only, never file contents.
