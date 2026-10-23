@@ -22,9 +22,10 @@ down:
 # an older docker-compose.yml declared; every volume labelled with this
 # Compose project, including an older version's (`captures`, `raildash-db`),
 # so RailDash's database and token go too; and the stack's two images,
-# built or published.
+# the pinned published ones and the local names `update` builds.
 clean:
 	docker compose down -v --remove-orphans --rmi all
+	docker image rm datrail-railmon:local datrail-raildash:local 2>/dev/null || true
 	project=$$(docker compose config | sed -n 's/^name: //p') && \
 	test -n "$$project" && \
 	docker volume ls -q --filter "label=com.docker.compose.project=$$project" \

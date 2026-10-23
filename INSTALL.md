@@ -86,7 +86,7 @@ rest.
 ```bash
 docker compose down        # stop; RailDash's database and token are kept
 docker compose down -v     # also delete them, for a fresh start
-make clean                 # also delete the built images and any leftovers
+make clean                 # also delete the stack's images and any leftovers
 ```
 
 `docker compose down -v` removes only what the current `docker-compose.yml`
@@ -96,8 +96,9 @@ declares. It keeps the stack's two images (the pinned
 older version of this stack created: the version before 3 October 2026 used
 the volumes `captures` and `raildash-db` and a `railmon` service, which
 survive an upgrade by `git pull`. `make clean` removes all of it: orphaned
-containers, every volume labelled with this Compose project, and the
-stack's two images, published ones included. Without `make`, run the commands in the [Makefile](Makefile)'s
+containers, every volume labelled with this Compose project, the pinned
+published images, and `datrail-railmon:local` and `datrail-raildash:local`
+if you built them. Without `make`, run the commands in the [Makefile](Makefile)'s
 `clean` target. The older version's images are not this stack's, so `make
 clean` leaves them: the published `ghcr.io/datrail/railmon` and
 `ghcr.io/datrail/raildash` it ran, unless this stack runs them too, or
@@ -141,8 +142,8 @@ keeps delivering after either side restarts. Set `RAILDASH_TOKEN` to choose
 the token yourself. A RailDash image built before stable-token support (an
 old local build, or an old checkout in `RAILDASH_SRC`) generates a new token
 on every start instead; if `docker compose logs railmon-scan` then shows
-`HTTP 403` after RailDash restarted, rebuild with `docker compose up -d
---build` (updating that checkout first), or run
+`HTTP 403` after RailDash restarted, rebuild with `make update` (updating
+that checkout first), or run
 `docker compose restart railmon-scan`.
 
 ### Sending bundles to Rail Center
@@ -405,7 +406,8 @@ new state once you have checked it.
 **The agent's listener is missing.** The RailMon image predates recording
 the sockets an agent was already listening on when `railmon-listen`
 attached (an old local build, or an old checkout in `RAILMON_SRC`). Rebuild
-with `docker compose up -d --build`, updating that checkout first.
+with `make update` (see [Build from source](#build-from-source)), updating
+that checkout first, or go back to the pinned images.
 
 **After an upgrade, ASPs show Comparison unavailable, reason
 `CONTRACT_MISMATCH`.** Each
