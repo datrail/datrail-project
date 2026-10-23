@@ -440,7 +440,8 @@ RailDash `0.2.0-rc.4`.** From that version on, RailDash reads the MCP calls
 Codex makes from inside its code-mode `exec` tool, which it couldn't see
 before. A call to a server the guardrail doesn't allow is now a violation,
 and a script that reaches a tool through a name it doesn't spell keeps the
-rules Unverified for a while. Allow the server if it belongs there.
+rules Unverified for a while. If the server belongs there, use **Allow this**
+on its row.
 
 **`observed_file_access` lists new paths after the agent restarts.** A
 restarted agent may open files under new names (a new log file, a fresh
