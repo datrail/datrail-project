@@ -19,13 +19,13 @@ run() {  # run <case> <name> <command...>: stdout to <name>, stderr beside it
   "$@" > "$dir/$name" 2> "$dir/$name.stderr"
   echo "$?" > "$dir/$name.exit"
 }
-wait_ready() {
+wait_ready() {  # a sandbox that never comes up is a broken recording, not a fixture
   for _ in $(seq 90); do
     phase=$(openshell sandbox get "$1" 2>/dev/null | sed -n 's/^ *Phase: *//p')
     [[ $phase == Ready ]] && return 0
     sleep 2
   done
-  echo "sandbox $1 not Ready (phase '${phase:-}')" >&2
+  echo "sandbox $1 not Ready (phase '${phase:-}')" | tee -a "$out/NOT-READY" >&2
   return 1
 }
 record() {  # record <case> <sandbox>: every view of its policy
@@ -99,7 +99,9 @@ run missing policy-only.yaml openshell sandbox get fx-no-such-sandbox --policy-o
 for sb in fx-base fx-provider fx-provider-gh fx-mcp fx-ips; do
   openshell sandbox delete "$sb" > /dev/null 2>&1 || true
 done
-if grep -rl -- "$marker" "$out" | grep -v 'provider-create-github.txt'; then
+# The marker was only ever an argument, never written to a file by this
+# script, so any file holding it is OpenShell echoing the credential.
+if grep -rl -- "$marker" "$out"; then
   echo "the provider's credential appears in an output above" | tee "$out/CREDENTIAL-LEAK"
 fi
 echo "recorded under $out"

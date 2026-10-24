@@ -11,7 +11,7 @@ network_policies:
   internal_api:
     name: internal-api
     endpoints:
-      - host: api.internal.example
+      - host: api.corp.example.com
         port: 443
         protocol: rest
         enforcement: enforce

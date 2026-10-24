@@ -26,13 +26,19 @@ jobs:
         run: bash tests/openshell/install.sh
       - name: Record
         run: bash tests/openshell/record-fixtures.sh "$RUNNER_TEMP/fixtures"
-      - name: No credential in any output
-        run: test ! -e "$RUNNER_TEMP/fixtures/CREDENTIAL-LEAK"
       - name: Preserve OpenShell's gateway log
         if: always()
         run: journalctl --user -u openshell-gateway --no-pager > "$RUNNER_TEMP/fixtures/openshell-gateway.log" 2>&1 || true
-      - uses: actions/upload-artifact@v7
+      # Before the upload, which it gates: a credential OpenShell echoed is
+      # never published.
+      - name: No credential in any output
+        id: leak
         if: always()
+        run: "! grep -rl -- fixture-credential-must-not-appear \"$RUNNER_TEMP/fixtures\""
+      - name: Every sandbox came up
+        run: test ! -e "$RUNNER_TEMP/fixtures/NOT-READY"
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() && steps.leak.outcome == 'success' }}
         with:
           name: openshell-fixtures-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/fixtures
