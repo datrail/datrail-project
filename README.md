@@ -182,6 +182,9 @@ are deployed separately; their READMEs explain how.
 
 - [INSTALL.md](INSTALL.md): prerequisites, platform support, settings,
   watching your own agent, building from local checkouts, troubleshooting.
+- [docs/setup-windows.md](docs/setup-windows.md) and
+  [docs/setup-mac.md](docs/setup-mac.md): a first install on Windows (WSL2)
+  or on a Mac, step by step, from installing Docker to seeing drift.
 - [docs/glossary.md](docs/glossary.md): evidence bundle, ASP, baseline,
   alignment, drift, Data Guardrail, profile.
 - [The DatRail organization](https://github.com/datrail): every repository,
