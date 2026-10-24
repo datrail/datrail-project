@@ -121,7 +121,7 @@ All are optional.
 | `RAIL_AUTH_MODE`, `RAIL_AUTH_TOKEN`, `RAIL_AUTH_AUDIENCE` | `none` | The credential `railmon-scan` presents to Rail Center. Used only with `RAIL_CENTER_URL`. |
 | `RAILDASH_PORT` | `8000` | The local port RailDash is published on (always on `127.0.0.1`). |
 | `RAILDASH_TOKEN` | unset | RailDash's local write token, if you want to choose it (see below): at least 16 characters of `A-Z a-z 0-9 - _ . ~ + / =`, or RailDash does not start. |
-| `RAILMON_IMAGE`, `RAILDASH_IMAGE` | `ghcr.io/datrail/railmon:0.1.0-m9`, `ghcr.io/datrail/raildash:0.2.0-rc.6` | The image each component runs (see [Images](#images)). |
+| `RAILMON_IMAGE`, `RAILDASH_IMAGE` | `ghcr.io/datrail/railmon:0.1.0-m9`, `ghcr.io/datrail/raildash:0.2.0-rc.7` | The image each component runs (see [Images](#images)). |
 | `RAILMON_SRC`, `RAILDASH_SRC` | the GitHub repositories | Where to build each image from, when you build (see [Build from source](#build-from-source)). |
 | `DEMO_INTERVAL` | `30` | Seconds between the demo agent's calls. |
 
@@ -294,10 +294,15 @@ before installing OpenShell, or the gateway does not start:
   *Contained: it should not reach outside hosts itself; OpenShell
   enforces an allow-list*. It's read from Docker:
   OpenShell's sandbox labels together with a container that has no network
-  of its own, no runtime socket and no privilege. The allow-list itself
-  stays inside OpenShell, so datRail doesn't show what's on it. Because the
-  baseline is contained, the proposed guardrail requires containment, so a
-  sandbox that loses it is flagged.
+  of its own, no runtime socket and no privilege. Because the baseline is
+  contained, the proposed guardrail requires containment, so a sandbox
+  that loses it is flagged.
+- The allow-list itself stays inside OpenShell. To see it in RailDash, save
+  `openshell sandbox get my-agent --policy-only > policy.yaml` and choose
+  **Import OpenShell policy** under the Egress line. The line then lists
+  each endpoint the policy allows, and a guardrail proposed while RailDash
+  holds the policy allows the policy's hosts too. It is as fresh as your
+  last import; import again after `openshell policy set` or `update`.
 
 This repository's CI runs this with OpenShell 0.1.3 and the demo agent
 (`STACK_MODE=openshell`): the same walk as the own-agent job, then a call
@@ -311,7 +316,7 @@ Each component runs a fixed published tag from `ghcr.io/datrail`, pinned in
 | Component | Image |
 | --- | --- |
 | RailMon | `ghcr.io/datrail/railmon:0.1.0-m9` |
-| RailDash | `ghcr.io/datrail/raildash:0.2.0-rc.6` |
+| RailDash | `ghcr.io/datrail/raildash:0.2.0-rc.7` |
 
 `docker compose up -d` pulls them the first time. A newer version of this
 file pins newer tags; `git pull` (or download the file again) and run
