@@ -425,6 +425,17 @@ def main() -> int:
     # ---- 5. the Data Guardrail, adopted after the drift step -----------------
     guard = Guardrail(base, token, ours)
     if args.openshell_policy:
+        # DR-249: `railmon openshell` (the job runs its profile) posted the
+        # sandbox's policy as it started. The agent is listed once it has a
+        # baseline, so it is checked here, before the import that replaces it.
+        def collected() -> dict | None:
+            shown = guard.detail()["openshell_policy"]
+            return shown if shown and shown["source"] == "collector" and "api.github.com" in [
+                e["host"] for e in shown["endpoints"]] else None
+
+        shown = guard.wait_for("railmon openshell's copy of the sandbox's policy shows, "
+                               "api.github.com:443 among it", collected, 180)
+        print(f"      revision {shown['revision']}, {len(shown['endpoints'])} endpoint(s)")
         # DR-250 (OpenShell M5): the policy the user saved, imported as the
         # panel's Import OpenShell policy sends it, shows on the Egress line.
         request = Request(f"{base}/api/guardrails/{guard._agent_ref()}/openshell-policy",
@@ -445,8 +456,11 @@ def main() -> int:
         hosts = proposed["guardrail"]["rules"]["out_of_spec_calls"]["allowed_hosts"]
         if "api.github.com" not in [h["host"] for h in seed.get("hosts", [])] or "api.github.com" not in hosts:
             sys.exit(f"FAIL: the proposal didn't seed api.github.com from OpenShell's policy: {seed} {hosts}")
-        print(f"ok:   the proposal seeds api.github.com from OpenShell's policy "
-              f"({seed['hosts']}, revision {seed['revision']})")
+        # The import is the newest record, and a YAML import has no revision
+        # (the collector's JSON has one): the seed came from the import.
+        if seed.get("revision") is not None:
+            sys.exit(f"FAIL: the proposal was seeded from the collector's record, not the import: {seed}")
+        print(f"ok:   the proposal seeds api.github.com from the imported policy ({seed['hosts']})")
     # DR-237: the agent declares its MCP server, so the proposal seeds its
     # host and name as in spec, and blocks the tool it never used.
     spec = proposed["guardrail"]["rules"]["out_of_spec_calls"]

@@ -22,6 +22,7 @@ import os
 import sys
 import time
 import urllib.request
+from datetime import datetime
 
 
 def get(base: str, path: str) -> object:
@@ -32,6 +33,10 @@ def get(base: str, path: str) -> object:
 
 def details(base: str) -> list[dict]:
     return [get(base, f"/api/guardrails/{agent['agent_ref']}") for agent in get(base, "/api/guardrails")]
+
+
+def instant(text: str) -> datetime:
+    return datetime.fromisoformat(text.replace("Z", "+00:00"))
 
 
 def github(endpoints: list[dict]) -> bool:
@@ -51,8 +56,9 @@ def main() -> int:
         if args.phase in ("l7", "recreated"):
             rows = get(args.url, "/api/interactions?limit=500")["items"]
             if args.phase == "recreated":
+                since = instant(args.since)
                 fresh = [r for r in rows if r.get("path") in ("/v1/demo", "/v1/demo/other")
-                         and (r.get("timestamp") or "") >= args.since]
+                         and r.get("timestamp") and instant(r["timestamp"]) >= since]
                 seen = f"{len(fresh)} demo calls since {args.since}"
                 if fresh:
                     print(f"ok    the recreated sandbox is followed: {len(fresh)} of its agent's calls "
@@ -86,7 +92,10 @@ def main() -> int:
                       f"policy ({len(policy['endpoints'])} endpoints, api.github.com:443 among them)")
                 return 0
             if args.phase == "denial" and not github(policy["endpoints"]) and denials:
-                hits = [g for g in denials["groups"] if g["host"] == "api.github.com"]
+                # Not the L7 POST denial of the step before: one at L4, which
+                # only the removed rule explains.
+                hits = [g for g in denials["groups"] if g["host"] == "api.github.com"
+                        and any(not reason.startswith("L7_") for reason in g["reasons"])]
                 if hits:
                     print(f"ok    revision {policy['revision']} without github_api arrived, and OpenShell's "
                           f"denial of api.github.com:{hits[0]['port']} ({hits[0]['binary']}, "

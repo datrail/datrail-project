@@ -290,7 +290,9 @@ done
 
 openshell_policy=()
 if [[ $mode == openshell ]]; then
-  # DR-250: the file a user imports (INSTALL's OpenShell section).
+  # DR-250: the file a user imports (INSTALL's OpenShell section). Before
+  # importing it, stack_acceptance.py checks the collector's copy arrived
+  # (DR-249): the import is newer and becomes what the line shows.
   openshell sandbox get "$sandbox" --policy-only > "$EVIDENCE_DIR/policy.yaml"
   openshell_policy=(--openshell-policy "$EVIDENCE_DIR/policy.yaml")
 fi
@@ -386,15 +388,6 @@ while time.time() < deadline:
 sys.exit("FAIL  no GET https://api.github.com/zen from the sandboxed agent within 180 s")
 PY
 
-  # DR-249: `railmon openshell` posts the sandbox's policy, which RailDash
-  # shows as read by the collector. Removing the rule that lets the agent
-  # reach api.github.com makes OpenShell's supervisor refuse its next call;
-  # the collector posts that denial and RailDash shows it under Blocked by
-  # OpenShell, with the new revision. Denials and the policy are read through
-  # RailDash's token-gated guardrail detail, as the panel reads them.
-  RAILDASH_TOKEN_VALUE="$token" python3 tests/openshell/collector_acceptance.py \
-    --url "http://127.0.0.1:${RAILDASH_PORT:-8000}" --phase policy \
-    | tee -a "$EVIDENCE_DIR/acceptance.txt"
   # DR-250: a POST the read-only rule refuses at L7. The supervisor answers
   # the agent's own TLS with a 403, so the capture carries the request, and
   # the collector carries OpenShell's denial of it.
@@ -403,6 +396,10 @@ PY
     --url "http://127.0.0.1:${RAILDASH_PORT:-8000}" --phase l7 \
     | tee -a "$EVIDENCE_DIR/acceptance.txt"
   docker exec "$agent" rm -f /sandbox/post
+  # DR-249: removing the rule that lets the agent reach api.github.com makes
+  # OpenShell's supervisor refuse its next call at L4; the collector posts
+  # that denial and the new revision, and RailDash shows both. Read through
+  # RailDash's token-gated guardrail detail, as the panel reads them.
   openshell policy update "$sandbox" --remove-rule github_api --wait 2>&1 \
     | tee "$EVIDENCE_DIR/policy-update.log"
   RAILDASH_TOKEN_VALUE="$token" python3 tests/openshell/collector_acceptance.py \
@@ -412,8 +409,11 @@ PY
   # anything (DR-247's promise, INSTALL): its container has a new name, and
   # its calls still arrive under the same agent.
   before=$agent
-  openshell sandbox delete "$sandbox" 2>&1 | tee -a "$EVIDENCE_DIR/sandbox-delete.log"
+  # The first sandbox's log, with its denials, before it goes.
+  openshell logs "$sandbox" -n 2000 > "$EVIDENCE_DIR/my-agent-first-sandbox.log" 2>&1 || true
+  openshell sandbox delete "$sandbox" 2>&1 | tee "$EVIDENCE_DIR/sandbox-recreate-delete.log"
   for _ in $(seq 60); do [[ -z "$(sandbox_containers)" ]] && break; sleep 2; done
+  [[ -z "$(sandbox_containers)" ]] || { echo "the deleted sandbox's containers are still there" >&2; exit 1; }
   since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   create_sandbox
   find_agent
