@@ -184,7 +184,7 @@ services:
         set --
         if [ -n "$$RAIL_CENTER_URL" ]; then set -- --register; fi
         exec railmon scan --mode docker --container "$$AGENT_CONTAINER" \
-          --agent-key "$${AGENT_KEY:-$$AGENT_CONTAINER}" \
+          --agent-key "$${AGENT_KEY:-$${AGENT_CONTAINER#openshell:}}" \
           --raildash-url "$$RAIL_RAILDASH_URL" \
           --output /tmp/registration-payload.json \
           --interval "$$SCAN_INTERVAL" "$$@"

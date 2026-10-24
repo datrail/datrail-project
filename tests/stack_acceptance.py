@@ -432,7 +432,17 @@ def main() -> int:
         sys.exit(f"FAIL: the proposal should block {MCP_TOOL_PREFIX}upload_file until allowed, "
                  f"and not {MCP_TOOL_PREFIX}read_doc: {blocked}")
     print(f"ok:   {MCP_TOOL_PREFIX}upload_file is blocked until allowed")
-    ports = {f"tcp/127.0.0.1/{DEMO_PORT}", f"tcp/127.0.0.1/{DRIFT_PORT}", *args.platform_listener}
+    # A platform listener the proposal already allows (OpenShell's DNS,
+    # DR-247) is no violation; one it doesn't allow is, and Allow all takes it
+    # with the agent's own. The proposal allows nothing else.
+    preallowed = {f"{e['protocol']}/{e.get('addr', '*')}/{e['port']}"
+                  for e in proposed["guardrail"]["rules"]["service_ports"]["allowed"]}
+    if not preallowed <= set(args.platform_listener):
+        sys.exit(f"FAIL: the proposal allows ports that are not the platform's: "
+                 f"{sorted(preallowed - set(args.platform_listener))}")
+    if preallowed:
+        print(f"ok:   the proposal already allows the platform's {sorted(preallowed)}")
+    ports = {f"tcp/127.0.0.1/{DEMO_PORT}", f"tcp/127.0.0.1/{DRIFT_PORT}", *args.platform_listener} - preallowed
     first = {("service_ports", port) for port in ports}
     guard.wait_for_rows(
         "adopting the unedited proposal is Violated by exactly the agent's own listener, the "

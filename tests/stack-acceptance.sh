@@ -64,11 +64,11 @@ case "$mode" in
     up=(up -d "${build[@]}" --scale demo-agent=0)
     ;;
   openshell)
-    # The sandbox's container is named after an id OpenShell generates, so
-    # it is looked up below, once the sandbox exists; the agent key keeps
-    # RailDash's name for the agent stable.
+    # The stack follows the sandbox by name (DR-247): RailMon finds the
+    # container, named after an id OpenShell generates, itself, and the agent
+    # key defaults to the sandbox name. The container is still looked up
+    # below, for the `docker exec`s that drive the agent.
     sandbox=my-agent
-    export AGENT_KEY=my-agent
     # OpenShell answers the sandbox's DNS itself, on 127.0.0.53 in the
     # agent's own container: listeners the walk sees and allows.
     platform=(--platform-listener tcp/127.0.0.53/53 --platform-listener udp/127.0.0.53/53)
@@ -209,7 +209,7 @@ if [[ $mode == openshell ]]; then
     || { echo "no single running sandbox container for $sandbox: '$agent'" >&2; exit 1; }
   docker inspect "$agent" > "$EVIDENCE_DIR/sandbox-container.json"
   echo "sandbox container: $agent" | tee "$EVIDENCE_DIR/sandbox-container.txt"
-  export AGENT_CONTAINER=$agent
+  export AGENT_CONTAINER=openshell:$sandbox
 fi
 # With one image named, the other component is still built from its default
 # branch, as --build would; `up` then pulls the named one.
