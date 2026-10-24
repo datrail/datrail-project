@@ -25,7 +25,8 @@ then, driving RailDash's own HTTP routes the way the dashboard does:
    order, after the drift step: adopting the unedited proposal from that
    baseline is Violated by exactly the agent's own listener on 8443 and the
    port the drift step opened. The proposal allows exactly the
-   --proposal-allows listeners (OpenShell's DNS, DR-247), and no other port. Its calls to 127.0.0.1 are not out of spec: the agent declares
+   --proposal-allows listeners (OpenShell's DNS, DR-247), and no other port.
+   Its calls to 127.0.0.1 are not out of spec: the agent declares
    its MCP server, https://127.0.0.1:8443/mcp, so the proposal seeds
    127.0.0.1 and `demo` from its configuration (DR-237). Nothing else: the
    Python commands the walk runs in the agent write bytecode caches, which
