@@ -70,7 +70,8 @@ case "$mode" in
     # below, for the `docker exec`s that drive the agent.
     sandbox=my-agent
     # OpenShell answers the sandbox's DNS itself, on 127.0.0.53 in the
-    # agent's own container: listeners the walk sees and allows.
+    # agent's own container: listeners the proposal allows (DR-247), or else
+    # rows the walk allows.
     platform=(--platform-listener tcp/127.0.0.53/53 --platform-listener udp/127.0.0.53/53)
     up=(up -d "${build[@]}" --scale demo-agent=0)
     ;;

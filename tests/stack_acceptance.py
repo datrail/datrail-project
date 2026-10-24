@@ -24,8 +24,8 @@ then, driving RailDash's own HTTP routes the way the dashboard does:
 5. the Data Guardrail (DR-184 M4, the design's §6 step 4), in the README's
    order, after the drift step: adopting the unedited proposal from that
    baseline is Violated by exactly the agent's own listener on 8443, the
-   port the drift step opened and any --platform-listener (OpenShell's
-   DNS). Its calls to 127.0.0.1 are not out of spec: the agent declares
+   port the drift step opened and any --platform-listener the proposal
+   doesn't already allow (it allows OpenShell's DNS, DR-247). Its calls to 127.0.0.1 are not out of spec: the agent declares
    its MCP server, https://127.0.0.1:8443/mcp, so the proposal seeds
    127.0.0.1 and `demo` from its configuration (DR-237). Nothing else: the
    Python commands the walk runs in the agent write bytecode caches, which
@@ -275,8 +275,9 @@ def main() -> int:
     parser.add_argument("--platform-listener", action="append", default=[],
                         metavar="PROTOCOL/ADDR/PORT",
                         help="a socket the agent's platform listens on in its container, such as "
-                             "OpenShell's DNS (udp/127.0.0.53/53): a service_ports row the walk "
-                             "expects and allows with the agent's own")
+                             "OpenShell's DNS (udp/127.0.0.53/53): the proposal may already allow "
+                             "it, or else it is a service_ports row the walk expects and allows "
+                             "with the agent's own")
     parser.add_argument("--expect-egress", required=True,
                         choices=["allow_list_enforced", "no_network", "internal_network", "open",
                                  "host_network"],
