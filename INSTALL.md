@@ -121,7 +121,7 @@ All are optional.
 | `RAIL_AUTH_MODE`, `RAIL_AUTH_TOKEN`, `RAIL_AUTH_AUDIENCE` | `none` | The credential `railmon-scan` presents to Rail Center. Used only with `RAIL_CENTER_URL`. |
 | `RAILDASH_PORT` | `8000` | The local port RailDash is published on (always on `127.0.0.1`). |
 | `RAILDASH_TOKEN` | unset | RailDash's local write token, if you want to choose it (see below): at least 16 characters of `A-Z a-z 0-9 - _ . ~ + / =`, or RailDash does not start. |
-| `RAILMON_IMAGE`, `RAILDASH_IMAGE` | `ghcr.io/datrail/railmon:0.1.0-m7`, `ghcr.io/datrail/raildash:0.2.0-rc.5` | The image each component runs (see [Images](#images)). |
+| `RAILMON_IMAGE`, `RAILDASH_IMAGE` | `ghcr.io/datrail/railmon:0.1.0-m8`, `ghcr.io/datrail/raildash:0.2.0-rc.5` | The image each component runs (see [Images](#images)). |
 | `RAILMON_SRC`, `RAILDASH_SRC` | the GitHub repositories | Where to build each image from, when you build (see [Build from source](#build-from-source)). |
 | `DEMO_INTERVAL` | `30` | Seconds between the demo agent's calls. |
 
@@ -210,15 +210,22 @@ it: give `--binary-path` the executable's path as the collector sees it,
 which for a process in a container is `/proc/<pid>/root/<path inside the
 container>`, with `<pid>` as `docker top <container>` shows it.
 
-The collector pairs each request with the next response on the same thread,
-and the probe does not say which connection a read came from; a Node agent
-does all its TLS on one thread. A read from another connection that arrives
-between two chunks of a streamed (chunked) reply is kept out of that reply,
-so the reply still comes through whole. Two HTTP connections busy on one
+The collector pairs each request with its own reply. The probe names the TLS
+connection each read and write belongs to (for an agent on OpenSSL, Node's
+bundled OpenSSL included, or on BoringSSL or GnuTLS), so two connections
+busy on one thread, as a Node agent runs them, each get their own reply. A
+request whose reply never comes appears as an incomplete interaction, with
+no response: at once when its exchange ends (the connection closed or went
+idle, or the probe lost records), after ten minutes (`--pending-timeout`)
+otherwise, and `railmon-collect`'s log counts it. When the probe loses
+records under load, the connections open at that moment stop being paired
+until each closes or goes idle: their requests in flight come through
+incomplete, later ones on them are not captured, and the log says so. An
+agent on rustls (Codex, for one) names no connection: its requests are paired
+with the next response on the same thread, so two connections busy on one
 thread, a read landing in the middle of a chunk, or a reply that is not
-chunked can still lose the reply. The request then appears after ten minutes
-as an incomplete interaction, with no response, and `railmon-collect`'s log
-counts it ([railmon#70](https://github.com/datrail/railmon/issues/70)).
+chunked can still lose a reply or pair it with the wrong request
+([railmon#70](https://github.com/datrail/railmon/issues/70)).
 
 ### What a real agent looks like
 
@@ -303,7 +310,7 @@ Each component runs a fixed published tag from `ghcr.io/datrail`, pinned in
 
 | Component | Image |
 | --- | --- |
-| RailMon | `ghcr.io/datrail/railmon:0.1.0-m7` |
+| RailMon | `ghcr.io/datrail/railmon:0.1.0-m8` |
 | RailDash | `ghcr.io/datrail/raildash:0.2.0-rc.5` |
 
 `docker compose up -d` pulls them the first time. A newer version of this
