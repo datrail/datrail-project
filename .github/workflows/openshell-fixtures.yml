@@ -34,7 +34,7 @@ jobs:
       - name: No credential in any output
         id: leak
         if: always()
-        run: "! grep -rl -- fixture-credential-must-not-appear \"$RUNNER_TEMP/fixtures\""
+        run: "! grep -rlq -- fixture-credential-must-not-appear \"$RUNNER_TEMP/fixtures\""
       - name: Every sandbox came up
         run: test ! -e "$RUNNER_TEMP/fixtures/NOT-READY"
       - uses: actions/upload-artifact@v7
