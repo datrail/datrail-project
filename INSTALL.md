@@ -212,16 +212,20 @@ container>`, with `<pid>` as `docker top <container>` shows it.
 
 The collector pairs each request with its own reply. The probe names the TLS
 connection each read and write belongs to (for an agent on OpenSSL, Node's
-bundled OpenSSL included, or on BoringSSL, GnuTLS or NSS), so two
-connections busy on one thread, as a Node agent runs them, each get their
-own reply. A request whose reply never comes appears as an incomplete
-interaction, with no response: at once when its connection closes, after ten
-minutes otherwise, and `railmon-collect`'s log counts it. When the probe
-loses records under load, the connections open at that moment stop being
-paired until each closes or goes idle, and the log says so. An agent on
-rustls (Codex, for one) names no connection: its requests are paired with the
-next response on the same thread, and two connections busy on one thread can
-still lose a reply ([railmon#70](https://github.com/datrail/railmon/issues/70)).
+bundled OpenSSL included, or on BoringSSL or GnuTLS), so two connections
+busy on one thread, as a Node agent runs them, each get their own reply. A
+request whose reply never comes appears as an incomplete interaction, with
+no response: at once when its exchange ends (the connection closed or went
+idle, or the probe lost records), after ten minutes (`--pending-timeout`)
+otherwise, and `railmon-collect`'s log counts it. When the probe loses
+records under load, the connections open at that moment stop being paired
+until each closes or goes idle: their requests in flight come through
+incomplete, later ones on them are not captured, and the log says so. An
+agent on rustls (Codex, for one) names no connection: its requests are paired
+with the next response on the same thread, so two connections busy on one
+thread, a read landing in the middle of a chunk, or a reply that is not
+chunked can still lose a reply or pair it with the wrong request
+([railmon#70](https://github.com/datrail/railmon/issues/70)).
 
 ### What a real agent looks like
 
