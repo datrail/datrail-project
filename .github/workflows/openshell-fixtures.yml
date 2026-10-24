@@ -1,0 +1,45 @@
+name: Record OpenShell fixtures
+
+# Records what the pinned OpenShell prints about a sandbox's policy and its
+# denials (tests/openshell/record-fixtures.sh), the fixtures RailDash's policy
+# import and RailMon's collector are tested on (DR-248, DR-249). Run by hand,
+# and before an OpenShell pin bump, to see what changed in its output.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - tests/openshell/**
+      - .github/workflows/openshell-fixtures.yml
+
+permissions:
+  contents: read
+
+jobs:
+  record:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install OpenShell and start its gateway
+        run: bash tests/openshell/install.sh
+      - name: Record
+        run: bash tests/openshell/record-fixtures.sh "$RUNNER_TEMP/fixtures"
+      - name: Preserve OpenShell's gateway log
+        if: always()
+        run: journalctl --user -u openshell-gateway --no-pager > "$RUNNER_TEMP/fixtures/openshell-gateway.log" 2>&1 || true
+      # Before the upload, which it gates: a credential OpenShell echoed is
+      # never published.
+      - name: No credential in any output
+        id: leak
+        if: always()
+        run: "! grep -rlq -- fixture-credential-must-not-appear \"$RUNNER_TEMP/fixtures\""
+      - name: Every sandbox came up
+        run: test ! -e "$RUNNER_TEMP/fixtures/NOT-READY"
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() && steps.leak.outcome == 'success' }}
+        with:
+          name: openshell-fixtures-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/fixtures
+          if-no-files-found: error
