@@ -326,9 +326,10 @@ before installing OpenShell, or the gateway does not start:
   - OpenShell keeps 2,000 log lines a sandbox and has no resume cursor, so
     a span where denials may be missing is shown as such.
 
-This repository's CI runs this with OpenShell 0.1.3 and the demo agent
+This repository's CI runs this with OpenShell 0.1.5 and the demo agent
 (`STACK_MODE=openshell`): the same walk as the own-agent job, then a call
-to `api.github.com` through OpenShell's supervisor.
+to `api.github.com` through OpenShell's supervisor, the import, the
+collector's policy and denials, and a recreated sandbox.
 
 ## Images
 
