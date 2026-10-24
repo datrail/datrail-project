@@ -76,7 +76,7 @@ case "$mode" in
     # The opt-in collector too (DR-249): it reads the sandbox's policy and
     # denials from OpenShell's gateway with the CLI configuration
     # tests/openshell/install.sh wrote.
-    export COMPOSE_PROFILES=openshell
+    export COMPOSE_PROFILES=openshell OPENSHELL_INTERVAL="$SCAN_INTERVAL"
     ;;
   *) echo "unknown STACK_MODE $mode" >&2; exit 2 ;;
 esac

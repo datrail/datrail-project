@@ -222,7 +222,7 @@ services:
     environment:
       AGENT_CONTAINER: ${AGENT_CONTAINER:-}
       RAIL_OPENSHELL_SANDBOX: ${OPENSHELL_SANDBOX:-}
-      RAIL_OPENSHELL_INTERVAL: ${SCAN_INTERVAL:-60}
+      RAIL_OPENSHELL_INTERVAL: ${OPENSHELL_INTERVAL:-60}
       # RailDash as the host reaches it: this service isn't on the stack's
       # network.
       RAIL_RAILDASH_URL: http://127.0.0.1:${RAILDASH_PORT:-8000}

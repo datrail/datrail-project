@@ -126,6 +126,7 @@ All are optional.
 | `DEMO_INTERVAL` | `30` | Seconds between the demo agent's calls. |
 | `OPENSHELL_CONFIG_DIR` | `$HOME/.config/openshell` | The OpenShell CLI's configuration, which the opt-in `openshell-collector` mounts read-only (see [An agent in an OpenShell sandbox](#an-agent-in-an-openshell-sandbox)). |
 | `OPENSHELL_SANDBOX` | the name in `AGENT_CONTAINER=openshell:<sandbox>` | The sandbox `openshell-collector` reads. |
+| `OPENSHELL_INTERVAL` | `60` | Seconds between `openshell-collector`'s polls (5 to 3600). |
 
 ### The RailDash token
 
