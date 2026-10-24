@@ -112,8 +112,8 @@ All are optional.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `AGENT_CONTAINER` | `datrail-demo-agent` | The container to watch. `railmon-collect`, `railmon-listen` and `railmon-files` attach to it and `railmon-scan` scans it. |
-| `AGENT_KEY` | the container name | The identity RailDash files ASPs under, when the agent has no deployment identity of its own (see [docs/glossary.md](docs/glossary.md#identity)). A container started by Compose is identified by its Compose project and service instead. |
+| `AGENT_CONTAINER` | `datrail-demo-agent` | The container to watch. `railmon-collect`, `railmon-listen` and `railmon-files` attach to it and `railmon-scan` scans it. `openshell:<sandbox>` watches an OpenShell sandbox by its name (see [An agent in an OpenShell sandbox](#an-agent-in-an-openshell-sandbox)). |
+| `AGENT_KEY` | the container name, or for `openshell:<sandbox>` usually the sandbox name (see [An agent in an OpenShell sandbox](#an-agent-in-an-openshell-sandbox)) | The identity RailDash files ASPs under, when the agent has no deployment identity of its own (see [docs/glossary.md](docs/glossary.md#identity)). A container started by Compose is identified by its Compose project and service instead. |
 | `COLLECT_TARGET` | unset | Only to choose the processes `railmon collect` taps yourself, instead of `AGENT_CONTAINER`'s: `--comm NAME`, `--pid PID`, `--uid UID`, or `--binary-path PATH`. These match across the whole host. |
 | `SCAN_INTERVAL` | `60` | Seconds between scans. |
 | `RAIL_HOST_ID` | `datrail-local` | The name of this machine in every evidence bundle. |
@@ -121,7 +121,7 @@ All are optional.
 | `RAIL_AUTH_MODE`, `RAIL_AUTH_TOKEN`, `RAIL_AUTH_AUDIENCE` | `none` | The credential `railmon-scan` presents to Rail Center. Used only with `RAIL_CENTER_URL`. |
 | `RAILDASH_PORT` | `8000` | The local port RailDash is published on (always on `127.0.0.1`). |
 | `RAILDASH_TOKEN` | unset | RailDash's local write token, if you want to choose it (see below): at least 16 characters of `A-Z a-z 0-9 - _ . ~ + / =`, or RailDash does not start. |
-| `RAILMON_IMAGE`, `RAILDASH_IMAGE` | `ghcr.io/datrail/railmon:0.1.0-m8`, `ghcr.io/datrail/raildash:0.2.0-rc.5` | The image each component runs (see [Images](#images)). |
+| `RAILMON_IMAGE`, `RAILDASH_IMAGE` | `ghcr.io/datrail/railmon:0.1.0-m9`, `ghcr.io/datrail/raildash:0.2.0-rc.6` | The image each component runs (see [Images](#images)). |
 | `RAILMON_SRC`, `RAILDASH_SRC` | the GitHub repositories | Where to build each image from, when you build (see [Build from source](#build-from-source)). |
 | `DEMO_INTERVAL` | `30` | Seconds between the demo agent's calls. |
 
@@ -250,21 +250,22 @@ With [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell)'s Docker
 driver, each sandbox is a container. OpenShell asks of the image a non-root
 user and a `/sandbox` directory that user can write, and of the sandbox's
 policy a `network_policies` entry for each outside host the agent calls
-([`tests/openshell/`](tests/openshell) has both for the demo agent). The
-container's name carries an id OpenShell
-generates, so look it up by the sandbox's name, and set `AGENT_KEY` so
-RailDash keeps one name for the agent across new sandboxes:
+([`tests/openshell/`](tests/openshell) has both for the demo agent). Name
+the sandbox, not its container, whose name carries an id OpenShell
+generates:
 
 ```bash
 openshell sandbox create --name my-agent --from <your image> --detach -- <your agent>
-AGENT_CONTAINER=$(docker ps --format '{{.Names}}' \
-  --filter label=openshell.ai/sandbox-name=my-agent \
-  --filter label=openshell.ai/isolation-role=sandbox) \
-AGENT_KEY=my-agent docker compose up -d --scale demo-agent=0
+AGENT_CONTAINER=openshell:my-agent docker compose up -d --scale demo-agent=0
 ```
 
-A new sandbox (`openshell sandbox delete` and `create` again) is a new
-container: run the `docker compose up` line again so the stack follows it.
+The stack finds the sandbox's container itself, again on every attach and
+every scan. A new sandbox under the same name (`openshell sandbox delete`
+and `create` again) is followed without restarting anything, and RailDash
+keeps the agent under the sandbox's name (set `AGENT_KEY` if that name has
+capitals, is over 64 characters, or is `default`). The stack can start before the
+sandbox does: until it runs, the probes wait and each scan logs that it
+found no container, then the next one tries again.
 
 OpenShell's gateway runs as a user systemd service. On a machine with no
 desktop session, such as a cloud VM you reach over SSH, turn on lingering
@@ -281,9 +282,8 @@ before installing OpenShell, or the gateway does not start:
   listening when the stack started is listed under `openshell-sandb`, not
   the agent's own process name. `observed_listeners` also lists
   OpenShell's own DNS on `127.0.0.53:53` (TCP and UDP) with the agent's
-  ports. The
-  Data Guardrail's proposal shows them as `service_ports` rows. They are
-  expected: allow them with the agent's own.
+  ports. The Data Guardrail's proposal already allows those two, labelled
+  "OpenShell's DNS".
 - Only the Docker driver is covered. Podman, Kubernetes and the MicroVM
   driver run the agent elsewhere.
 - It doesn't run on Docker Desktop (a Mac, or Windows with Docker
@@ -310,8 +310,8 @@ Each component runs a fixed published tag from `ghcr.io/datrail`, pinned in
 
 | Component | Image |
 | --- | --- |
-| RailMon | `ghcr.io/datrail/railmon:0.1.0-m8` |
-| RailDash | `ghcr.io/datrail/raildash:0.2.0-rc.5` |
+| RailMon | `ghcr.io/datrail/railmon:0.1.0-m9` |
+| RailDash | `ghcr.io/datrail/raildash:0.2.0-rc.6` |
 
 `docker compose up -d` pulls them the first time. A newer version of this
 file pins newer tags; `git pull` (or download the file again) and run
