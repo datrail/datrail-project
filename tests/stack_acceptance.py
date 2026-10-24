@@ -23,9 +23,9 @@ then, driving RailDash's own HTTP routes the way the dashboard does:
    observed_file_access alone; any other new ASP must be ALIGNED;
 5. the Data Guardrail (DR-184 M4, the design's §6 step 4), in the README's
    order, after the drift step: adopting the unedited proposal from that
-   baseline is Violated by exactly the agent's own listener on 8443, the
-   port the drift step opened and any --platform-listener the proposal
-   doesn't already allow (it allows OpenShell's DNS, DR-247). Its calls to 127.0.0.1 are not out of spec: the agent declares
+   baseline is Violated by exactly the agent's own listener on 8443 and the
+   port the drift step opened. The proposal allows exactly the
+   --proposal-allows listeners (OpenShell's DNS, DR-247), and no other port. Its calls to 127.0.0.1 are not out of spec: the agent declares
    its MCP server, https://127.0.0.1:8443/mcp, so the proposal seeds
    127.0.0.1 and `demo` from its configuration (DR-237). Nothing else: the
    Python commands the walk runs in the agent write bytecode caches, which
@@ -272,12 +272,11 @@ def main() -> int:
     parser.add_argument("--settle", type=float, default=30,
                         help="seconds the newest ASP must stay the newest before it is locked, "
                              "and that steady state is watched afterwards (a few scan intervals)")
-    parser.add_argument("--platform-listener", action="append", default=[],
+    parser.add_argument("--proposal-allows", action="append", default=[],
                         metavar="PROTOCOL/ADDR/PORT",
-                        help="a socket the agent's platform listens on in its container, such as "
-                             "OpenShell's DNS (udp/127.0.0.53/53): the proposal may already allow "
-                             "it, or else it is a service_ports row the walk expects and allows "
-                             "with the agent's own")
+                        help="a socket the agent's platform listens on in its container that the "
+                             "guardrail proposal must already allow, such as OpenShell's DNS "
+                             "(udp/127.0.0.53/53, DR-247); the proposal allows no other port")
     parser.add_argument("--expect-egress", required=True,
                         choices=["allow_list_enforced", "no_network", "internal_network", "open",
                                  "host_network"],
@@ -433,17 +432,16 @@ def main() -> int:
         sys.exit(f"FAIL: the proposal should block {MCP_TOOL_PREFIX}upload_file until allowed, "
                  f"and not {MCP_TOOL_PREFIX}read_doc: {blocked}")
     print(f"ok:   {MCP_TOOL_PREFIX}upload_file is blocked until allowed")
-    # A platform listener the proposal already allows (OpenShell's DNS,
-    # DR-247) is no violation; one it doesn't allow is, and Allow all takes it
-    # with the agent's own. The proposal allows nothing else.
+    # The platform's own listeners (OpenShell's DNS, DR-247) are already
+    # allowed, and nothing else is.
     preallowed = {f"{e['protocol']}/{e.get('addr', '*')}/{e['port']}"
                   for e in proposed["guardrail"]["rules"]["service_ports"]["allowed"]}
-    if not preallowed <= set(args.platform_listener):
-        sys.exit(f"FAIL: the proposal allows ports that are not the platform's: "
-                 f"{sorted(preallowed - set(args.platform_listener))}")
+    if preallowed != set(args.proposal_allows):
+        sys.exit(f"FAIL: the proposal should allow exactly {sorted(args.proposal_allows)} "
+                 f"of the ports, got {sorted(preallowed)}")
     if preallowed:
         print(f"ok:   the proposal already allows the platform's {sorted(preallowed)}")
-    ports = {f"tcp/127.0.0.1/{DEMO_PORT}", f"tcp/127.0.0.1/{DRIFT_PORT}", *args.platform_listener} - preallowed
+    ports = {f"tcp/127.0.0.1/{DEMO_PORT}", f"tcp/127.0.0.1/{DRIFT_PORT}"}
     first = {("service_ports", port) for port in ports}
     guard.wait_for_rows(
         "adopting the unedited proposal is Violated by exactly the agent's own listener, the "
