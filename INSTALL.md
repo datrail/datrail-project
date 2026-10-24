@@ -121,7 +121,7 @@ All are optional.
 | `RAIL_AUTH_MODE`, `RAIL_AUTH_TOKEN`, `RAIL_AUTH_AUDIENCE` | `none` | The credential `railmon-scan` presents to Rail Center. Used only with `RAIL_CENTER_URL`. |
 | `RAILDASH_PORT` | `8000` | The local port RailDash is published on (always on `127.0.0.1`). |
 | `RAILDASH_TOKEN` | unset | RailDash's local write token, if you want to choose it (see below): at least 16 characters of `A-Z a-z 0-9 - _ . ~ + / =`, or RailDash does not start. |
-| `RAILMON_IMAGE`, `RAILDASH_IMAGE` | `ghcr.io/datrail/railmon:0.1.0-m10`, `ghcr.io/datrail/raildash:0.2.0-rc.8` | The image each component runs (see [Images](#images)). |
+| `RAILMON_IMAGE`, `RAILDASH_IMAGE` | `ghcr.io/datrail/railmon:0.1.0-m11`, `ghcr.io/datrail/raildash:0.2.0-rc.8` | The image each component runs (see [Images](#images)). |
 | `RAILMON_SRC`, `RAILDASH_SRC` | the GitHub repositories | Where to build each image from, when you build (see [Build from source](#build-from-source)). |
 | `DEMO_INTERVAL` | `30` | Seconds between the demo agent's calls. |
 | `OPENSHELL_CONFIG_DIR` | `$HOME/.config/openshell` | The OpenShell CLI's configuration, which the opt-in `openshell-collector` mounts read-only (see [An agent in an OpenShell sandbox](#an-agent-in-an-openshell-sandbox)). |
@@ -326,9 +326,10 @@ before installing OpenShell, or the gateway does not start:
   - OpenShell keeps 2,000 log lines a sandbox and has no resume cursor, so
     a span where denials may be missing is shown as such.
 
-This repository's CI runs this with OpenShell 0.1.3 and the demo agent
+This repository's CI runs this with OpenShell 0.1.5 and the demo agent
 (`STACK_MODE=openshell`): the same walk as the own-agent job, then a call
-to `api.github.com` through OpenShell's supervisor.
+to `api.github.com` through OpenShell's supervisor, the import, the
+collector's policy and denials, and a recreated sandbox.
 
 ## Images
 
@@ -337,7 +338,7 @@ Each component runs a fixed published tag from `ghcr.io/datrail`, pinned in
 
 | Component | Image |
 | --- | --- |
-| RailMon | `ghcr.io/datrail/railmon:0.1.0-m10` |
+| RailMon | `ghcr.io/datrail/railmon:0.1.0-m11` |
 | RailDash | `ghcr.io/datrail/raildash:0.2.0-rc.8` |
 
 `docker compose up -d` pulls them the first time. A newer version of this

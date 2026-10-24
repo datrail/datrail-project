@@ -4,8 +4,16 @@
 # for a Debian host, against a checksum pinned here (DR-206). Not for a
 # user's machine: there, OpenShell's install.sh is the way.
 set -euo pipefail
-OPENSHELL_VERSION=0.1.3
-OPENSHELL_DEB_SHA256=64000b75aaf7d23763ad43aef6d9d6386325cba7bb636a64539a13ce98f88108
+# A manual run can try another release (DR-250: the run that precedes a pin
+# bump): OPENSHELL_VERSION and OPENSHELL_DEB_SHA256 together, the checksum
+# from that release's openshell-checksums-sha256.txt.
+if [[ -n ${OPENSHELL_VERSION:-}${OPENSHELL_DEB_SHA256:-} ]]; then
+  [[ -n ${OPENSHELL_VERSION:-} && -n ${OPENSHELL_DEB_SHA256:-} ]] \
+    || { echo "set OPENSHELL_VERSION and OPENSHELL_DEB_SHA256 together" >&2; exit 2; }
+else
+  OPENSHELL_VERSION=0.1.5
+  OPENSHELL_DEB_SHA256=6af7859a87ab0b3bf96aef2216db191b597308ac00df9bfe5d0e5e9912f8e2ab
+fi
 
 deb="openshell_${OPENSHELL_VERSION}-1_amd64.deb"
 work=$(mktemp -d)

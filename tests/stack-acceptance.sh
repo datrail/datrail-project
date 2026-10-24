@@ -187,30 +187,42 @@ if [[ $mode == openshell ]]; then
   fi
   docker build -t datrail-openshell-agent:local --build-arg BASE="$railmon_image" tests/openshell \
     2>&1 | tee -a "$EVIDENCE_DIR/build.log"
-  openshell sandbox create --name "$sandbox" --from datrail-openshell-agent:local \
-    --policy tests/openshell/policy.yaml --detach --no-tty -- sh -c '
-    set -eu
-    demo=/opt/railmon/tools/local-demo
-    certs=$(mktemp -d)
-    openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj /CN=127.0.0.1 \
-      -keyout "$certs/key.pem" -out "$certs/cert.pem" >/dev/null 2>&1
-    my-agent-bin "$demo/demo_server.py" "$certs/cert.pem" "$certs/key.pem" &
-    while sleep '"$DEMO_INTERVAL"'; do
-      my-agent-bin "$demo/demo_client.py" || true
-      if [ -e /sandbox/outbound ]; then
-        my-agent-bin -c "import urllib.request; urllib.request.urlopen(\"https://api.github.com/zen\", timeout=10).read()" || true
-      fi
-    done
-  ' 2>&1 | tee "$EVIDENCE_DIR/sandbox-create.log"
+  # The sandbox, created again by the recreate step (DR-250). Besides the
+  # GET, once /sandbox/post exists the agent also POSTs to api.github.com,
+  # which its read-only rule lets OpenShell's supervisor refuse at L7.
+  create_sandbox() {
+    openshell sandbox create --name "$sandbox" --from datrail-openshell-agent:local \
+      --policy tests/openshell/policy.yaml --detach --no-tty -- sh -c '
+      set -eu
+      demo=/opt/railmon/tools/local-demo
+      certs=$(mktemp -d)
+      openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj /CN=127.0.0.1 \
+        -keyout "$certs/key.pem" -out "$certs/cert.pem" >/dev/null 2>&1
+      my-agent-bin "$demo/demo_server.py" "$certs/cert.pem" "$certs/key.pem" &
+      while sleep '"$DEMO_INTERVAL"'; do
+        my-agent-bin "$demo/demo_client.py" || true
+        if [ -e /sandbox/outbound ]; then
+          my-agent-bin -c "import urllib.request; urllib.request.urlopen(\"https://api.github.com/zen\", timeout=10).read()" || true
+        fi
+        if [ -e /sandbox/post ]; then
+          my-agent-bin -c "import urllib.request; urllib.request.urlopen(urllib.request.Request(\"https://api.github.com/markdown\", data=b\"{}\", method=\"POST\"), timeout=10).read()" || true
+        fi
+      done
+    ' 2>&1 | tee -a "$EVIDENCE_DIR/sandbox-create.log"
+  }
   # --detach returns as the container is created, so give it a moment to run.
-  for _ in $(seq 30); do
-    agent=$(docker ps --format '{{.Names}}' --filter "label=openshell.ai/sandbox-name=$sandbox" \
-      --filter label=openshell.ai/isolation-role=sandbox)
-    [[ -n $agent ]] && break
-    sleep 1
-  done
-  [[ $agent == openshell-* && $agent != *$'\n'* ]] \
-    || { echo "no single running sandbox container for $sandbox: '$agent'" >&2; exit 1; }
+  find_agent() {
+    for _ in $(seq 30); do
+      agent=$(docker ps --format '{{.Names}}' --filter "label=openshell.ai/sandbox-name=$sandbox" \
+        --filter label=openshell.ai/isolation-role=sandbox)
+      [[ -n $agent ]] && break
+      sleep 1
+    done
+    [[ $agent == openshell-* && $agent != *$'\n'* ]] \
+      || { echo "no single running sandbox container for $sandbox: '$agent'" >&2; exit 1; }
+  }
+  create_sandbox
+  find_agent
   docker inspect "$agent" > "$EVIDENCE_DIR/sandbox-container.json"
   echo "sandbox container: $agent" | tee "$EVIDENCE_DIR/sandbox-container.txt"
   export AGENT_CONTAINER=openshell:$sandbox
@@ -276,6 +288,14 @@ for _ in $(seq 120); do
 done
 [[ -n "$token" ]] || { echo "RailDash never wrote its token file" >&2; exit 1; }
 
+openshell_policy=()
+if [[ $mode == openshell ]]; then
+  # DR-250: the file a user imports (INSTALL's OpenShell section). Before
+  # importing it, stack_acceptance.py checks the collector's copy arrived
+  # (DR-249): the import is newer and becomes what the line shows.
+  openshell sandbox get "$sandbox" --policy-only > "$EVIDENCE_DIR/policy.yaml"
+  openshell_policy=(--openshell-policy "$EVIDENCE_DIR/policy.yaml")
+fi
 RAILDASH_TOKEN_VALUE="$token" python3 tests/stack_acceptance.py \
   --url "http://127.0.0.1:${RAILDASH_PORT:-8000}" \
   --project "$COMPOSE_PROJECT_NAME" \
@@ -285,7 +305,7 @@ RAILDASH_TOKEN_VALUE="$token" python3 tests/stack_acceptance.py \
   --agent-exec "docker exec $agent" \
   --settle "$((SCAN_INTERVAL * 3))" \
   --expect-egress "$([[ $mode == openshell ]] && echo allow_list_enforced || echo open)" \
-  ${platform[@]+"${platform[@]}"} \
+  ${platform[@]+"${platform[@]}"} ${openshell_policy[@]+"${openshell_policy[@]}"} \
   | tee "$EVIDENCE_DIR/acceptance.txt"
 
 # The collector sends RailDash's token with its captures and, while a tap is
@@ -368,18 +388,38 @@ while time.time() < deadline:
 sys.exit("FAIL  no GET https://api.github.com/zen from the sandboxed agent within 180 s")
 PY
 
-  # DR-249: `railmon openshell` posts the sandbox's policy, which RailDash
-  # shows as read by the collector. Removing the rule that lets the agent
-  # reach api.github.com makes OpenShell's supervisor refuse its next call;
-  # the collector posts that denial and RailDash shows it under Blocked by
-  # OpenShell, with the new revision. Denials and the policy are read through
-  # RailDash's token-gated guardrail detail, as the panel reads them.
+  # DR-250: a POST the read-only rule refuses at L7. The supervisor answers
+  # the agent's own TLS with a 403, so the capture carries the request, and
+  # the collector carries OpenShell's denial of it.
+  docker exec "$agent" touch /sandbox/post
   RAILDASH_TOKEN_VALUE="$token" python3 tests/openshell/collector_acceptance.py \
-    --url "http://127.0.0.1:${RAILDASH_PORT:-8000}" --phase policy \
+    --url "http://127.0.0.1:${RAILDASH_PORT:-8000}" --phase l7 \
     | tee -a "$EVIDENCE_DIR/acceptance.txt"
+  docker exec "$agent" rm -f /sandbox/post
+  # DR-249: removing the rule that lets the agent reach api.github.com makes
+  # OpenShell's supervisor refuse its next call at L4; the collector posts
+  # that denial and the new revision, and RailDash shows both. Read through
+  # RailDash's token-gated guardrail detail, as the panel reads them.
   openshell policy update "$sandbox" --remove-rule github_api --wait 2>&1 \
     | tee "$EVIDENCE_DIR/policy-update.log"
   RAILDASH_TOKEN_VALUE="$token" python3 tests/openshell/collector_acceptance.py \
     --url "http://127.0.0.1:${RAILDASH_PORT:-8000}" --phase denial \
+    | tee -a "$EVIDENCE_DIR/acceptance.txt"
+  # DR-250: a new sandbox under the same name is followed without restarting
+  # anything (DR-247's promise, INSTALL): its container has a new name, and
+  # its calls still arrive under the same agent.
+  before=$agent
+  # The first sandbox's log, with its denials, before it goes.
+  openshell logs "$sandbox" -n 2000 > "$EVIDENCE_DIR/my-agent-first-sandbox.log" 2>&1 || true
+  openshell sandbox delete "$sandbox" 2>&1 | tee "$EVIDENCE_DIR/sandbox-recreate-delete.log"
+  for _ in $(seq 60); do [[ -z "$(sandbox_containers)" ]] && break; sleep 2; done
+  [[ -z "$(sandbox_containers)" ]] || { echo "the deleted sandbox's containers are still there" >&2; exit 1; }
+  since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  create_sandbox
+  find_agent
+  [[ $agent != "$before" ]] || { echo "the recreated sandbox kept its container name $agent" >&2; exit 1; }
+  echo "recreated sandbox container: $agent (was $before)" | tee -a "$EVIDENCE_DIR/sandbox-container.txt"
+  RAILDASH_TOKEN_VALUE="$token" python3 tests/openshell/collector_acceptance.py \
+    --url "http://127.0.0.1:${RAILDASH_PORT:-8000}" --phase recreated --since "$since" \
     | tee -a "$EVIDENCE_DIR/acceptance.txt"
 fi
