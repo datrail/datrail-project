@@ -444,8 +444,8 @@ def main() -> int:
     ports = {f"tcp/127.0.0.1/{DEMO_PORT}", f"tcp/127.0.0.1/{DRIFT_PORT}"}
     first = {("service_ports", port) for port in ports}
     guard.wait_for_rows(
-        "adopting the unedited proposal is Violated by exactly the agent's own listener, the "
-        "port the drift step opened and any platform listener",
+        "adopting the unedited proposal is Violated by exactly the agent's own listener and the "
+        "port the drift step opened",
         first, exact=True,
     )
     # The README's click: Allow all on the ports.

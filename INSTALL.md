@@ -113,7 +113,7 @@ All are optional.
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `AGENT_CONTAINER` | `datrail-demo-agent` | The container to watch. `railmon-collect`, `railmon-listen` and `railmon-files` attach to it and `railmon-scan` scans it. `openshell:<sandbox>` watches an OpenShell sandbox by its name (see [An agent in an OpenShell sandbox](#an-agent-in-an-openshell-sandbox)). |
-| `AGENT_KEY` | the container name, or the sandbox name for `openshell:<sandbox>` | The identity RailDash files ASPs under, when the agent has no deployment identity of its own (see [docs/glossary.md](docs/glossary.md#identity)). A container started by Compose is identified by its Compose project and service instead. |
+| `AGENT_KEY` | the container name, or for `openshell:<sandbox>` the sandbox name if it is lowercase (set it otherwise) | The identity RailDash files ASPs under, when the agent has no deployment identity of its own (see [docs/glossary.md](docs/glossary.md#identity)). A container started by Compose is identified by its Compose project and service instead. |
 | `COLLECT_TARGET` | unset | Only to choose the processes `railmon collect` taps yourself, instead of `AGENT_CONTAINER`'s: `--comm NAME`, `--pid PID`, `--uid UID`, or `--binary-path PATH`. These match across the whole host. |
 | `SCAN_INTERVAL` | `60` | Seconds between scans. |
 | `RAIL_HOST_ID` | `datrail-local` | The name of this machine in every evidence bundle. |
@@ -262,8 +262,10 @@ AGENT_CONTAINER=openshell:my-agent docker compose up -d --scale demo-agent=0
 The stack finds the sandbox's container itself, again on every attach and
 every scan. A new sandbox under the same name (`openshell sandbox delete`
 and `create` again) is followed without restarting anything, and RailDash
-keeps the agent under the sandbox's name. The stack can start before the
-sandbox does; it waits for it.
+keeps the agent under the sandbox's name (set `AGENT_KEY` if that name has
+capitals or is over 64 characters). The stack can start before the
+sandbox does: until it runs, the probes wait and each scan logs that it
+found no container, then the next one tries again.
 
 OpenShell's gateway runs as a user systemd service. On a machine with no
 desktop session, such as a cloud VM you reach over SSH, turn on lingering
