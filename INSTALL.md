@@ -121,9 +121,12 @@ All are optional.
 | `RAIL_AUTH_MODE`, `RAIL_AUTH_TOKEN`, `RAIL_AUTH_AUDIENCE` | `none` | The credential `railmon-scan` presents to Rail Center. Used only with `RAIL_CENTER_URL`. |
 | `RAILDASH_PORT` | `8000` | The local port RailDash is published on (always on `127.0.0.1`). |
 | `RAILDASH_TOKEN` | unset | RailDash's local write token, if you want to choose it (see below): at least 16 characters of `A-Z a-z 0-9 - _ . ~ + / =`, or RailDash does not start. |
-| `RAILMON_IMAGE`, `RAILDASH_IMAGE` | `ghcr.io/datrail/railmon:0.1.0-m9`, `ghcr.io/datrail/raildash:0.2.0-rc.7` | The image each component runs (see [Images](#images)). |
+| `RAILMON_IMAGE`, `RAILDASH_IMAGE` | `ghcr.io/datrail/railmon:0.1.0-m10`, `ghcr.io/datrail/raildash:0.2.0-rc.8` | The image each component runs (see [Images](#images)). |
 | `RAILMON_SRC`, `RAILDASH_SRC` | the GitHub repositories | Where to build each image from, when you build (see [Build from source](#build-from-source)). |
 | `DEMO_INTERVAL` | `30` | Seconds between the demo agent's calls. |
+| `OPENSHELL_CONFIG_DIR` | `$HOME/.config/openshell` | The OpenShell CLI's configuration, which the opt-in `openshell-collector` mounts read-only (see [An agent in an OpenShell sandbox](#an-agent-in-an-openshell-sandbox)). |
+| `OPENSHELL_SANDBOX` | the name in `AGENT_CONTAINER=openshell:<sandbox>` | The sandbox `openshell-collector` reads. |
+| `OPENSHELL_INTERVAL` | `60` | Seconds between `openshell-collector`'s polls (5 to 3600). |
 
 ### The RailDash token
 
@@ -303,6 +306,25 @@ before installing OpenShell, or the gateway does not start:
   each endpoint the policy allows, and a guardrail proposed while RailDash
   holds the policy allows the policy's hosts too. It is as fresh as your
   last import; import again after `openshell policy set` or `update`.
+- Instead of importing, you can run the opt-in collector, which keeps the
+  policy current and also shows what OpenShell refused:
+  `COMPOSE_PROFILES=openshell AGENT_CONTAINER=openshell:my-agent docker
+  compose up -d --scale demo-agent=0`. `openshell-collector` reads the
+  sandbox's policy whenever it changes and the denials OpenShell's
+  supervisor logged, and RailDash shows them under the Egress line as
+  **Blocked by OpenShell** (the last 24 hours). A denial isn't a violation,
+  since nothing left the sandbox. Know what it holds before you start it:
+  - It mounts the OpenShell CLI's configuration (`~/.config/openshell`)
+    read-only. On a local gateway that is a Platform Admin credential:
+    anyone who takes over the container holds the gateway, every sandbox
+    and policy on it included. Only an OIDC gateway with
+    `OPENSHELL_OIDC_SCOPES_CLAIM` set can issue a narrower one.
+  - It shares the host's network, since the gateway listens on the host's
+    `127.0.0.1:17670`, so it can reach every service on host loopback.
+  - It has no Docker socket, no privilege and no host PID. It runs only
+    `openshell policy get` and `openshell logs`, and listens on nothing.
+  - OpenShell keeps 2,000 log lines a sandbox and has no resume cursor, so
+    a span where denials may be missing is shown as such.
 
 This repository's CI runs this with OpenShell 0.1.3 and the demo agent
 (`STACK_MODE=openshell`): the same walk as the own-agent job, then a call
@@ -315,8 +337,8 @@ Each component runs a fixed published tag from `ghcr.io/datrail`, pinned in
 
 | Component | Image |
 | --- | --- |
-| RailMon | `ghcr.io/datrail/railmon:0.1.0-m9` |
-| RailDash | `ghcr.io/datrail/raildash:0.2.0-rc.7` |
+| RailMon | `ghcr.io/datrail/railmon:0.1.0-m10` |
+| RailDash | `ghcr.io/datrail/raildash:0.2.0-rc.8` |
 
 `docker compose up -d` pulls them the first time. A newer version of this
 file pins newer tags; `git pull` (or download the file again) and run

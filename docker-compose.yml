@@ -20,6 +20,9 @@
 #                   RAIL_CENTER_URL is set
 #   demo-agent      a small stand-in agent, so a first run has something to
 #                   watch; replace it with your own (INSTALL.md)
+#   openshell-collector  opt-in (--profile openshell): an OpenShell sandbox's
+#                   policy and the denials its supervisor logged, read from
+#                   OpenShell's gateway (INSTALL.md)
 #
 # Nothing needs a manual restart or import: every service keeps running and
 # delivers on its own.
@@ -38,12 +41,12 @@
 # Compose builds services in parallel, and on Docker Desktop's containerd
 # image store a second build of the same image name fails.
 x-railmon: &railmon
-  image: ${RAILMON_IMAGE:-ghcr.io/datrail/railmon:0.1.0-m9}
+  image: ${RAILMON_IMAGE:-ghcr.io/datrail/railmon:0.1.0-m10}
   restart: unless-stopped
 
 services:
   raildash:
-    image: ${RAILDASH_IMAGE:-ghcr.io/datrail/raildash:0.2.0-rc.7}
+    image: ${RAILDASH_IMAGE:-ghcr.io/datrail/raildash:0.2.0-rc.8}
     build:
       context: ${RAILDASH_SRC:-https://github.com/datrail/raildash.git}
     restart: unless-stopped
@@ -198,6 +201,41 @@ services:
         condition: service_started
       railmon-files:
         condition: service_started
+
+  # Opt-in (DR-249): started only with `--profile openshell` or
+  # COMPOSE_PROFILES=openshell, for an agent in an OpenShell sandbox
+  # (AGENT_CONTAINER=openshell:<sandbox>). It reads the sandbox's policy and
+  # the denials OpenShell's supervisor logged from OpenShell's gateway and
+  # posts them to RailDash. The gateway listens on the host's loopback, so
+  # this service shares the host's network, and with it every service on
+  # host loopback. It mounts the OpenShell CLI's configuration read-only,
+  # which on a local gateway is a Platform Admin credential (INSTALL.md).
+  # No Docker socket, no privilege, no host PID.
+  openshell-collector:
+    <<: *railmon
+    profiles: [openshell]
+    network_mode: host
+    volumes:
+      - ${OPENSHELL_CONFIG_DIR:-${HOME}/.config/openshell}:/root/.config/openshell:ro
+      # Read-only, for RailDash's token file only.
+      - raildash-data:/raildash:ro
+    environment:
+      AGENT_CONTAINER: ${AGENT_CONTAINER:-}
+      RAIL_OPENSHELL_SANDBOX: ${OPENSHELL_SANDBOX:-}
+      RAIL_OPENSHELL_INTERVAL: ${OPENSHELL_INTERVAL:-60}
+      # RailDash as the host reaches it: this service isn't on the stack's
+      # network.
+      RAIL_RAILDASH_URL: http://127.0.0.1:${RAILDASH_PORT:-8000}
+      RAIL_RAILDASH_TOKEN_FILE: /raildash/raildash.db.token
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        until [ -s "$$RAIL_RAILDASH_TOKEN_FILE" ]; do sleep 1; done
+        exec railmon openshell
+    depends_on:
+      raildash:
+        condition: service_healthy
 
   demo-agent:
     <<: *railmon

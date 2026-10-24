@@ -73,6 +73,10 @@ case "$mode" in
     # agent's own container: listeners the proposal allows (DR-247).
     platform=(--proposal-allows tcp/127.0.0.53/53 --proposal-allows udp/127.0.0.53/53)
     up=(up -d "${build[@]}" --scale demo-agent=0)
+    # The opt-in collector too (DR-249): it reads the sandbox's policy and
+    # denials from OpenShell's gateway with the CLI configuration
+    # tests/openshell/install.sh wrote.
+    export COMPOSE_PROFILES=openshell OPENSHELL_INTERVAL="$SCAN_INTERVAL"
     ;;
   *) echo "unknown STACK_MODE $mode" >&2; exit 2 ;;
 esac
@@ -363,4 +367,19 @@ while time.time() < deadline:
     time.sleep(3)
 sys.exit("FAIL  no GET https://api.github.com/zen from the sandboxed agent within 180 s")
 PY
+
+  # DR-249: `railmon openshell` posts the sandbox's policy, which RailDash
+  # shows as read by the collector. Removing the rule that lets the agent
+  # reach api.github.com makes OpenShell's supervisor refuse its next call;
+  # the collector posts that denial and RailDash shows it under Blocked by
+  # OpenShell, with the new revision. Denials and the policy are read through
+  # RailDash's token-gated guardrail detail, as the panel reads them.
+  RAILDASH_TOKEN_VALUE="$token" python3 tests/openshell/collector_acceptance.py \
+    --url "http://127.0.0.1:${RAILDASH_PORT:-8000}" --phase policy \
+    | tee -a "$EVIDENCE_DIR/acceptance.txt"
+  openshell policy update "$sandbox" --remove-rule github_api --wait 2>&1 \
+    | tee "$EVIDENCE_DIR/policy-update.log"
+  RAILDASH_TOKEN_VALUE="$token" python3 tests/openshell/collector_acceptance.py \
+    --url "http://127.0.0.1:${RAILDASH_PORT:-8000}" --phase denial \
+    | tee -a "$EVIDENCE_DIR/acceptance.txt"
 fi
