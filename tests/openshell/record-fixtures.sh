@@ -61,6 +61,13 @@ run base policy-only-rev2.yaml openshell sandbox get fx-base --policy-only
 run base policy-list-rev2.txt openshell policy list fx-base
 
 # Provider rules: one provider that needs no credential, one that holds one.
+# A gateway starts with no provider profiles; import the two from the
+# pinned release's own examples.
+version=$(openshell --version | awk '{print $2}')
+for profile in pypi github; do
+  run provider "profile-import-$profile.txt" openshell profile import --global \
+    --url "https://raw.githubusercontent.com/NVIDIA/OpenShell/v$version/providers/$profile.yaml"
+done
 run provider provider-create-pypi.txt openshell provider create --name fx-pypi --type pypi
 run provider provider-create-github.txt openshell provider create --name fx-github \
   --type github --credential "GITHUB_TOKEN=$marker"
