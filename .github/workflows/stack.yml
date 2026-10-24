@@ -22,6 +22,14 @@ on:
         description: "Published RailDash image to pull instead of building"
         required: false
         default: ""
+      openshell_version:
+        description: "The openshell job only: an OpenShell release to try instead of the pinned one, e.g. 0.1.5 (with its .deb's sha256)"
+        required: false
+        default: ""
+      openshell_deb_sha256:
+        description: "The sha256 of that release's amd64 .deb, from its openshell-checksums-sha256.txt"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -230,6 +238,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Install OpenShell and start its gateway
+        env:
+          OPENSHELL_VERSION: ${{ inputs.openshell_version }}
+          OPENSHELL_DEB_SHA256: ${{ inputs.openshell_deb_sha256 }}
         run: bash tests/openshell/install.sh
       - name: Watch an agent in an OpenShell sandbox
         env:

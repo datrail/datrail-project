@@ -76,6 +76,7 @@ import shlex
 import subprocess
 import sys
 import time
+from pathlib import Path
 from typing import Any, Callable
 from urllib.error import URLError
 from urllib.request import Request, urlopen
@@ -278,6 +279,10 @@ def main() -> int:
                         help="a socket the agent's platform listens on in its container that the "
                              "guardrail proposal must already allow, such as OpenShell's DNS "
                              "(udp/127.0.0.53/53, DR-247); the proposal allows no other port")
+    parser.add_argument("--openshell-policy", metavar="FILE",
+                        help="an OpenShell sandbox's `sandbox get --policy-only` output: imported "
+                             "into RailDash before the guardrail is adopted (DR-248), and the "
+                             "proposal must seed api.github.com from it (DR-250)")
     parser.add_argument("--expect-egress", required=True,
                         choices=["allow_list_enforced", "no_network", "internal_network", "open",
                                  "host_network"],
@@ -419,7 +424,29 @@ def main() -> int:
 
     # ---- 5. the Data Guardrail, adopted after the drift step -----------------
     guard = Guardrail(base, token, ours)
+    if args.openshell_policy:
+        # DR-250 (OpenShell M5): the policy the user saved, imported as the
+        # panel's Import OpenShell policy sends it, shows on the Egress line.
+        request = Request(f"{base}/api/guardrails/{guard._agent_ref()}/openshell-policy",
+                          data=Path(args.openshell_policy).read_bytes(), method="POST",
+                          headers={"X-RailDash-Token": token})
+        with urlopen(request, timeout=30) as response:
+            imported = json.load(response)
+        rows = [f"{e['host']}:{','.join(map(str, e['ports']))}" for e in imported["endpoints"]]
+        if "api.github.com:443" not in rows:
+            sys.exit(f"FAIL: the imported policy doesn't show api.github.com:443: {rows}")
+        print(f"ok:   the imported OpenShell policy shows {rows} on the Egress line")
+        shown = guard.detail()["openshell_policy"]
+        if shown is None or "api.github.com" not in [e["host"] for e in shown["endpoints"]]:
+            sys.exit(f"FAIL: the agent's detail doesn't carry the policy: {shown}")
     proposed = guard.adopt(version["alignment_version_id"])
+    if args.openshell_policy:
+        seed = proposed.get("openshell") or {}
+        hosts = proposed["guardrail"]["rules"]["out_of_spec_calls"]["allowed_hosts"]
+        if "api.github.com" not in [h["host"] for h in seed.get("hosts", [])] or "api.github.com" not in hosts:
+            sys.exit(f"FAIL: the proposal didn't seed api.github.com from OpenShell's policy: {seed} {hosts}")
+        print(f"ok:   the proposal seeds api.github.com from OpenShell's policy "
+              f"({seed['hosts']}, revision {seed['revision']})")
     # DR-237: the agent declares its MCP server, so the proposal seeds its
     # host and name as in spec, and blocks the tool it never used.
     spec = proposed["guardrail"]["rules"]["out_of_spec_calls"]

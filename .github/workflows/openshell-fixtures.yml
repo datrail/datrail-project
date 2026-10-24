@@ -6,6 +6,15 @@ name: Record OpenShell fixtures
 # and before an OpenShell pin bump, to see what changed in its output.
 on:
   workflow_dispatch:
+    inputs:
+      openshell_version:
+        description: "An OpenShell release to record instead of the pinned one, e.g. 0.1.5 (with its .deb's sha256)"
+        required: false
+        default: ""
+      openshell_deb_sha256:
+        description: "The sha256 of that release's amd64 .deb, from its openshell-checksums-sha256.txt"
+        required: false
+        default: ""
   pull_request:
     paths:
       - tests/openshell/**
@@ -23,6 +32,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Install OpenShell and start its gateway
+        env:
+          OPENSHELL_VERSION: ${{ inputs.openshell_version }}
+          OPENSHELL_DEB_SHA256: ${{ inputs.openshell_deb_sha256 }}
         run: bash tests/openshell/install.sh
       - name: Record
         run: bash tests/openshell/record-fixtures.sh "$RUNNER_TEMP/fixtures"
