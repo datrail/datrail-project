@@ -71,11 +71,12 @@ done
 run provider provider-create-pypi.txt openshell provider create --name fx-pypi --type pypi
 run provider provider-create-github.txt openshell provider create --name fx-github \
   --type github --credential "GITHUB_TOKEN=$marker"
-providers=()
-grep -q '^0$' "$out/provider/provider-create-pypi.txt.exit" && providers+=(--provider fx-pypi)
-grep -q '^0$' "$out/provider/provider-create-github.txt.exit" && providers+=(--provider fx-github)
-create provider fx-provider --policy "$here/base.yaml" "${providers[@]}"
+# One sandbox each: 0.1.3 refuses a sandbox whose provider contributes a
+# credentialed endpoint it can't inspect, which would cost the other's rules.
+create provider fx-provider --policy "$here/base.yaml" --provider fx-pypi
 record provider fx-provider
+create provider-github fx-provider-gh --policy "$here/base.yaml" --provider fx-github
+record provider-github fx-provider-gh
 
 create mcp fx-mcp --policy "$here/mcp.yaml"
 record mcp fx-mcp
@@ -95,7 +96,7 @@ run global policy-delete-global.txt openshell policy delete --global --yes
 # the commonest parse failure.
 run missing policy-only.yaml openshell sandbox get fx-no-such-sandbox --policy-only
 
-for sb in fx-base fx-provider fx-mcp fx-ips; do
+for sb in fx-base fx-provider fx-provider-gh fx-mcp fx-ips; do
   openshell sandbox delete "$sb" > /dev/null 2>&1 || true
 done
 if grep -rl -- "$marker" "$out" | grep -v 'provider-create-github.txt'; then
