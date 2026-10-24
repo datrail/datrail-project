@@ -107,7 +107,7 @@ Within a minute or two you should see:
 - **Interactions**: the demo agent's calls to `127.0.0.1:8443`: `POST /v1/demo` and `/v1/demo/other`, and calls to its tool server at `/mcp` (`POST`, `GET`, and a `DELETE` that ends each session with `204`). Each call shows twice, once from each side, because the demo agent calls itself.
 - **Agent Security Profile alignment**: a profile (ASP) for the demo agent. Click **Inspect evidence** to see its open port 8443 and the files it opened.
 
-That is a working install. (`make test` checks an install on Linux only: on a Mac it exits after one second, because it looks for the BTF file on the Mac itself. Use this step instead.)
+That is a working install. (`make test` checks an install on Linux only: on a Mac it exits after one second, because it checks that it runs on Linux. Use this step instead.)
 
 ## Step 6: Try the demo
 
@@ -135,7 +135,7 @@ docker compose down -v     # stop and delete the data, for a fresh start
 | --- | --- |
 | "Cannot connect to the Docker daemon" | Docker Desktop is not running. Start it and wait until the engine is running. |
 | `ls: /sys/kernel/btf/vmlinux: No such file or directory` | You ran the check on the Mac itself. Run it through Docker: `docker run --rm alpine ls /sys/kernel/btf/vmlinux` (Step 2). |
-| `make test` stops after one second | Expected on a Mac; it is for Linux. Check the install in RailDash instead (Step 5). |
+| `make test` stops after one second | Expected on a Mac: it checks that it runs on Linux. Check the install in RailDash instead (Step 5). |
 | An error asking for `RAILDASH_TAG` or `RAILMON_TAG` | You are in an old copy of datrail-project. Clone fresh, or `git pull` (Step 3). |
 | Port 8000 is already in use | Start with another port: `RAILDASH_PORT=18000 docker compose up -d`, then open http://127.0.0.1:18000 . |
 | The first `docker compose up -d` takes a few minutes | It is downloading the images; a slow connection takes longer. Later starts take seconds. |
