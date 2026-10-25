@@ -127,7 +127,8 @@ jobs:
   # built (DR-233, DR-235): RailDash's ASP v1 oracle inside its image (replay,
   # drift, switch away and back, rule-pack mismatch), then RailMon's two-agent
   # and multi-agent drift scenarios from the pinned tag's tests/, run in the
-  # pinned RailMon image against the pinned RailDash.
+  # pinned RailMon image against the pinned RailDash, then the rest of its
+  # DR-109 acceptance in the pinned RailMon image alone (DR-256).
   published-acceptance:
     if: inputs.railmon_image == '' && inputs.raildash_image == ''
     runs-on: ubuntu-26.04
@@ -194,6 +195,36 @@ jobs:
             | tee "$RUNNER_TEMP/acceptance/two-agent.txt" || { docker logs raildash; exit 1; }
           run /tests/multi_agent_drift_acceptance.py --raildash http://raildash:8000 --token="$token" \
             | tee "$RUNNER_TEMP/acceptance/multi-agent-drift.txt" || { docker logs raildash; exit 1; }
+      # railmon's CI runs these against the image it builds; here they run
+      # against the published one. A target that exits is restarted alone,
+      # an unsigned ticket only corroborates or conflicts, a process two keys
+      # name gets one shared ambiguous tap, a bad manifest fails closed, and a
+      # reused PID is never the old agent's. Each writes its own stub
+      # AgentSight, so no eBPF or host PID namespace is involved.
+      - name: The rest of RailMon's multi-agent acceptance in the RailMon image
+        env:
+          RAILMON_IMAGE: ${{ steps.pins.outputs.railmon }}
+        run: |
+          # The default step shell has no pipefail, and tee would hide a failure.
+          set -o pipefail
+          for t in target_restart ticket_claim ambiguous_capture fail_closed; do
+            echo "::group::${t}_acceptance"
+            docker run --rm --user 0 --entrypoint python3 \
+              -e RAILMON_BIN=/usr/local/bin/railmon-collector \
+              -v "$PWD/railmon/tests:/tests:ro" "$RAILMON_IMAGE" "/tests/${t}_acceptance.py" \
+              | tee "$RUNNER_TEMP/acceptance/${t}.txt"
+            echo "::endgroup::"
+          done
+          # Stale PID reuse forces the newcomer onto the old PID through
+          # /proc/sys/kernel/ns_last_pid, which takes CHECKPOINT_RESTORE, a
+          # writable /proc/sys and no docker-default AppArmor profile, as in
+          # railmon's CI. Granted to this one run only.
+          docker run --rm --user 0 --entrypoint python3 \
+            --cap-add CHECKPOINT_RESTORE \
+            --security-opt systempaths=unconfined --security-opt apparmor=unconfined \
+            -e RAILMON_BIN=/usr/local/bin/railmon-collector \
+            -v "$PWD/railmon/tests:/tests:ro" "$RAILMON_IMAGE" /tests/pid_reuse_acceptance.py \
+            | tee "$RUNNER_TEMP/acceptance/pid_reuse.txt"
       - name: Preserve results
         if: always()
         uses: actions/upload-artifact@v7
