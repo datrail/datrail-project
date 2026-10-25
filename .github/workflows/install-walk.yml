@@ -1,9 +1,10 @@
 name: Walk INSTALL.md on a fresh VM
 
 # The throwaway-VM gate of a release (DR-136, DR-137; DR-252): a
-# GitHub-hosted runner is a freshly provisioned x86_64 Linux VM, discarded
-# after the job. tests/install-walk.sh runs INSTALL.md's own commands on it,
-# at a user's default settings, from an empty directory, and keeps the
+# GitHub-hosted runner is a freshly provisioned Linux VM, discarded after the
+# job, on x86_64 and on arm64 (DR-255), the architecture Docker Desktop's VM
+# has on Apple Silicon. tests/install-walk.sh runs INSTALL.md's own commands
+# on it, at a user's default settings, from an empty directory, and keeps the
 # transcript, the host's facts, the pulled digests, timings and dashboard
 # screenshots. Run by hand before a release, and on a change to the page or
 # to what it installs.
@@ -22,7 +23,17 @@ permissions:
 
 jobs:
   walk:
-    runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-26.04
+          # GitHub's arm64 runners stop at 24.04.
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    name: walk (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     steps:
       # Only for INSTALL.md and the walk; the walk clones the repository
@@ -33,6 +44,7 @@ jobs:
       - name: Walk INSTALL.md
         env:
           EVIDENCE_DIR: ${{ runner.temp }}/walk
+          WALK_ARCH: ${{ matrix.arch }}
           # A PR's head, which the clone and the downloaded file move to;
           # a manual run walks master as cloned.
           WALK_REF: ${{ github.event.pull_request.head.sha }}
@@ -41,6 +53,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: install-walk-${{ github.run_id }}-${{ github.run_attempt }}
+          name: install-walk-${{ matrix.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/walk
           if-no-files-found: error
