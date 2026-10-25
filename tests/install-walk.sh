@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Walk INSTALL.md as a new user does, on a fresh x86_64 Linux host: the
-# throwaway-VM gate of each v0.2.0 release (DR-136, DR-137; DR-252).
+# Walk INSTALL.md as a new user does, on a fresh Linux host: the
+# throwaway-VM gate of each v0.2.0 release (DR-136, DR-137; DR-252), on
+# x86_64 and on arm64 (DR-255).
 #
 # Unlike tests/stack-acceptance.sh, which checks the stack in depth from this
 # checkout, this runs INSTALL.md's own command lines, at a user's default
@@ -10,7 +11,9 @@
 # word, so the walk breaks when the page changes under it.
 #
 # WALK_REF is the commit the clone and the downloaded file are moved to
-# (default: master as cloned). EVIDENCE_DIR receives the transcript, the
+# (default: master as cloned). WALK_ARCH is the `uname -m` the host must have
+# (default: x86_64), so a runner of the wrong architecture fails rather than
+# passing as the other one's proof. EVIDENCE_DIR receives the transcript, the
 # host's facts, the pulled digests, timings and dashboard screenshots.
 #
 # Run only on a disposable host: it starts the privileged stack under its
@@ -176,7 +179,8 @@ say "Prerequisites"
   curl --version | head -1
   make --version | head -1
 } 2>&1 | tee "$EVIDENCE_DIR/vm.txt" | tee -a "$transcript"
-[[ $(uname -m) == x86_64 ]] || fail "this is the x86_64 walk"
+walk_arch=${WALK_ARCH:-x86_64}
+[[ $(uname -m) == "$walk_arch" ]] || fail "this is the $walk_arch walk, on a $(uname -m) host"
 [[ -e /sys/kernel/btf/vmlinux ]] || fail "no /sys/kernel/btf/vmlinux: INSTALL.md needs a BTF-enabled kernel"
 note "BTF: /sys/kernel/btf/vmlinux exists"
 # A fresh host: nothing of the stack's before the walk.
