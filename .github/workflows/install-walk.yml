@@ -1,0 +1,46 @@
+name: Walk INSTALL.md on a fresh VM
+
+# The throwaway-VM gate of a release (DR-136, DR-137; DR-252): a
+# GitHub-hosted runner is a freshly provisioned x86_64 Linux VM, discarded
+# after the job. tests/install-walk.sh runs INSTALL.md's own commands on it,
+# at a user's default settings, from an empty directory, and keeps the
+# transcript, the host's facts, the pulled digests, timings and dashboard
+# screenshots. Run by hand before a release, and on a change to the page or
+# to what it installs.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - INSTALL.md
+      - docker-compose.yml
+      - Makefile
+      - tests/install-walk.sh
+      - .github/workflows/install-walk.yml
+
+permissions:
+  contents: read
+
+jobs:
+  walk:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    steps:
+      # Only for INSTALL.md and the walk; the walk clones the repository
+      # itself, as a user does.
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Walk INSTALL.md
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/walk
+          # A PR's head, which the clone and the downloaded file move to;
+          # a manual run walks master as cloned.
+          WALK_REF: ${{ github.event.pull_request.head.sha }}
+        run: bash tests/install-walk.sh
+      - name: Preserve the walk's evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: install-walk-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/walk
+          if-no-files-found: error

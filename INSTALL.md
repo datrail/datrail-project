@@ -410,7 +410,11 @@ checks the walkthrough above end to end
 follows [Watch your own agent](#watch-your-own-agent) with a `my-agent`
 container started after the stack (`STACK_MODE=own-agent`), on Docker's
 containerd image store, the one Docker Desktop uses. A third runs the
-quick start on a native arm64 runner.
+quick start on a native arm64 runner. Before a release, and on any change
+to this page, [`tests/install-walk.sh`](tests/install-walk.sh) walks this
+page itself on a fresh x86_64 VM at the default settings: the clone, Run it
+and Verify, Watch your own agent, Stop and reset, and Without the
+repository, each command as this page gives it.
 
 ## Troubleshooting
 
