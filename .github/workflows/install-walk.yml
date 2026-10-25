@@ -41,6 +41,22 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      # The walk's screenshots take a headless Chrome or Chromium on PATH.
+      # The x86_64 runner has Chrome; there's none for arm64 Linux, so that
+      # leg gets Playwright's Chromium, pinned, as `chromium`.
+      - name: A headless browser for the screenshots
+        if: matrix.arch == 'aarch64'
+        run: |
+          python3 -m venv "$RUNNER_TEMP/pw"
+          "$RUNNER_TEMP/pw/bin/pip" install -q playwright==1.64.1
+          PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/pw-browsers" \
+            "$RUNNER_TEMP/pw/bin/python" -m playwright install --with-deps chromium
+          chrome=$(find "$RUNNER_TEMP/pw-browsers" -type f -name chrome -path '*/chromium-*/*' | head -1)
+          [ -x "$chrome" ] || { echo "no Chromium in $RUNNER_TEMP/pw-browsers"; exit 1; }
+          "$chrome" --headless=new --no-sandbox --version
+          mkdir -p "$RUNNER_TEMP/bin"
+          ln -s "$chrome" "$RUNNER_TEMP/bin/chromium"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: Walk INSTALL.md
         env:
           EVIDENCE_DIR: ${{ runner.temp }}/walk
