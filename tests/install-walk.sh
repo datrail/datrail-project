@@ -82,7 +82,10 @@ aside() {
 wait_for() {
   local what=$1 timeout=$2 check=$3 t0=$SECONDS out
   while (( SECONDS - t0 < timeout )); do
-    if out=$(python3 -I -c "$check" "$base" 2>/dev/null) && [[ -n $out ]]; then
+    out=$(python3 -I -c "$check" "$base" 2>/dev/null) || out=
+    # A check that finds something wrong, rather than not there yet.
+    [[ $out != FAIL:* ]] || fail "$what: ${out#FAIL: }"
+    if [[ -n $out ]]; then
       note "ok after $((SECONDS - t0))s: $what"
       note "$out"
       printf '%5ss  until: %s\n' "$((SECONDS - t0))" "$what" >> "$EVIDENCE_DIR/timings.txt"
@@ -244,17 +247,26 @@ if rows:
     r = rows[0]
     print(len(rows), "interactions, e.g.", r["method"], (r.get("host") or "") + r["path"], r.get("status_code"))
 '
-wait_for "an ASP for my-agent with port 9000 in observed_listeners" 300 "$py_api"'
+# After the switch, none of the demo agent's listeners (8443) or files
+# (demo_client.py) are the user's agent's (DR-253).
+wait_for "an ASP for my-agent with port 9000 in observed_listeners, and none of the demo agent's" 300 "$py_api"'
 token = page_token()
+found = None
 for asp in get("/api/asps?limit=500")["items"]:
     who = asp.get("agent_identity") or {}
     if not ((who.get("kind") == "local_agent_key" and who.get("value") == "my-agent")
             or (who.get("kind") == "local_agent_keys" and "my-agent" in (who.get("value") or []))):
         continue
     ports = {l.get("port") for l in answered(asp["asp_id"], "observed_listeners", token)}
-    if 9000 in ports:
-        print("ASP", asp["asp_id"], "listeners", sorted(p for p in ports if isinstance(p, int)))
-        break
+    files = [f.get("path") or "" for f in answered(asp["asp_id"], "observed_file_access", token)]
+    # Every one of its ASPs, not only the one that answers.
+    if 8443 in ports or any(p.endswith("/demo_client.py") for p in files):
+        print("FAIL: my-agent has demo-agent evidence in", asp["asp_id"])
+        raise SystemExit(0)
+    if 9000 in ports and not found:
+        found = ("ASP", asp["asp_id"], "listeners", sorted(p for p in ports if isinstance(p, int)), len(files), "files")
+if found:
+    print(*found)
 '
 screenshot dashboard-my-agent
 aside "docker rm -f my-agent"

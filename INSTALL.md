@@ -121,7 +121,7 @@ All are optional.
 | `RAIL_AUTH_MODE`, `RAIL_AUTH_TOKEN`, `RAIL_AUTH_AUDIENCE` | `none` | The credential `railmon-scan` presents to Rail Center. Used only with `RAIL_CENTER_URL`. |
 | `RAILDASH_PORT` | `8000` | The local port RailDash is published on (always on `127.0.0.1`). |
 | `RAILDASH_TOKEN` | unset | RailDash's local write token, if you want to choose it (see below): at least 16 characters of `A-Z a-z 0-9 - _ . ~ + / =`, or RailDash does not start. |
-| `RAILMON_IMAGE`, `RAILDASH_IMAGE` | `ghcr.io/datrail/railmon:0.1.0-m12`, `ghcr.io/datrail/raildash:0.2.0-rc.8` | The image each component runs (see [Images](#images)). |
+| `RAILMON_IMAGE`, `RAILDASH_IMAGE` | `ghcr.io/datrail/railmon:0.1.0-m13`, `ghcr.io/datrail/raildash:0.2.0-rc.8` | The image each component runs (see [Images](#images)). |
 | `RAILMON_SRC`, `RAILDASH_SRC` | the GitHub repositories | Where to build each image from, when you build (see [Build from source](#build-from-source)). |
 | `DEMO_INTERVAL` | `30` | Seconds between the demo agent's calls. |
 | `OPENSHELL_CONFIG_DIR` | `$HOME/.config/openshell` | The OpenShell CLI's configuration, which the opt-in `openshell-collector` mounts read-only (see [An agent in an OpenShell sandbox](#an-agent-in-an-openshell-sandbox)). |
@@ -201,6 +201,12 @@ AGENT_CONTAINER=my-agent docker compose up -d --scale demo-agent=0
 - `railmon-files` follows `my-agent` the same way. It sees a file when it is
   opened, so a file the agent opened only before `railmon-files` attached
   (at its start, if the agent started first) is not listed.
+- Switching a running stack to another agent this way starts its listener
+  and file records afresh: the agent watched before keeps its ASPs in
+  RailDash, but none of its sockets or files show up in the new agent's.
+  Records from before RailMon `0.1.0-m13` carry no agent's name, so after
+  upgrading from an older version, run `docker compose up -d` once before
+  switching.
 - Lock a baseline in RailDash once the agent has done its normal work for a
   while. Anything it does later that the baseline does not cover is drift.
 
@@ -338,7 +344,7 @@ Each component runs a fixed published tag from `ghcr.io/datrail`, pinned in
 
 | Component | Image |
 | --- | --- |
-| RailMon | `ghcr.io/datrail/railmon:0.1.0-m12` |
+| RailMon | `ghcr.io/datrail/railmon:0.1.0-m13` |
 | RailDash | `ghcr.io/datrail/raildash:0.2.0-rc.8` |
 
 `docker compose up -d` pulls them the first time. A newer version of this
