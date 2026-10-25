@@ -109,7 +109,7 @@ Within a minute or two you should see:
 
 That is a working install.
 
-**Optional, the full automated check.** `make test` runs CI's acceptance check: it starts its own copy of the stack, drives the drift and guardrail steps, and removes that copy at the end. It needs `jq` (`jq --version`; if there is none, `brew install jq`), and your own stack stopped first, because the containers' names are fixed. `docker compose down` keeps your stack's data:
+**Optional, the full automated check.** `make test` runs CI's acceptance check: it starts its own copy of the stack, drives the drift and guardrail steps, and removes that copy at the end. It needs `jq` (`jq --version`; if there is none, `brew install jq`), and your own stack stopped first, because the containers' names are fixed. If you started your own agent as `my-agent`, remove that container too. `docker compose down` keeps your stack's data:
 
 ```bash
 docker compose down
@@ -117,7 +117,7 @@ STACK_IMAGES=pinned make test
 docker compose up -d
 ```
 
-`STACK_IMAGES=pinned` checks the images your install runs. Without it, `make test` builds both images from source first, which takes longer. It takes about 5 to 10 minutes and ends with every check `ok`. The end removes the images it used, so the next `docker compose up -d` downloads them again.
+`STACK_IMAGES=pinned` checks the images your install runs. Without it, `make test` builds both images from source first, which takes longer. It runs for several minutes, prints a line per check, and stops at the first one that fails. The end removes the images it used, so the next `docker compose up -d` downloads them again.
 
 ## Step 6: Try the demo
 
@@ -146,6 +146,7 @@ docker compose down -v     # stop and delete the data, for a fresh start
 | "Cannot connect to the Docker daemon" | Docker Desktop is not running. Start it and wait until the engine is running. |
 | `ls: /sys/kernel/btf/vmlinux: No such file or directory` | You ran the check on the Mac itself. Run it through Docker: `docker run --rm alpine ls /sys/kernel/btf/vmlinux` (Step 2). |
 | `make test` says a container named `datrail-demo-agent` exists | Your own stack is still running. Stop it with `docker compose down` (its data is kept) and run `make test` again. |
+| `make test` says a container named `my-agent` exists | That is your own agent's container from "Watch your own agent". Remove it with `docker rm -f my-agent`, and start it again after the test. |
 | `make test needs jq on PATH` | Install it with `brew install jq`, or put a `jq` binary on your `PATH`. |
 | An error asking for `RAILDASH_TAG` or `RAILMON_TAG` | You are in an old copy of datrail-project. Clone fresh, or `git pull` (Step 3). |
 | Port 8000 is already in use | Start with another port: `RAILDASH_PORT=18000 docker compose up -d`, then open http://127.0.0.1:18000 . |

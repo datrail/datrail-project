@@ -87,16 +87,32 @@ case "$mode" in
   *) echo "unknown STACK_MODE $mode" >&2; exit 2 ;;
 esac
 
+# The kernel the stack runs on is Docker's engine's: the host's own on Linux,
+# Docker Desktop's VM on a Mac or Windows (DR-254). So it is asked, not the
+# host, with INSTALL's Prerequisites check for BTF. Before the cleanup trap,
+# which removes the stack's images, so a host that can't run it loses nothing.
+{ uname -a; docker info --format 'engine: {{.OperatingSystem}}, kernel {{.KernelVersion}}, {{.Architecture}}'; } \
+  > "$EVIDENCE_DIR/kernel.txt"
+arch=$(docker info --format '{{.Architecture}}')
+case $arch in
+  x86_64 | aarch64) ;;
+  *) echo "Docker's engine runs on $arch; the images are built for x86_64 and arm64" >&2; exit 1 ;;
+esac
+docker run --rm alpine test -r /sys/kernel/btf/vmlinux \
+  || { echo "Docker's kernel has no /sys/kernel/btf/vmlinux: RailMon's probes need BTF" >&2; exit 1; }
+
 # The stack must start from nothing: leftover volumes would let an earlier
 # run's data pass this one.
 [[ -z "$(docker volume ls -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME")" ]] \
-  || { echo "volumes of compose project $COMPOSE_PROJECT_NAME are left from an earlier run" >&2; exit 1; }
-# The containers' names are fixed, so a stack already running (the quick
-# start's) has to be stopped first; `docker compose down` keeps its data.
-for name in datrail-demo-agent my-agent; do
-  [[ -z "$(docker ps -aq --filter "name=^$name$")" ]] \
-    || { echo "a container named $name exists: stop your stack first (docker compose down)" >&2; exit 1; }
-done
+  || { echo "volumes of compose project $COMPOSE_PROJECT_NAME are left from an earlier run;" \
+         "COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT_NAME make clean removes them" >&2; exit 1; }
+# The containers' names are fixed: the quick start's demo agent has to be
+# stopped first (`docker compose down` keeps the stack's data), and so does
+# a user's own agent run as INSTALL's my-agent, which isn't the stack's.
+[[ -z "$(docker ps -aq --filter "name=^datrail-demo-agent$")" ]] \
+  || { echo "a container named datrail-demo-agent exists: stop your stack first (docker compose down)" >&2; exit 1; }
+[[ -z "$(docker ps -aq --filter "name=^my-agent$")" ]] \
+  || { echo "a container named my-agent exists: remove it first (docker rm -f my-agent)" >&2; exit 1; }
 project_volumes() {
   docker volume ls -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME"
 }
@@ -162,19 +178,6 @@ sandbox_containers() {
   docker ps -aq --filter "label=openshell.ai/sandbox-name=${sandbox:-}"
 }
 trap cleanup EXIT
-
-# The kernel the stack runs on is Docker's engine's: the host's own on Linux,
-# Docker Desktop's VM on a Mac or Windows (DR-254). So it is asked, not the
-# host, with INSTALL's Prerequisites check for BTF.
-{ uname -a; docker info --format 'engine: {{.OperatingSystem}}, kernel {{.KernelVersion}}, {{.Architecture}}'; } \
-  > "$EVIDENCE_DIR/kernel.txt"
-arch=$(docker info --format '{{.Architecture}}')
-case $arch in
-  x86_64 | aarch64) ;;
-  *) echo "Docker's engine runs on $arch; the images are built for x86_64 and arm64" >&2; exit 1 ;;
-esac
-docker run --rm alpine test -r /sys/kernel/btf/vmlinux \
-  || { echo "Docker's kernel has no /sys/kernel/btf/vmlinux: RailMon's probes need BTF" >&2; exit 1; }
 
 # Which commits this run built: the default branch of each component.
 for repo in railmon raildash; do
