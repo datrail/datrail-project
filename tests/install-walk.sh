@@ -24,6 +24,8 @@ mkdir -p "$EVIDENCE_DIR"
 EVIDENCE_DIR=$(cd "$EVIDENCE_DIR" && pwd)
 transcript="$EVIDENCE_DIR/transcript.txt"
 : > "$transcript"
+: > "$EVIDENCE_DIR/timings.txt"
+: > "$EVIDENCE_DIR/images.txt"
 work=$(mktemp -d)
 base=http://127.0.0.1:8000
 started=$SECONDS
@@ -104,7 +106,7 @@ def page_token():
         return re.search(r"<meta name=\"raildash-token\" content=\"([^\"]+)\"", r.read().decode()).group(1)
 def answered(asp, name, token):
     attribute = get(f"/api/asps/{asp}/bundle", token)["attributes"][name]
-    return attribute.get("value") or [] if attribute.get("status") == "ANSWERED" else []
+    return attribute.get("value") or [] if attribute.get("status") in ("ANSWERED", "PARTIAL") else []
 '
 
 screenshot() {
@@ -118,7 +120,7 @@ screenshot() {
     --window-size=1440,2400 --virtual-time-budget=15000 \
     --screenshot="$EVIDENCE_DIR/$name.png" "$base/" > /dev/null 2>&1 \
     || note "screenshot $name failed"
-  [[ -s $EVIDENCE_DIR/$name.png ]] && note "screenshot: $name.png"
+  if [[ -s $EVIDENCE_DIR/$name.png ]]; then note "screenshot: $name.png"; fi
 }
 
 services_up() {
@@ -191,10 +193,14 @@ doc "docker compose up -d"
 
 say "Verify"
 services_up 6
-{
-  echo "railmon $(docker image inspect --format '{{index .RepoDigests 0}}' "$(docker compose config --format json | jq -r '.services["railmon-collect"].image')")"
-  echo "raildash $(docker image inspect --format '{{index .RepoDigests 0}}' "$(docker compose config --format json | jq -r '.services.raildash.image')")"
-} | tee "$EVIDENCE_DIR/images.txt" | tee -a "$transcript"
+# What `up` pulled: each pinned tag, by the registry digest it came as.
+for pair in "railmon railmon-collect" "raildash raildash"; do
+  read -r component service <<<"$pair"
+  image=$(docker compose config --format json | jq -r --arg s "$service" '.services[$s].image')
+  digest=$(docker image inspect --format '{{join .RepoDigests " "}}' "$image")
+  [[ " $digest" == *" ${image%:*}@sha256:"* ]] || fail "$image was not pulled from ghcr.io/datrail"
+  echo "$component $image $digest" | tee -a "$EVIDENCE_DIR/images.txt" "$transcript"
+done
 wait_for "the demo agent's POSTs to 127.0.0.1:8443 /v1/demo and /v1/demo/other, status 200" 300 "$py_api"'
 rows = [r for r in get("/api/interactions?limit=500")["items"]
         if r.get("method") == "POST" and r.get("status_code") == 200 and r.get("path") in ("/v1/demo", "/v1/demo/other")
@@ -211,7 +217,7 @@ for asp in get("/api/asps?limit=500")["items"]:
     if not (who.get("kind") == "deployment_compose" and isinstance(value, dict) and value.get("service") == "demo-agent"):
         continue
     ports = {l.get("port") for l in answered(asp["asp_id"], "observed_listeners", token)}
-    files = [f["path"] for f in answered(asp["asp_id"], "observed_file_access", token)]
+    files = [f.get("path") or "" for f in answered(asp["asp_id"], "observed_file_access", token)]
     if 8443 in ports and any(p.endswith("/demo_client.py") for p in files):
         print("ASP", asp["asp_id"], "listeners", sorted(p for p in ports if isinstance(p, int)), len(files), "files incl. demo_client.py")
         break
