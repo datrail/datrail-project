@@ -20,9 +20,15 @@
 # driver running (tests/openshell/install.sh on a CI host).
 #
 # Run only on a disposable host: RailMon's collector, listen probe and files
-# probe are privileged and share the host's PID namespace.
+# probe are privileged and share the host's PID namespace. On a Mac that host
+# is Docker Desktop's Linux VM (DR-254): the script itself runs under macOS's
+# own bash 3.2 and Python 3, so an empty array is expanded only through
+# ${a[@]+"${a[@]}"}, which bash 3.2's `set -u` accepts.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+for tool in docker git curl jq python3; do
+  command -v "$tool" > /dev/null || { echo "make test needs $tool on PATH" >&2; exit 2; }
+done
 : "${COMPOSE_PROJECT_NAME:?set a unique compose project name}"
 : "${EVIDENCE_DIR:?set an evidence directory outside the checkout}"
 mkdir -p "$EVIDENCE_DIR"
@@ -55,13 +61,13 @@ platform=()
 case "$mode" in
   demo)
     agent=datrail-demo-agent
-    up=(up -d "${build[@]}")
+    up=(up -d ${build[@]+"${build[@]}"})
     ;;
   own-agent)
     # INSTALL.md's command, word for word, plus --build when building.
     agent=my-agent
     export AGENT_CONTAINER=my-agent
-    up=(up -d "${build[@]}" --scale demo-agent=0)
+    up=(up -d ${build[@]+"${build[@]}"} --scale demo-agent=0)
     ;;
   openshell)
     # The stack follows the sandbox by name (DR-247): RailMon finds the
@@ -72,7 +78,7 @@ case "$mode" in
     # OpenShell answers the sandbox's DNS itself, on 127.0.0.53 in the
     # agent's own container: listeners the proposal allows (DR-247).
     platform=(--proposal-allows tcp/127.0.0.53/53 --proposal-allows udp/127.0.0.53/53)
-    up=(up -d "${build[@]}" --scale demo-agent=0)
+    up=(up -d ${build[@]+"${build[@]}"} --scale demo-agent=0)
     # The opt-in collector too (DR-249): it reads the sandbox's policy and
     # denials from OpenShell's gateway with the CLI configuration
     # tests/openshell/install.sh wrote.
@@ -83,9 +89,14 @@ esac
 
 # The stack must start from nothing: leftover volumes would let an earlier
 # run's data pass this one.
-[[ -z "$(docker volume ls -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME")" ]]
-[[ -z "$(docker ps -aq --filter "name=^datrail-demo-agent$")" ]]
-[[ -z "$(docker ps -aq --filter "name=^my-agent$")" ]]
+[[ -z "$(docker volume ls -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME")" ]] \
+  || { echo "volumes of compose project $COMPOSE_PROJECT_NAME are left from an earlier run" >&2; exit 1; }
+# The containers' names are fixed, so a stack already running (the quick
+# start's) has to be stopped first; `docker compose down` keeps its data.
+for name in datrail-demo-agent my-agent; do
+  [[ -z "$(docker ps -aq --filter "name=^$name$")" ]] \
+    || { echo "a container named $name exists: stop your stack first (docker compose down)" >&2; exit 1; }
+done
 project_volumes() {
   docker volume ls -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME"
 }
@@ -152,9 +163,18 @@ sandbox_containers() {
 }
 trap cleanup EXIT
 
-uname -a > "$EVIDENCE_DIR/kernel.txt"
-[[ "$(uname -m)" =~ ^(x86_64|aarch64)$ ]]
-test -r /sys/kernel/btf/vmlinux
+# The kernel the stack runs on is Docker's engine's: the host's own on Linux,
+# Docker Desktop's VM on a Mac or Windows (DR-254). So it is asked, not the
+# host, with INSTALL's Prerequisites check for BTF.
+{ uname -a; docker info --format 'engine: {{.OperatingSystem}}, kernel {{.KernelVersion}}, {{.Architecture}}'; } \
+  > "$EVIDENCE_DIR/kernel.txt"
+arch=$(docker info --format '{{.Architecture}}')
+case $arch in
+  x86_64 | aarch64) ;;
+  *) echo "Docker's engine runs on $arch; the images are built for x86_64 and arm64" >&2; exit 1 ;;
+esac
+docker run --rm alpine test -r /sys/kernel/btf/vmlinux \
+  || { echo "Docker's kernel has no /sys/kernel/btf/vmlinux: RailMon's probes need BTF" >&2; exit 1; }
 
 # Which commits this run built: the default branch of each component.
 for repo in railmon raildash; do
