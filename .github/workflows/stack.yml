@@ -4,8 +4,10 @@ name: Stack from default branches
 # default branch, so the schedule catches a change in railmon or raildash
 # that breaks the stack even when nothing in this repository changed. The
 # `published` job runs the install as users get it: the fixed tags
-# docker-compose.yml pins, pulled, nothing built (DR-137). A manual run can
-# name other published images instead (DR-214), as INSTALL.md's "Images" says.
+# docker-compose.yml pins, pulled, nothing built (DR-137); the `openclaw`
+# job runs those images too, against a real agent it builds. A manual run
+# can name other published images instead (DR-214), as INSTALL.md's
+# "Images" says.
 on:
   pull_request:
   push:

@@ -253,9 +253,10 @@ place, and the guardrail proposes and allows it that way too (RailDash's
 README says exactly which names). A file written under some other new
 random name each turn, outside the temp directories that are folded (see
 [Troubleshooting](#troubleshooting)), still drifts after every turn and is
-a new Saved files row. A capped list makes Saved files read unverified
-only when it lost something else too, such as a write past the cap or a
-probe restart.
+a new Saved files row. So does a log named by the date, such as OpenClaw's
+`/tmp/openclaw/openclaw-<date>.log`, once a day. A capped list makes Saved
+files read unverified only when it lost something else too, such as a
+write past the cap or a probe restart.
 
 ### An agent in an OpenShell sandbox
 
@@ -497,8 +498,11 @@ restarted agent may open files under new names (a new log file, a fresh
 directory of its own). A randomly named temp file under `/tmp`, `/var/tmp`
 or `/dev/shm`, or directly in the agent's `$TMPDIR`, is folded into one
 templated path, so it does not churn. A fixed name inside a randomly named
-directory (`mktemp -d`) is not folded, and other new names are drift, by
-design. Accept the new state once you have
+directory is folded only when the directory's last 6 characters are
+random, as Node's `fs.mkdtemp` makes them, below `/tmp`, `/var/tmp`,
+`/dev/shm` or a `.cache` directory (RailDash's README says exactly when).
+One from `mktemp -d`, or usually Python's `tempfile.mkdtemp`, is not, and
+other new names are drift, by design. Accept the new state once you have
 checked it.
 
 **Interactions appear twice.** Expected for the demo agent: both ends of its

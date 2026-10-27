@@ -133,7 +133,7 @@ def main() -> int:
     guard.wait_for_state("held", f"with {MODEL_HOST} allowed, the guardrail reads Held")
 
     # ---- the turns go on, and nothing moves -------------------------------
-    newest_before = max(r["id"] for r in marked("tool"))
+    newest_before = max((r["id"] for r in marked("tool")), default=0)
     deadline = time.monotonic() + args.watch
     fresh_asps = 0
     while time.monotonic() < deadline:
@@ -155,6 +155,9 @@ def main() -> int:
     if turns < 1:
         sys.exit(f"FAIL: no new tool-call reply was captured in {args.watch:.0f}s: the agent "
                  "stopped, or the collector did")
+    if fresh_asps < 1:
+        sys.exit(f"FAIL: no new ASP arrived in {args.watch:.0f}s of the agent's turns: "
+                 "the scanner stopped delivering")
     print(f"ok:   {args.watch:.0f}s more of the agent's turns ({turns}+ captured tool-call "
           f"replies, {fresh_asps} new ASP(s)): every ASP ALIGNED, the guardrail Held")
     return 0

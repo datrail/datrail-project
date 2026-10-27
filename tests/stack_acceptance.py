@@ -136,10 +136,11 @@ SECOND_HOST = "second.example"
 # Run in the agent with `python3 -c AGENT_REQUEST <method> <host>`: one HTTPS
 # request to the agent's own server on 8443 with that Host header, a JSON
 # body for POST and none for GET. The collector doesn't capture this client
-# (a `docker exec` isn't the agent's session); it captures the agent's own
-# server reading the request, Host header and body included. The demo server
-# answers a GET to /upload with 404, which is still a call. The certificate
-# is the demo's throwaway one, hence no verification.
+# (a `docker exec` is outside the agent container's process tree); it
+# captures the agent's own server reading the request, Host header and body
+# included. The demo server answers a GET to /upload with 404, which is
+# still a call. The certificate is the demo's throwaway one, hence no
+# verification.
 AGENT_REQUEST = """
 import http.client, ssl, sys
 method, host = sys.argv[1], sys.argv[2]
