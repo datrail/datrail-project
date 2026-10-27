@@ -1,24 +1,55 @@
-name: macOS Intel probe
+# `make test` on an Intel Mac (DR-254's follow-up): macOS's own bash 3.2 and
+# Python run the script, and Docker's engine is a Colima VM, as Docker
+# Desktop's is on a user's Mac. GitHub's Intel macOS runners have nested
+# virtualization; its Apple Silicon ones don't, so arm64 stays the Linux
+# arm64 jobs' to prove. Not a required check: a macOS runner is slower and
+# scarcer than the Linux ones.
+name: macOS Intel
 on:
-  push:
-    branches: [DR-254-macos-intel-make-test]
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - docker-compose.yml
+      - Makefile
+      - tests/stack-acceptance.sh
+      - tests/stack_acceptance.py
+      - .github/workflows/macos-intel.yml
+  schedule:
+    - cron: "41 7 * * 1"
+
 permissions:
   contents: read
+
 jobs:
-  probe:
+  make-test:
     runs-on: macos-15-intel
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - run: sw_vers; uname -m; sysctl -n machdep.cpu.features | tr ' ' '\n' | grep -i vmx || echo "no vmx"; sysctl kern.hv_support || true
-      - run: brew install colima docker docker-compose jq qemu lima
-      - run: |
+      - name: Start Docker in a Colima VM
+        run: |
+          brew install colima docker docker-compose docker-buildx jq
           mkdir -p ~/.docker/cli-plugins
-          ln -sfn "$(brew --prefix)/opt/docker-compose/bin/docker-compose" ~/.docker/cli-plugins/docker-compose
-          colima start --cpu 3 --memory 8 --vm-type vz || colima start --cpu 3 --memory 8 --vm-type qemu
-          docker info
-          docker run --rm alpine test -r /sys/kernel/btf/vmlinux && echo BTF ok
-      - run: bash --version | head -1; python3 --version
-      - run: STACK_IMAGES=pinned make test
+          for plugin in docker-compose docker-buildx; do
+            ln -sfn "$(brew --prefix)/opt/$plugin/bin/$plugin" ~/.docker/cli-plugins/$plugin
+          done
+          colima start --cpu 3 --memory 8 --vm-type vz
+          docker info --format '{{.OperatingSystem}} {{.KernelVersion}} {{.Architecture}}'
+      # The runner image has Homebrew's bash 5 on PATH; a user's Mac has
+      # only macOS's own 3.2, which is what `make test` must run under.
+      - name: make test on the pinned images, under macOS's bash 3.2
+        run: |
+          mkdir -p "$RUNNER_TEMP/macos-bash" "$RUNNER_TEMP/evidence"
+          ln -sfn /bin/bash "$RUNNER_TEMP/macos-bash/bash"
+          export PATH="$RUNNER_TEMP/macos-bash:$PATH"
+          [[ $(uname -s) == Darwin && $(bash -c 'echo "${BASH_VERSINFO[0]}"') == 3 ]]
+          bash --version | head -1; python3 --version
+          STACK_IMAGES=pinned EVIDENCE_DIR="$RUNNER_TEMP/evidence" make test
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-intel-evidence
+          path: ${{ runner.temp }}/evidence
+          if-no-files-found: ignore
