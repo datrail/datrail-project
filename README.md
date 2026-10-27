@@ -187,6 +187,8 @@ are deployed separately; their READMEs explain how.
   or on a Mac, step by step, from installing Docker to seeing drift.
 - [docs/glossary.md](docs/glossary.md): evidence bundle, ASP, baseline,
   alignment, drift, Data Guardrail, profile.
+- [docs/demo/](docs/demo/): draft demo runbook, video scripts and a throwaway
+  GCP VM recipe, kept as working material for the 0.2 demo.
 - [The DatRail organization](https://github.com/datrail): every repository,
   and the project's background.
 
