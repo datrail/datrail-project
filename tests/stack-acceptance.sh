@@ -100,6 +100,10 @@ case $arch in
 esac
 docker run --rm alpine test -r /sys/kernel/btf/vmlinux \
   || { echo "Docker's kernel has no /sys/kernel/btf/vmlinux: RailMon's probes need BTF" >&2; exit 1; }
+# A pulled image is checked against the registry's digest with buildx,
+# which Docker Desktop ships but a Homebrew or distro docker CLI may not.
+[[ -z $pull_railmon$pull_raildash ]] || docker buildx version > /dev/null 2>&1 \
+  || { echo "make test needs docker buildx to check the pulled images' digests (install the docker-buildx plugin)" >&2; exit 2; }
 
 # The stack must start from nothing: leftover volumes would let an earlier
 # run's data pass this one.
