@@ -6,8 +6,10 @@
 2. A baseline locked once the agent's writes show stays ALIGNED while the
    agent keeps taking turns, each writing a file of a new uuid name
    (railmon#97: a real agent's files drifted after every turn).
-3. The unedited guardrail proposal, adopted on that baseline, reads Held
-   and stays Held through the same turns.
+3. The unedited guardrail proposal, adopted on that baseline, is Violated
+   only by the model's undeclared host; with that allowed it reads Held
+   and stays Held through the same turns, each writing SQLite temp files
+   and a fresh mkdtemp directory.
 """
 from __future__ import annotations
 
@@ -22,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from stack_acceptance import Guardrail, api, wait_for  # noqa: E402
 
 CHAT_PATH = "/v1/chat/completions"
+MODEL_HOST = "my-model"
 # OpenClaw's write tool writes the note to `.fs-safe-<uuid>.tmp` beside it
 # and renames that over notes/turn.txt, so each turn writes a file of a new
 # name: what railmon#97 drifted on.
@@ -116,9 +119,18 @@ def main() -> int:
     print("ok:   locked and switched in; the newest ASP is ALIGNED")
 
     # ---- 3. the guardrail proposal, adopted -------------------------------
+    # The model's host is in no declaration RailMon reads (the agent's
+    # config names it), so its calls are out of spec until the user allows
+    # them, the one click the proposal lists. Nothing else may count.
     guard = Guardrail(base, token, ours)
-    guard.adopt(version["alignment_version_id"])
-    guard.wait_for_state("held", "the adopted proposal reads Held")
+    proposal = guard.adopt(version["alignment_version_id"])
+    expected = {("out_of_spec_calls", MODEL_HOST)}
+    would_be = {(v["rule"], v["item"]) for v in proposal["would_be_violations"]}
+    if would_be != expected:
+        sys.exit(f"FAIL: the proposal would be violated by {sorted(would_be)}, expected {sorted(expected)}")
+    guard.wait_for_rows(f"its calls to {MODEL_HOST} are the one counting row", expected, exact=True)
+    guard.allow("out_of_spec_calls", MODEL_HOST)
+    guard.wait_for_state("held", f"with {MODEL_HOST} allowed, the guardrail reads Held")
 
     # ---- the turns go on, and nothing moves -------------------------------
     newest_before = max(r["id"] for r in marked("tool"))
