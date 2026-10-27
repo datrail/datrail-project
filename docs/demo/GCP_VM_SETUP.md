@@ -61,10 +61,10 @@ Log out and back in so the docker group applies. Check: `ls /sys/kernel/btf/vmli
 
 ```bash
 git clone https://github.com/datrail/datrail-project.git && cd datrail-project
-docker compose up -d            # first build from master: about 5 minutes on this machine
+docker compose up -d            # pulls the pinned images: under a minute
 ```
 
-Then the runbook (`DEMO_RUNBOOK.md`): Part A on the demo agent, Part C after `bash tests/openshell/install.sh` (OpenShell 0.1.3, Docker driver). The CI script also runs here as is: `STACK_MODE=demo|own-agent|openshell make test` (7 to 8 minutes each), and the image-only install as `RAILMON_IMAGE=ghcr.io/datrail/railmon:0.1.0-m4 STACK_MODE=demo make test`.
+Then the runbook (`DEMO_RUNBOOK.md`): Part A on the demo agent, Part C after `bash tests/openshell/install.sh` (OpenShell 0.1.5 as CI pins it, Docker driver). The CI script also runs here as is: `STACK_MODE=demo|own-agent|openshell make test` (7 to 8 minutes each), and against the pinned images as `STACK_IMAGES=pinned make test`.
 
 Known hiccup: if a nested build dies with `curl: (35) Connection reset`, the Docker bridge MTU is above the host's; `docker build --network host` for railmon gets past it (I did not hit it on this VM).
 

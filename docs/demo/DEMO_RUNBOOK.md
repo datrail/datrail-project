@@ -1,6 +1,6 @@
 # datRail demo runbook: demo agent, your own agent, and an agent in an OpenShell sandbox
 
-Hands-on walk of the datrail-project stack as of master 2026-10-15 (datrail-project `4f71086`, railmon and raildash master, rule pack 11). Every step says what to run, what RailDash should show, and how long it takes. Everything here was run on a GCP x86_64 VM (Ubuntu 24.04) and, for the own-agent part, on an Apple Silicon Mac with Docker Desktop.
+Hands-on walk of the datrail-project stack. The install pins published images (on 2026-10-26: railmon `0.1.0-m13`, raildash `0.2.0-rc.8`, rule pack 13); the steps were last walked on a Mac on 2026-10-23 with `0.1.0-m7` and `0.2.0-rc.4`. Every step says what to run, what RailDash should show, and how long it takes. Everything here was run on a GCP x86_64 VM (Ubuntu 24.04) and, for the own-agent part, on an Apple Silicon Mac with Docker Desktop.
 
 Two windows: **T1** is a shell on the host (or an SSH session with `-L 8000:127.0.0.1:8000` if the host is remote), **T2** is a browser on http://127.0.0.1:8000 . If 8000 is taken, start the stack with `RAILDASH_PORT=18000` and use that.
 
@@ -15,7 +15,7 @@ Prerequisites (INSTALL.md): Docker Engine or Docker Desktop with Compose v2, a k
 | Linux x86_64 with Docker Engine | everything, including `make test` and OpenShell (Part C) | what CI uses |
 | Linux arm64 with Docker Engine | Parts A and B, `make test` | OpenShell ships an amd64 .deb only, so no Part C |
 | A GCP VM | everything | recipe below; about $0.13 an hour while running |
-| Mac with Docker Desktop (Apple Silicon, run 10/15 and 10/20; Intel expected, not yet run) | Parts A and B; the probes see agents in containers only | `make test` does not run on the Mac itself (see Troubleshooting); OpenShell has no Mac package |
+| Mac with Docker Desktop (Apple Silicon, run 10/15, 10/20 and 10/23; Intel expected, not yet run) | Parts A and B, `make test`; the probes see agents in containers only | `make test` asks Docker's engine since DR-254 (see Troubleshooting); OpenShell has no Mac package |
 | Windows, WSL2 with Docker Engine in the distro | Parts A and B, `make test` | Docker Desktop on WSL2: agents in containers only |
 
 ### A GCP VM in five commands
@@ -45,7 +45,7 @@ On the VM, once: Docker Engine from Docker's apt repo, `sudo usermod -aG docker 
 cd ~/datrail-project && docker compose down -v && docker compose up -d
 ```
 
-`down -v` removes the previous baseline and guardrail. The first `up` builds RailMon and RailDash from GitHub master (4 min 51 s on an e2-standard-4; seconds afterwards). Then:
+`down -v` removes the previous baseline and guardrail. The first `up` pulls the RailMon and RailDash images the install pins (18 s on a Mac on 10/23); later starts take seconds. To build from source instead, `make update` (INSTALL, Build from source). Then:
 
 ```bash
 docker compose ps
@@ -151,7 +151,7 @@ RailDash names the agent by the scanner's agent key (`AGENT_KEY`, default the co
 What we ran: an OpenClaw agent in a container (Node 22, model calls to Gemini's OpenAI-compatible endpoint), `<your-agent>` below.
 
 ```bash
-RAILDASH_PORT=18000 AGENT_CONTAINER=<your-agent> docker compose up -d --build --scale demo-agent=0
+RAILDASH_PORT=18000 AGENT_CONTAINER=<your-agent> docker compose up -d --scale demo-agent=0
 ```
 
 Check the attach in the logs:
@@ -196,13 +196,13 @@ systemctl --user enable --now openshell-gateway
 openshell gateway add https://127.0.0.1:17670 --local --name openshell
 ```
 
-(`tests/openshell/install.sh` does the same with a pinned 0.1.3 .deb, but it is written for CI hosts; its header says so.) Check:
+(`tests/openshell/install.sh` does the same with a pinned 0.1.5 .deb, but it is written for CI hosts; its header says so.) Check:
 
 ```bash
 openshell status
 ```
 
-`Status: Connected`, `Version: 0.1.3`. If it says not reachable: `systemctl --user restart openshell-gateway` and check again.
+`Status: Connected` and the version you installed (CI pins 0.1.5). If it says not reachable: `systemctl --user restart openshell-gateway` and check again.
 
 ### C2. Start clean
 
@@ -221,10 +221,10 @@ docker compose down -v
 OpenShell asks of an image a non-root user and a writable `/sandbox`. `tests/openshell/Dockerfile` adds both to the RailMon image and copies python3 as `my-agent-bin` so the process name is the agent's own.
 
 ```bash
-docker build -t datrail-openshell-agent:local tests/openshell
+docker build -t datrail-openshell-agent:local --build-arg BASE=$(docker compose config --images | grep railmon | head -1) tests/openshell
 ```
 
-If it fails with `datrail-railmon:local` not found, the base image was cleaned: `docker compose build railmon-collect raildash` and retry.
+`BASE` is the RailMon image the install pins, as CI passes it. The Dockerfile's default, `datrail-railmon:local`, exists only after a build from source.
 
 ### C4. Create the sandbox (30 s)
 
@@ -306,7 +306,7 @@ docker compose down -v
 - `sandbox create` says already exists: C2 was skipped.
 - `railmon-collect` keeps restarting: `docker compose logs railmon-collect`; usually `$A` was empty (C5's echo printed nothing).
 - Nothing arrives for a Node agent started with `COLLECT_TARGET="--comm ..."`: Node bundles its TLS; use `AGENT_CONTAINER` instead (railmon#70, datrail-project#18).
-- `make test` exits after one second on a Mac: `tests/stack-acceptance.sh` checks `/sys/kernel/btf/vmlinux` on the host running it, which macOS has not. It is the CI script for Linux hosts; on a Mac walk Part A by hand (every step of it was run through RailDash's own routes on 10/20 and matched).
+- `make test` on a Mac: since DR-254 (#67) its architecture and BTF checks ask Docker's engine, not the Mac. Stop the running stack first: `docker compose down; STACK_IMAGES=pinned make test; docker compose up -d` (INSTALL, Mac row).
 
 ## Timings measured
 
@@ -314,8 +314,9 @@ Measured at CI's `SCAN_INTERVAL=10`. The stack's default is 60 s, so on a defaul
 
 | Step | Measured |
 | --- | --- |
-| First build from source, VM e2-standard-4 | 4 min 51 s |
-| railmon build on an M-series Mac, cold cache | about 2 min |
+| First start, image-only install (Mac, 23 Oct) | 18 s |
+| Build from source (`make update`), VM e2-standard-4 | 4 min 51 s |
+| Build from source, railmon on an M-series Mac, cold cache | about 2 min |
 | First ASP after `up` | about 1 min |
 | Drift after opening a port | within 15 s at `SCAN_INTERVAL=10`; up to a minute at the default |
 | Held after Allow | seconds to 1 min |

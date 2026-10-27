@@ -16,7 +16,7 @@
 | 12 | Watching your own agent (Node bundled TLS, gzip streams) | `AGENT_CONTAINER=<yours> docker compose up -d --scale demo-agent=0`; the collector finds the TLS itself. (DR-183, DR-192, DR-213) | A real OpenClaw agent (Node 22) calling Gemini; four model calls captured and paired on a Mac. Candidate for the live demo if we want a real LLM on stage. | B2; INSTALL "Watch your own agent" |
 | 13 | Observed traffic | Hosts, calls, bytes per host, tool calls, models. (DR-91 to 93, DR-148) | Any of the above; the Observed security profile panel. | A1, B2 |
 | 14 | Declared config and identity | MCP servers, credential names, image digest; per-run values never count as drift. (DR-115, DR-123, DR-193) | Inspect evidence on any ASP; restart the agent and show that `agent_instance` changes without drift. | A1 |
-| 15 | Runs on x86_64 / arm64 Linux, WSL2, Mac via Docker Desktop | Verified on Apple Silicon on 10/15 and 10/20; `docker compose up -d --build` fixed for Docker Desktop. (DR-208, DR-212) | Not a drift item; a slide. | INSTALL.md, Platform support |
+| 15 | Runs on x86_64 / arm64 Linux, WSL2, Mac via Docker Desktop | Verified on Apple Silicon on 10/15, 10/20 and 10/23 (image-only install); `make test` runs on a Mac since DR-254. (DR-208, DR-212, DR-254) | Not a drift item; a slide. | INSTALL.md, Platform support |
 | 16 | Optional: bundles also sent to Rail Center | `RAIL_CENTER_URL` set; same bundle to `/v1/agents/register`. (DR-188) | Not in the OSS demo unless a Rail Center is up. | INSTALL "Sending bundles to Rail Center" |
 
 Demo note: lock a fresh baseline on a fresh stack; a baseline from an older rule pack reads CONTRACT_MISMATCH.
