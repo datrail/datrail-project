@@ -121,7 +121,7 @@ All are optional.
 | `RAIL_AUTH_MODE`, `RAIL_AUTH_TOKEN`, `RAIL_AUTH_AUDIENCE` | `none` | The credential `railmon-scan` presents to Rail Center. Used only with `RAIL_CENTER_URL`. |
 | `RAILDASH_PORT` | `8000` | The local port RailDash is published on (always on `127.0.0.1`). |
 | `RAILDASH_TOKEN` | unset | RailDash's local write token, if you want to choose it (see below): at least 16 characters of `A-Z a-z 0-9 - _ . ~ + / =`, or RailDash does not start. |
-| `RAILMON_IMAGE`, `RAILDASH_IMAGE` | `ghcr.io/datrail/railmon:0.1.0-m14`, `ghcr.io/datrail/raildash:0.2.0-rc.8` | The image each component runs (see [Images](#images)). |
+| `RAILMON_IMAGE`, `RAILDASH_IMAGE` | `ghcr.io/datrail/railmon:0.1.0-m14`, `ghcr.io/datrail/raildash:0.2.0-rc.9` | The image each component runs (see [Images](#images)). |
 | `RAILMON_SRC`, `RAILDASH_SRC` | the GitHub repositories | Where to build each image from, when you build (see [Build from source](#build-from-source)). |
 | `DEMO_INTERVAL` | `30` | Seconds between the demo agent's calls. |
 | `OPENSHELL_CONFIG_DIR` | `$HOME/.config/openshell` | The OpenShell CLI's configuration, which the opt-in `openshell-collector` mounts read-only (see [An agent in an OpenShell sandbox](#an-agent-in-an-openshell-sandbox)). |
@@ -243,14 +243,15 @@ The demo agent is small and predictable. A real one, such as OpenClaw on
 Node (CI runs one, from npm, against a stub model:
 [`tests/openclaw/`](tests/openclaw)), opens more files:
 `observed_file_access` is capped at 512 paths, reads dropped first, so it
-shows as `PARTIAL`. Every written file is
-still listed, so the Data Guardrail's Saved files rule is judged as usual
-and can read held. A read the capped baseline couldn't list is not drift,
-and neither is a file rewritten under a new uuid in its name: RailDash
-compares it as that name with `*` for the uuid, and when at least three
-letters or digits come before the uuid, the guardrail proposes and allows
-it that way too. A file written under some other new random name each turn, outside
-the temp directories that are folded (see
+shows as `PARTIAL`. Every written file is still listed, so the Data
+Guardrail's Saved files rule is judged as usual and can read held. A read
+the capped baseline couldn't list is not drift, and neither is a file
+written again under a name minted afresh: a new uuid in its name, a SQLite
+temp file (`etilqs_…`), or a new mkdtemp directory
+(`openclaw-sqlite-readonly-v2-…`). RailDash compares each with `*` in that
+place, and the guardrail proposes and allows it that way too (RailDash's
+README says exactly which names). A file written under some other new
+random name each turn, outside the temp directories that are folded (see
 [Troubleshooting](#troubleshooting)), still drifts after every turn and is
 a new Saved files row. A capped list makes Saved files read unverified
 only when it lost something else too, such as a write past the cap or a
@@ -348,7 +349,7 @@ Each component runs a fixed published tag from `ghcr.io/datrail`, pinned in
 | Component | Image |
 | --- | --- |
 | RailMon | `ghcr.io/datrail/railmon:0.1.0-m14` |
-| RailDash | `ghcr.io/datrail/raildash:0.2.0-rc.8` |
+| RailDash | `ghcr.io/datrail/raildash:0.2.0-rc.9` |
 
 `docker compose up -d` pulls them the first time. A newer version of this
 file pins newer tags; `git pull` (or download the file again) and run
