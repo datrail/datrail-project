@@ -290,3 +290,30 @@ jobs:
           name: openshell-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/stack
           if-no-files-found: error
+
+  # A real agent (DR-137): OpenClaw from npm, pinned, watched as INSTALL.md's
+  # "Watch your own agent" says, against a stub model on HTTPS that streams
+  # a tool call every turn. It runs the images docker-compose.yml pins (or a
+  # manual run's), since a user's agent meets those: its streamed calls and
+  # tool calls must arrive (railmon#70), and a locked baseline and the
+  # adopted guardrail must hold through its turns (railmon#97).
+  openclaw:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    env:
+      COMPOSE_PROJECT_NAME: datrail-ci-oc-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Watch a real OpenClaw agent
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/stack
+        run: bash tests/openclaw/acceptance.sh
+      - name: Preserve service logs and results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: openclaw-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/stack
+          if-no-files-found: error
