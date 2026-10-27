@@ -37,14 +37,17 @@ jobs:
           done
           colima start --cpu 3 --memory 8 --vm-type vz
           docker info --format '{{.OperatingSystem}} {{.KernelVersion}} {{.Architecture}}'
-      # The runner image has Homebrew's bash 5 on PATH; a user's Mac has
-      # only macOS's own 3.2, which is what `make test` must run under.
-      - name: make test on the pinned images, under macOS's bash 3.2
+      # The runner image has Homebrew's bash 5 and a newer Python first on
+      # PATH; a user's Mac may have only macOS's own bash 3.2 and the
+      # Command Line Tools' /usr/bin/python3, which `make test` must run under.
+      - name: make test on the pinned images, under macOS's bash 3.2 and Python
         run: |
-          mkdir -p "$RUNNER_TEMP/macos-bash" "$RUNNER_TEMP/evidence"
-          ln -sfn /bin/bash "$RUNNER_TEMP/macos-bash/bash"
-          export PATH="$RUNNER_TEMP/macos-bash:$PATH"
+          mkdir -p "$RUNNER_TEMP/macos-tools" "$RUNNER_TEMP/evidence"
+          ln -sfn /bin/bash "$RUNNER_TEMP/macos-tools/bash"
+          ln -sfn /usr/bin/python3 "$RUNNER_TEMP/macos-tools/python3"
+          export PATH="$RUNNER_TEMP/macos-tools:$PATH"
           [[ $(uname -s) == Darwin && $(bash -c 'echo "${BASH_VERSINFO[0]}"') == 3 ]]
+          [[ $(command -v python3) == "$RUNNER_TEMP/macos-tools/python3" ]]
           bash --version | head -1; python3 --version
           STACK_IMAGES=pinned EVIDENCE_DIR="$RUNNER_TEMP/evidence" make test
       - if: always()
