@@ -3,9 +3,9 @@
 1. Its model calls arrive as interactions, streamed replies included: a
    reply carrying the stub's `stubreply-tool-` marker, paired with its
    request, whose tool call RailDash counts (railmon#70).
-2. A baseline locked once the agent's evidence settled stays ALIGNED while
-   the agent keeps taking turns (railmon#97: a real agent's files drifted
-   after every turn).
+2. A baseline locked once the agent's writes show stays ALIGNED while the
+   agent keeps taking turns, each writing a file of a new uuid name
+   (railmon#97: a real agent's files drifted after every turn).
 3. The unedited guardrail proposal, adopted on that baseline, reads Held
    and stays Held through the same turns.
 """
@@ -22,7 +22,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from stack_acceptance import Guardrail, api, wait_for  # noqa: E402
 
 CHAT_PATH = "/v1/chat/completions"
-NOTE = "/home/node/work/notes/turn.txt"
+# OpenClaw's write tool writes the note to `.fs-safe-<uuid>.tmp` beside it
+# and renames that over notes/turn.txt, so each turn writes a file of a new
+# name: what railmon#97 drifted on.
+NOTES = "/home/node/work/notes/"
 
 
 def main() -> int:
@@ -30,7 +33,8 @@ def main() -> int:
     parser.add_argument("--url", required=True, help="RailDash base URL")
     parser.add_argument("--agent", required=True, help="the agent key RailMon names the agent by")
     parser.add_argument("--settle", type=float, default=30,
-                        help="seconds the newest ASP must stay the newest before it is locked")
+                        help="seconds of further scans between the agent's writes showing and "
+                             "the lock")
     parser.add_argument("--watch", type=float, default=120,
                         help="seconds of further turns that must leave the baseline and guardrail be")
     args = parser.parse_args()
@@ -85,20 +89,22 @@ def main() -> int:
             return None
         newest = asps[0]["asp_id"]
         listed = file_access(newest).get("value") or []
-        return newest if any(f.get("path") == NOTE and f.get("write") for f in listed) else None
+        return newest if any(f.get("path", "").startswith(NOTES) and f.get("write")
+                             for f in listed) else None
 
-    for _ in range(10):
-        baseline = wait_for(f"the newest ASP records the agent writing {NOTE}", newest_with_note, 300)
-        time.sleep(args.settle)
-        if agent_asps()[0]["asp_id"] == baseline:
-            break
-    else:
-        sys.exit(f"FAIL: the agent's evidence was still changing after 10 waits of {args.settle:.0f}s")
-    print(f"ok:   it stayed the newest ASP for {args.settle:.0f}s")
+    # Unlike the demo agent's, this agent's evidence never settles: every
+    # turn writes a file of a new name. So the newest ASP is locked once it
+    # has the agent's writes and a few more scans went by, and every ASP
+    # after it must still read ALIGNED.
+    wait_for(f"the newest ASP records the agent writing under {NOTES}", newest_with_note, 300)
+    time.sleep(args.settle)
+    baseline = wait_for(f"after {args.settle:.0f}s more, the newest ASP still does", newest_with_note, 60)
     files = file_access(baseline)
     listed = files.get("value") or []
     print(f"      observed_file_access {files.get('status')}: {len(listed)} listed, "
           f"{sum(1 for f in listed if f.get('write'))} written; note: {files.get('note')!r}")
+    print(f"      written under {NOTES}: "
+          f"{sorted(f['path'] for f in listed if f.get('path', '').startswith(NOTES) and f.get('write'))}")
 
     version = api(base, f"/api/asps/{baseline}/lock", token, {"version": f"ci-{time.time_ns()}"})
     api(base, f"/api/alignments/{version['alignment_version_id']}/switch", token, {})
