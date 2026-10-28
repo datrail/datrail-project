@@ -75,6 +75,7 @@ case "$mode" in
     # key defaults to the sandbox name. The container is still looked up
     # below, for the `docker exec`s that drive the agent.
     sandbox=my-agent
+    export_sandbox=my-agent-export
     # OpenShell answers the sandbox's DNS itself, on 127.0.0.53 in the
     # agent's own container: listeners the proposal allows (DR-247).
     platform=(--proposal-allows tcp/127.0.0.53/53 --proposal-allows udp/127.0.0.53/53)
@@ -165,6 +166,7 @@ for row in db.execute("SELECT method, host, path, authenticated, raw FROM intera
     # The sandbox's image is built on RailMon's, which the reset removes.
     openshell logs "$sandbox" -n 2000 > "$EVIDENCE_DIR/my-agent.log" 2>&1 || true
     openshell sandbox delete "$sandbox" > "$EVIDENCE_DIR/sandbox-delete.log" 2>&1 || true
+    openshell sandbox delete "${export_sandbox:-}" > /dev/null 2>&1 || true
     for _ in $(seq 30); do
       [[ -z "$(sandbox_containers)" ]] && break
       sleep 2
@@ -423,6 +425,47 @@ PY
     --url "http://127.0.0.1:${RAILDASH_PORT:-8000}" --phase l7 \
     | tee -a "$EVIDENCE_DIR/acceptance.txt"
   docker exec "$agent" rm -f /sandbox/post
+  # DR-259 (DR-194 M4): the guardrail in force, downloaded from RailDash as
+  # an OpenShell policy (INSTALL's "Enforce the guardrail with OpenShell").
+  RAILDASH_TOKEN_VALUE="$token" python3 tests/openshell/export_acceptance.py \
+    --url "http://127.0.0.1:${RAILDASH_PORT:-8000}" --out "$EVIDENCE_DIR/export.yaml" \
+    | tee -a "$EVIDENCE_DIR/acceptance.txt"
+  # OpenShell takes it as a policy: a new sandbox created from it alone
+  # reaches Ready.
+  openshell sandbox create --name "$export_sandbox" --from datrail-openshell-agent:local \
+    --policy "$EVIDENCE_DIR/export.yaml" --detach --no-tty -- sleep 3600 2>&1 \
+    | tee "$EVIDENCE_DIR/export-sandbox-create.log"
+  phase=""
+  for _ in $(seq 90); do
+    phase=$(openshell sandbox get "$export_sandbox" 2>/dev/null | sed -n 's/^ *Phase: *//p')
+    [[ $phase == Ready ]] && break
+    sleep 2
+  done
+  [[ $phase == Ready ]] || { echo "the sandbox created from the export isn't Ready: '$phase'" >&2; exit 1; }
+  echo "ok    a sandbox created from the export reaches Ready" | tee -a "$EVIDENCE_DIR/acceptance.txt"
+  openshell sandbox delete "$export_sandbox" > "$EVIDENCE_DIR/export-sandbox-delete.log" 2>&1
+  # Applied to the agent's own sandbox, then rolled back, as INSTALL says:
+  # note the revision loaded now, set the export, then set that revision's
+  # policy again. Each `--wait` exits 1 if the sandbox rejects the revision.
+  openshell policy list "$sandbox" | tee "$EVIDENCE_DIR/policy-list-before-export.txt"
+  loaded=$(awk '$3 == "Loaded" {print $1; exit}' "$EVIDENCE_DIR/policy-list-before-export.txt")
+  [[ $loaded =~ ^[0-9]+$ ]] || { echo "no Loaded revision in policy list" >&2; exit 1; }
+  openshell policy set "$sandbox" --policy "$EVIDENCE_DIR/export.yaml" --wait 2>&1 \
+    | tee "$EVIDENCE_DIR/policy-set-export.log"
+  openshell sandbox get "$sandbox" --policy-only > "$EVIDENCE_DIR/policy-after-export.yaml"
+  grep -q '^  raildash_api_github_com:' "$EVIDENCE_DIR/policy-after-export.yaml" \
+    || { echo "the sandbox's policy isn't the export after policy set" >&2; exit 1; }
+  echo "ok    policy set loaded the export into the agent's sandbox" | tee -a "$EVIDENCE_DIR/acceptance.txt"
+  openshell policy get "$sandbox" --rev "$loaded" --base --output json | jq -e .policy \
+    > "$EVIDENCE_DIR/policy-before-export.json"
+  openshell policy set "$sandbox" --policy "$EVIDENCE_DIR/policy-before-export.json" --wait 2>&1 \
+    | tee "$EVIDENCE_DIR/policy-set-rollback.log"
+  openshell sandbox get "$sandbox" --policy-only > "$EVIDENCE_DIR/policy-after-rollback.yaml"
+  grep -q '^  github_api:' "$EVIDENCE_DIR/policy-after-rollback.yaml" \
+    && ! grep -q 'raildash_' "$EVIDENCE_DIR/policy-after-rollback.yaml" \
+    || { echo "the rollback didn't restore revision $loaded's policy" >&2; exit 1; }
+  echo "ok    rolled back to revision $loaded through policy get --base --output json" \
+    | tee -a "$EVIDENCE_DIR/acceptance.txt"
   # DR-249: removing the rule that lets the agent reach api.github.com makes
   # OpenShell's supervisor refuse its next call at L4; the collector posts
   # that denial and the new revision, and RailDash shows both. Read through
