@@ -89,7 +89,7 @@ def main() -> int:
                 print(f"ok    the L7-denied POST /markdown is captured too (answered "
                       f"{sorted({r.get('status_code') for r in posts}, key=str)}), and OpenShell's denial "
                       f"shows: {'; '.join(group['reasons'])}")
-                print(f"ok    the guardrail in force ({detail['active']['version']}) has no row for it: "
+                print(f"ok    the guardrail in force ({detail['active']['guardrail']['version']}) has no row for it: "
                       "a request OpenShell blocked isn't judged")
                 return 0
             time.sleep(3)
