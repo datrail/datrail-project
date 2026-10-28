@@ -1,6 +1,6 @@
 # datRail demo runbook: demo agent, your own agent, and an agent in an OpenShell sandbox
 
-Hands-on walk of the datrail-project stack. The install pins published images (on 2026-10-26: railmon `0.1.0-m13`, raildash `0.2.0-rc.8`, rule pack 13); the steps were last walked on a Mac on 2026-10-23 with `0.1.0-m7` and `0.2.0-rc.4`. Every step says what to run, what RailDash should show, and how long it takes. Everything here was run on a GCP x86_64 VM (Ubuntu 24.04) and, for the own-agent part, on an Apple Silicon Mac with Docker Desktop.
+Hands-on walk of the datrail-project stack. The install pins published images (on 2026-10-28: railmon `0.1.0-m14`, raildash `0.2.0-rc.12`, rule pack 13); the steps were last walked on a Mac on 2026-10-23 with `0.1.0-m7` and `0.2.0-rc.4`. Every step says what to run, what RailDash should show, and how long it takes. Everything here was run on a GCP x86_64 VM (Ubuntu 24.04) and, for the own-agent part, on an Apple Silicon Mac with Docker Desktop.
 
 Two windows: **T1** is a shell on the host (or an SSH session with `-L 8000:127.0.0.1:8000` if the host is remote), **T2** is a browser on http://127.0.0.1:8000 . If 8000 is taken, start the stack with `RAILDASH_PORT=18000` and use that.
 
@@ -176,9 +176,9 @@ What a real agent looks like today (so nobody is surprised):
 
 ---
 
-## Part C: an agent in an OpenShell sandbox (about 12 minutes)
+## Part C: an agent in an OpenShell sandbox (about 18 minutes)
 
-Only the agent moves into the sandbox. RailMon's four probes and RailDash stay ordinary containers outside it, started with the same `docker compose up`.
+Only the agent moves into the sandbox. RailMon's four probes and RailDash stay ordinary containers outside it, started with the same `docker compose up`, plus the opt-in `openshell-collector` that reads the sandbox's policy and what OpenShell refused (C9). C10 turns the guardrail into an OpenShell policy and applies it.
 
 ### C1. Install OpenShell (once, 2 minutes)
 
@@ -228,7 +228,7 @@ docker build -t datrail-openshell-agent:local --build-arg BASE=$(docker compose 
 
 ### C4. Create the sandbox (30 s)
 
-Save this as `~/agent-c.sh`. It is the demo agent's loop: its HTTPS server on 8443, the client every 10 s, and, once `/sandbox/outbound` exists, one GET to `api.github.com/zen` per cycle.
+Save this as `~/agent-c.sh`. It is the demo agent's loop: its HTTPS server on 8443, the client every 10 s, once `/sandbox/outbound` exists one GET to `api.github.com/zen` per cycle, and once `/sandbox/post` exists one POST to `api.github.com/markdown` (C9), the same script CI runs.
 
 ```sh
 set -eu
@@ -240,6 +240,9 @@ while sleep 10; do
   my-agent-bin "$demo/demo_client.py" || true
   if [ -e /sandbox/outbound ]; then
     my-agent-bin -c 'import urllib.request; urllib.request.urlopen("https://api.github.com/zen", timeout=10).read()' || true
+  fi
+  if [ -e /sandbox/post ]; then
+    my-agent-bin -c 'import urllib.request; urllib.request.urlopen(urllib.request.Request("https://api.github.com/markdown", data=b"{}", method="POST"), timeout=10).read()' || true
   fi
 done
 ```
@@ -258,17 +261,19 @@ openshell sandbox list
 
 ### C5. Point the stack at the sandbox (1 minute)
 
-The container name carries a random id, so look it up by label:
+Name the sandbox, not its container (INSTALL, "An agent in an OpenShell sandbox"); the stack finds the container itself and keeps the agent under the sandbox's name across recreations. `COMPOSE_PROFILES=openshell` adds the opt-in collector for C9: read what it holds in INSTALL first (it mounts `~/.config/openshell` read-only, which on a local gateway is an admin credential, and shares the host's network).
+
+```bash
+COMPOSE_PROFILES=openshell AGENT_CONTAINER=openshell:my-agent docker compose up -d --scale demo-agent=0
+```
+
+`docker compose ps`: six services Up (the five plus `openshell-collector`), no demo-agent. The steps below `docker exec` into the agent, whose container name carries a random id, so look it up by label:
 
 ```bash
 A=$(docker ps --format '{{.Names}}' --filter label=openshell.ai/sandbox-name=my-agent --filter label=openshell.ai/isolation-role=sandbox); echo $A
 ```
 
-```bash
-AGENT_CONTAINER=$A AGENT_KEY=my-agent docker compose up -d --scale demo-agent=0
-```
-
-`AGENT_KEY` keeps one name for the agent across sandbox recreations. `docker compose ps`: five services Up, no demo-agent. `$A` lives in this shell only; re-run the first line in a new one.
+`$A` lives in this shell only; re-run that line in a new one.
 
 ### C6. What is different from Part A
 
@@ -278,7 +283,13 @@ AGENT_CONTAINER=$A AGENT_KEY=my-agent docker compose up -d --scale demo-agent=0
 
 ### C7. Lock, drift, guardrail, violations, data actions
 
-Same as A2 to A6 with `$A` in place of `datrail-demo-agent`. Differences: after Adopt the Service ports group has four rows (8443, 9000, 53 tcp, 53 udp), so it is **Allow all 4**; Egress containment is held from the start.
+First give RailDash the sandbox's policy, so the proposal allows its hosts and C10's export keeps its filesystem rules (the collector's copy carries none of those):
+
+```bash
+openshell sandbox get my-agent --policy-only > ~/my-agent-policy.yaml
+```
+
+T2: the agent's Data Guardrail card, **Import OpenShell policy** under the Egress line, choose `~/my-agent-policy.yaml`. The Egress line lists `api.github.com:443`. Then the same as A2 to A6 with `$A` in place of `datrail-demo-agent`; the proposal allows `api.github.com` too. Differences: after Adopt the Service ports group has four rows (8443, 9000, 53 tcp, 53 udp), so it is **Allow all 4**; Egress containment is held from the start.
 
 ### C8. A call that leaves the sandbox (1 minute)
 
@@ -288,7 +299,47 @@ docker exec $A touch /sandbox/outbound
 
 Within 10 to 30 s the Interaction log shows `GET api.github.com /zen` with a status code (200, or 403 if GitHub rate-limits an anonymous caller; either proves the point). The supervisor terminated the agent's TLS and made the real connection; the collector still read the agent's side in clear.
 
-### C9. Clean up
+### C9. What OpenShell blocked (1 minute)
+
+The policy lets the agent read `api.github.com`, not write to it. Make it try:
+
+```bash
+docker exec $A touch /sandbox/post
+```
+
+Within a minute (the collector polls every 60 s; CI sets 10) the Egress line shows **Blocked by OpenShell**: `api.github.com:443` with `POST /markdown` and OpenShell's reason (`L7_REQUEST deny … not permitted by policy`). The Interaction log also has the `POST api.github.com /markdown`, answered 403 by OpenShell's supervisor. Neither counts against the guardrail: an attempt OpenShell blocked is not a violation, because nothing left the sandbox (Lebin, 10-27). Until the collector's next poll the section may say "1 request answered 403 … waits for OpenShell's log"; once the denial arrives that line goes, and no Uploads row appears for `api.github.com`. Stop it:
+
+```bash
+docker exec $A rm -f /sandbox/post
+```
+
+### C10. Enforce the guardrail with OpenShell (3 minutes)
+
+T2: with a guardrail version in force (C7's Adopt), **Download as OpenShell policy** under the Egress line saves `openshell-policy-<version>.yaml`. Open it and show three things: the header comment, listing what it could not carry (ports, upload sizes, service ports, saved files, MCP servers by name, and `127.0.0.1`, since OpenShell never authorizes loopback) and how to roll back; your imported `filesystem_policy`, `landlock` and `process`, unchanged; and `api.github.com` as an endpoint with `enforcement: audit` and the agent's binary. RailDash never applies it; you do (INSTALL, "Enforce the guardrail with OpenShell"):
+
+```bash
+openshell policy list my-agent
+```
+
+Note the revision whose status is `Loaded`, N. Apply the export (the path is wherever the browser saved it; on a remote host, copy it there first):
+
+```bash
+openshell policy set my-agent --policy ~/Downloads/openshell-policy-<version>.yaml --wait
+```
+
+`openshell policy list my-agent` now shows a new revision Loaded, and `openshell sandbox get my-agent --policy-only` has `raildash_api_github_com` where `github_api` was; the collector's next poll shows it on the Egress line. Roll back to N:
+
+```bash
+openshell policy get my-agent --rev N --base --output json | jq -e .policy > before.json
+```
+
+```bash
+openshell policy set my-agent --policy before.json --wait
+```
+
+`github_api` is back. Use the JSON form: plain `policy get` prints the revision's details before the policy, which `policy set` cannot read. `--wait` exits 1 if the sandbox rejects a revision; under OpenShell's default `fail_closed` a revision it can't load blocks the agent's traffic, so check `policy list` after each set.
+
+### C11. Clean up
 
 ```bash
 openshell sandbox delete my-agent
@@ -304,7 +355,9 @@ docker compose down -v
 
 - `openshell status` not reachable: restart the gateway (C1). Still down: `loginctl show-user $USER -p Linger` must say `Linger=yes`.
 - `sandbox create` says already exists: C2 was skipped.
-- `railmon-collect` keeps restarting: `docker compose logs railmon-collect`; usually `$A` was empty (C5's echo printed nothing).
+- `docker exec $A` says no such container: `$A` was empty or is from an earlier sandbox; re-run C5's lookup.
+- No **Blocked by OpenShell** and no "read by the collector": `docker compose logs openshell-collector`; the stack was started without `COMPOSE_PROFILES=openshell` (C5), or `openshell status` is not Connected.
+- `policy set` exits 1 or the sandbox stops answering after it: the file lacks the imported static sections (C7's import was skipped, and the header says `version: 1` without one). Roll back as in C10.
 - Nothing arrives for a Node agent started with `COLLECT_TARGET="--comm ..."`: Node bundles its TLS; use `AGENT_CONTAINER` instead (railmon#70, datrail-project#18).
 - `make test` on a Mac: since DR-254 (#67) its architecture and BTF checks ask Docker's engine, not the Mac. Stop the running stack first: `docker compose down; STACK_IMAGES=pinned make test; docker compose up -d` (INSTALL, Mac row).
 
