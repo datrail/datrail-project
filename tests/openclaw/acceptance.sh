@@ -91,7 +91,10 @@ for _ in $(seq 120); do
 done
 [[ -n "$token" ]] || { echo "RailDash never wrote its token file" >&2; exit 1; }
 
+# OpenClaw's gateway listens on all interfaces (openclaw-gateway.json).
+listeners=()
+[[ "$OPENCLAW_FORM" != gateway ]] || listeners=(--listener tcp/0.0.0.0/18789)
 RAILDASH_TOKEN_VALUE="$token" python3 tests/openclaw/check.py \
   --url "http://127.0.0.1:${RAILDASH_PORT:-8000}" --agent my-agent \
-  --settle "$((SCAN_INTERVAL * 3))" --watch "$((TURN_INTERVAL * 12))" \
+  --settle "$((SCAN_INTERVAL * 3))" --watch "$((TURN_INTERVAL * 12))" "${listeners[@]}" \
   | tee "$EVIDENCE_DIR/acceptance.txt"

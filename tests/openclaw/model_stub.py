@@ -11,11 +11,11 @@ come from its reply.
 
 Usage: model_stub.py CERT KEY [PORT]
 """
+import itertools
 import json
 import ssl
 import sys
 import time
-import itertools
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
