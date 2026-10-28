@@ -121,7 +121,7 @@ All are optional.
 | `RAIL_AUTH_MODE`, `RAIL_AUTH_TOKEN`, `RAIL_AUTH_AUDIENCE` | `none` | The credential `railmon-scan` presents to Rail Center. Used only with `RAIL_CENTER_URL`. |
 | `RAILDASH_PORT` | `8000` | The local port RailDash is published on (always on `127.0.0.1`). |
 | `RAILDASH_TOKEN` | unset | RailDash's local write token, if you want to choose it (see below): at least 16 characters of `A-Z a-z 0-9 - _ . ~ + / =`, or RailDash does not start. |
-| `RAILMON_IMAGE`, `RAILDASH_IMAGE` | `ghcr.io/datrail/railmon:0.1.0-m14`, `ghcr.io/datrail/raildash:0.2.0-rc.9` | The image each component runs (see [Images](#images)). |
+| `RAILMON_IMAGE`, `RAILDASH_IMAGE` | `ghcr.io/datrail/railmon:0.1.0-m14`, `ghcr.io/datrail/raildash:0.2.0-rc.11` | The image each component runs (see [Images](#images)). |
 | `RAILMON_SRC`, `RAILDASH_SRC` | the GitHub repositories | Where to build each image from, when you build (see [Build from source](#build-from-source)). |
 | `DEMO_INTERVAL` | `30` | Seconds between the demo agent's calls. |
 | `OPENSHELL_CONFIG_DIR` | `$HOME/.config/openshell` | The OpenShell CLI's configuration, which the opt-in `openshell-collector` mounts read-only (see [An agent in an OpenShell sandbox](#an-agent-in-an-openshell-sandbox)). |
@@ -337,10 +337,47 @@ before installing OpenShell, or the gateway does not start:
   - OpenShell keeps 2,000 log lines a sandbox and has no resume cursor, so
     a span where denials may be missing is shown as such.
 
+#### Enforce the guardrail with OpenShell
+
+Once a guardrail version is in force, **Download as OpenShell policy**
+(under the Egress line, beside the imported policy) turns it into an
+OpenShell policy file. RailDash never applies it; you do.
+
+- It keeps your imported policy's `filesystem_policy`, `landlock` and
+  `process` sections, which OpenShell fixes when a sandbox starts, and
+  replaces only `network_policies`. Import the sandbox's policy first: a
+  file without those sections is rejected by a running sandbox.
+- Each host the guardrail lets the agent call becomes an endpoint with
+  your policy's ports and binaries, `read-only`, or `read-write` where the
+  guardrail allows uploads. Loopback needs no rule.
+- Every L7 endpoint is `enforcement: audit` by default: OpenShell logs what it
+  would refuse and blocks nothing. The guardrail was proposed from what
+  the agent was seen doing, so switch an endpoint to `enforce` only when
+  you are sure of it.
+- The file's header comment lists what it couldn't carry: upload sizes,
+  service ports, saved files and MCP servers by name, which RailDash keeps
+  judging.
+
+Apply it, keeping the way back:
+
+```bash
+openshell policy list my-agent        # note the Loaded revision, N
+openshell policy set my-agent --policy openshell-policy-<version>.yaml --wait
+# to roll back:
+openshell policy get my-agent --rev N --base --output json | jq -e .policy > before.json
+openshell policy set my-agent --policy before.json --wait
+```
+
+`--wait` exits 1 if the sandbox rejects the revision. Under OpenShell's
+default `fail_closed`, a revision the sandbox can't load blocks its
+traffic, so check `openshell policy list` after setting one.
+
 This repository's CI runs this with OpenShell 0.1.5 and the demo agent
 (`STACK_MODE=openshell`): the same walk as the own-agent job, then a call
 to `api.github.com` through OpenShell's supervisor, the import, the
-collector's policy and denials, and a recreated sandbox.
+collector's policy and denials, the export (a sandbox created from it
+reaches Ready, and it is set on the agent's sandbox and rolled back), and a
+recreated sandbox.
 
 ## Images
 
@@ -350,7 +387,7 @@ Each component runs a fixed published tag from `ghcr.io/datrail`, pinned in
 | Component | Image |
 | --- | --- |
 | RailMon | `ghcr.io/datrail/railmon:0.1.0-m14` |
-| RailDash | `ghcr.io/datrail/raildash:0.2.0-rc.9` |
+| RailDash | `ghcr.io/datrail/raildash:0.2.0-rc.11` |
 
 `docker compose up -d` pulls them the first time. A newer version of this
 file pins newer tags; `git pull` (or download the file again) and run
