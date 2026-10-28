@@ -1,0 +1,15 @@
+{
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "stub": {
+        "baseUrl": "https://my-model:8443/v1",
+        "apiKey": "not-a-key",
+        "api": "openai-completions",
+        "models": [{"id": "stub-1", "name": "Stub", "contextWindow": 128000, "maxTokens": 4096}]
+      }
+    }
+  },
+  "agents": {"defaults": {"model": {"primary": "stub/stub-1"}, "workspace": "/home/node/work"}},
+  "gateway": {"mode": "local", "bind": "lan", "port": 18789, "auth": {"mode": "token"}}
+}
