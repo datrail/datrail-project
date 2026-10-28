@@ -18,6 +18,8 @@
 | 14 | Declared config and identity | MCP servers, credential names, image digest; per-run values never count as drift. (DR-115, DR-123, DR-193) | Inspect evidence on any ASP; restart the agent and show that `agent_instance` changes without drift. | A1 |
 | 15 | Runs on x86_64 / arm64 Linux, WSL2, Mac via Docker Desktop | Verified on Apple Silicon on 10/15, 10/20 and 10/23 (image-only install); `make test` runs on a Mac since DR-254. (DR-208, DR-212, DR-254) | Not a drift item; a slide. | INSTALL.md, Platform support |
 | 16 | Optional: bundles also sent to Rail Center | `RAIL_CENTER_URL` set; same bundle to `/v1/agents/register`. (DR-188) | Not in the OSS demo unless a Rail Center is up. | INSTALL "Sending bundles to Rail Center" |
+| 17 | Blocked by OpenShell | What OpenShell's supervisor refused the sandboxed agent, read by the opt-in `openshell-collector`; neither the denial nor the request it refused is a violation, since nothing left the sandbox. (DR-249, DR-250, DR-261) | `docker exec $A touch /sandbox/post`: a POST to api.github.com that the read-only rule refuses; it shows under Blocked by OpenShell and counts against no guardrail rule (DR-261). | C9; CI `openshell` mode |
+| 18 | Enforce the guardrail with OpenShell | **Download as OpenShell policy**: the guardrail in force as an OpenShell policy file (every endpoint audit, gaps in its header), applied and rolled back by the user. (DR-258, DR-259) | Download, `openshell policy set my-agent --policy <file> --wait`, then roll back through `policy get --rev N --base --output json`. | C10; CI `openshell` mode |
 
 Demo note: lock a fresh baseline on a fresh stack; a baseline from an older rule pack reads CONTRACT_MISMATCH.
 

@@ -121,7 +121,7 @@ All are optional.
 | `RAIL_AUTH_MODE`, `RAIL_AUTH_TOKEN`, `RAIL_AUTH_AUDIENCE` | `none` | The credential `railmon-scan` presents to Rail Center. Used only with `RAIL_CENTER_URL`. |
 | `RAILDASH_PORT` | `8000` | The local port RailDash is published on (always on `127.0.0.1`). |
 | `RAILDASH_TOKEN` | unset | RailDash's local write token, if you want to choose it (see below): at least 16 characters of `A-Z a-z 0-9 - _ . ~ + / =`, or RailDash does not start. |
-| `RAILMON_IMAGE`, `RAILDASH_IMAGE` | `ghcr.io/datrail/railmon:0.1.0-m14`, `ghcr.io/datrail/raildash:0.2.0-rc.11` | The image each component runs (see [Images](#images)). |
+| `RAILMON_IMAGE`, `RAILDASH_IMAGE` | `ghcr.io/datrail/railmon:0.1.0-m14`, `ghcr.io/datrail/raildash:0.2.0-rc.12` | The image each component runs (see [Images](#images)). |
 | `RAILMON_SRC`, `RAILDASH_SRC` | the GitHub repositories | Where to build each image from, when you build (see [Build from source](#build-from-source)). |
 | `DEMO_INTERVAL` | `30` | Seconds between the demo agent's calls. |
 | `OPENSHELL_CONFIG_DIR` | `$HOME/.config/openshell` | The OpenShell CLI's configuration, which the opt-in `openshell-collector` mounts read-only (see [An agent in an OpenShell sandbox](#an-agent-in-an-openshell-sandbox)). |
@@ -324,7 +324,10 @@ before installing OpenShell, or the gateway does not start:
   sandbox's policy whenever it changes and the denials OpenShell's
   supervisor logged, and RailDash shows them under the Egress line as
   **Blocked by OpenShell** (the last 24 hours). A denial isn't a violation,
-  since nothing left the sandbox. Know what it holds before you start it:
+  since nothing left the sandbox, and neither is the request it refused:
+  OpenShell answers it 403 and the collector still captures it, so RailDash
+  holds a 403 until OpenShell's denial of it arrives, then drops it (one
+  with no denial after 5 minutes is judged as usual). Know what it holds before you start it:
   - It mounts the OpenShell CLI's configuration (`~/.config/openshell`)
     read-only. On a local gateway that is a Platform Admin credential:
     anyone who takes over the container holds the gateway, every sandbox
@@ -387,7 +390,7 @@ Each component runs a fixed published tag from `ghcr.io/datrail`, pinned in
 | Component | Image |
 | --- | --- |
 | RailMon | `ghcr.io/datrail/railmon:0.1.0-m14` |
-| RailDash | `ghcr.io/datrail/raildash:0.2.0-rc.11` |
+| RailDash | `ghcr.io/datrail/raildash:0.2.0-rc.12` |
 
 `docker compose up -d` pulls them the first time. A newer version of this
 file pins newer tags; `git pull` (or download the file again) and run
