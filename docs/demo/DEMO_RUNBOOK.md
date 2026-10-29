@@ -299,6 +299,8 @@ docker exec $A touch /sandbox/outbound
 
 Within 10 to 30 s the Interaction log shows `GET api.github.com /zen` with a status code (200, or 403 if GitHub rate-limits an anonymous caller; either proves the point). The supervisor terminated the agent's TLS and made the real connection; the collector still read the agent's side in clear.
 
+The guardrail now reads Violated, and that is expected: two things are new since the lock. The trigger file `/sandbox/outbound` is a saved file, and the agent's first calls through OpenShell's supervisor add `tcp/127.0.0.1/ephemeral` and `udp/127.0.0.1/ephemeral` under Service ports (sockets the agent's runtime binds on loopback for them). Allow the three (**Allow this** on each, or **Allow all** per group) and it reads Held again. C9's `/sandbox/post` adds one more saved file the same way.
+
 ### C9. What OpenShell blocked (1 minute)
 
 The policy lets the agent read `api.github.com`, not write to it. Make it try:
@@ -307,7 +309,7 @@ The policy lets the agent read `api.github.com`, not write to it. Make it try:
 docker exec $A touch /sandbox/post
 ```
 
-Within a minute (the collector polls every 60 s; CI sets 10) the Egress line shows **Blocked by OpenShell**: `api.github.com:443` with `POST /markdown` and OpenShell's reason (`L7_REQUEST deny … not permitted by policy`). The Interaction log also has the `POST api.github.com /markdown`, answered 403 by OpenShell's supervisor. Neither counts against the guardrail: an attempt OpenShell blocked is not a violation, because nothing left the sandbox (Lebin, 10-27). Until the collector's next poll the section may say "1 request answered 403 … waits for OpenShell's log"; once the denial arrives that line goes, and no Uploads row appears for `api.github.com`. Stop it:
+Within a minute (the collector polls every 60 s; CI sets 10) the Egress line shows **Blocked by OpenShell**: `api.github.com:443` with `POST /markdown` and OpenShell's reason (`L7_REQUEST deny … not permitted by policy`). The Interaction log also has the `POST api.github.com /markdown`, answered 403 by OpenShell's supervisor. Neither the denial nor the blocked POST counts against the guardrail: an attempt OpenShell blocked is not a violation, because nothing left the sandbox (Lebin, 10-27). The trigger file `/sandbox/post` does count, as a saved file, like C8's (allow it as there). Until the collector's next poll the section may say "1 request answered 403 … waits for OpenShell's log"; once the denial arrives that line goes, and no Uploads row appears for `api.github.com`. Stop it:
 
 ```bash
 docker exec $A rm -f /sandbox/post
@@ -316,6 +318,8 @@ docker exec $A rm -f /sandbox/post
 ### C10. Enforce the guardrail with OpenShell (3 minutes)
 
 T2: with a guardrail version in force (C7's Adopt), **Download as OpenShell policy** under the Egress line saves `openshell-policy-<version>.yaml`. Open it and show three things: the header comment, listing what it could not carry (ports, upload sizes, service ports, saved files, MCP servers by name, and `127.0.0.1`, since OpenShell never authorizes loopback) and how to roll back; your imported `filesystem_policy`, `landlock` and `process`, unchanged; and `api.github.com` as an endpoint with `enforcement: audit` and the agent's binary. RailDash never applies it; you do (INSTALL, "Enforce the guardrail with OpenShell"):
+
+First make sure C9's trigger is gone (`docker exec $A rm -f /sandbox/post`). The export's endpoint is `enforcement: audit`, which lets the POST through, so a trigger still there makes the agent's POST leave the sandbox and RailDash rightly shows it under Uploads.
 
 ```bash
 openshell policy list my-agent
