@@ -90,7 +90,9 @@ make clean                 # also delete the stack's images and any leftovers
 ```
 
 `docker compose down -v` removes only what the current `docker-compose.yml`
-declares. It keeps the stack's two images (the pinned
+declares, for the profiles you name: a stack started with
+`COMPOSE_PROFILES=openshell` is stopped with it too ([An agent in an OpenShell
+sandbox](#an-agent-in-an-openshell-sandbox)). It keeps the stack's two images (the pinned
 [published images](#images), or `datrail-railmon:local` and
 `datrail-raildash:local` when built, about 540 MB together). It also keeps anything an
 older version of this stack created: the version before 3 October 2026 used
@@ -344,6 +346,11 @@ before installing OpenShell, or the gateway does not start:
     the sandbox's allow-list as OpenShell enforces it (RailDash's Egress line
     counts its endpoints). The file holds the policy's fields only, never
     the credential; without the collector the allow-list stays unread.
+  - Stop the stack with the same profile,
+    `COMPOSE_PROFILES=openshell docker compose down -v`. Without it,
+    `down` leaves `openshell-collector` running, and since it mounts
+    RailDash's volume, `-v` can't delete that: the old baseline, guardrail
+    and denials are still there after the next `up`.
 
 #### Enforce the guardrail with OpenShell
 

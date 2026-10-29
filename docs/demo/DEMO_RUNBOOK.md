@@ -211,10 +211,10 @@ openshell sandbox delete my-agent
 ```
 
 ```bash
-docker compose down -v
+COMPOSE_PROFILES=openshell docker compose down -v
 ```
 
-(Both are fine to run when there is nothing to delete.)
+(Both are fine to run when there is nothing to delete.) Keep the profile: without it `down` leaves the collector running, and since it mounts RailDash's volume, `-v` can't delete it, so the last run's guardrail and denials come back with C5's `up`.
 
 ### C3. Build the sandbox image (seconds when cached)
 
@@ -348,7 +348,7 @@ openshell sandbox delete my-agent
 ```
 
 ```bash
-docker compose down -v
+COMPOSE_PROFILES=openshell docker compose down -v
 ```
 
 ---
@@ -357,6 +357,7 @@ docker compose down -v
 
 - `openshell status` not reachable: restart the gateway (C1). Still down: `loginctl show-user $USER -p Linger` must say `Linger=yes`.
 - `sandbox create` says already exists: C2 was skipped.
+- An earlier run's guardrail, denials or baseline are still there after C5: C2 or C11 ran `docker compose down -v` without `COMPOSE_PROFILES=openshell`. Run it with the profile, then C5 again.
 - `docker exec $A` says no such container: `$A` was empty or is from an earlier sandbox; re-run C5's lookup.
 - No **Blocked by OpenShell** and no "read by the collector": `docker compose logs openshell-collector`; the stack was started without `COMPOSE_PROFILES=openshell` (C5), or `openshell status` is not Connected.
 - `policy set` exits 1 or the sandbox stops answering after it: the file lacks the imported static sections (C7's import was skipped, and the header says `version: 1` without one). Roll back as in C10.
