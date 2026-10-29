@@ -15,16 +15,20 @@ update:
 logs:
 	docker compose logs -f --tail=50
 
+# With the opt-in openshell profile too, so its collector, which mounts
+# RailDash's volume, is stopped whether or not the stack was started with it.
 down:
-	docker compose down
+	COMPOSE_PROFILES=openshell docker compose down
 
 # Deletes everything the stack created: its containers, including ones only
 # an older docker-compose.yml declared; every volume labelled with this
 # Compose project, including an older version's (`captures`, `raildash-db`),
 # so RailDash's database and token go too; and the stack's two images,
-# the pinned published ones and the local names `update` builds.
+# the pinned published ones and the local names `update` builds. The
+# openshell profile as in `down`: a collector left running would hold
+# RailDash's volume.
 clean:
-	docker compose down -v --remove-orphans --rmi all
+	COMPOSE_PROFILES=openshell docker compose down -v --remove-orphans --rmi all
 	docker image rm datrail-railmon:local datrail-raildash:local 2>/dev/null || true
 	project=$$(docker compose config | sed -n 's/^name: //p') && \
 	test -n "$$project" && \

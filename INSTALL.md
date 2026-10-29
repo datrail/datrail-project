@@ -91,8 +91,9 @@ make clean                 # also delete the stack's images and any leftovers
 
 `docker compose down -v` removes only what the current `docker-compose.yml`
 declares, for the profiles you name: a stack started with
-`COMPOSE_PROFILES=openshell` is stopped with it too ([An agent in an OpenShell
-sandbox](#an-agent-in-an-openshell-sandbox)). It keeps the stack's two images (the pinned
+`COMPOSE_PROFILES=openshell` needs the same variable on `down` ([An agent in
+an OpenShell sandbox](#an-agent-in-an-openshell-sandbox)); `make clean`
+sets it itself. It keeps the stack's two images (the pinned
 [published images](#images), or `datrail-railmon:local` and
 `datrail-raildash:local` when built, about 540 MB together). It also keeps anything an
 older version of this stack created: the version before 3 October 2026 used
@@ -457,7 +458,8 @@ docker compose up -d
 The `docker compose` commands in this page work the same from that
 directory, and settings go in your shell or a `.env` file beside the
 downloaded file. There is no Makefile there: `make clean` is
-`docker compose down -v --remove-orphans --rmi all`. Compose names the
+`docker compose down -v --remove-orphans --rmi all`, with
+`COMPOSE_PROFILES=openshell` in front if you ran the OpenShell collector. Compose names the
 project after the directory, so a stack started here doesn't share
 RailDash's database with one started from a clone. CI checks that the file
 reads nothing from its checkout.
