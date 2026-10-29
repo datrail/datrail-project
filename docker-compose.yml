@@ -41,12 +41,12 @@
 # Compose builds services in parallel, and on Docker Desktop's containerd
 # image store a second build of the same image name fails.
 x-railmon: &railmon
-  image: ${RAILMON_IMAGE:-ghcr.io/datrail/railmon:0.1.0-m14}
+  image: ${RAILMON_IMAGE:-ghcr.io/datrail/railmon:0.1.0-m15}
   restart: unless-stopped
 
 services:
   raildash:
-    image: ${RAILDASH_IMAGE:-ghcr.io/datrail/raildash:0.2.0-rc.12}
+    image: ${RAILDASH_IMAGE:-ghcr.io/datrail/raildash:0.2.0-rc.13}
     build:
       context: ${RAILDASH_SRC:-https://github.com/datrail/raildash.git}
     restart: unless-stopped

@@ -1,6 +1,6 @@
 # datRail demo runbook: demo agent, your own agent, and an agent in an OpenShell sandbox
 
-Hands-on walk of the datrail-project stack. The install pins published images (on 2026-10-28: railmon `0.1.0-m14`, raildash `0.2.0-rc.12`, rule pack 13); the steps were last walked on a Mac on 2026-10-23 with `0.1.0-m7` and `0.2.0-rc.4`. Every step says what to run, what RailDash should show, and how long it takes. Everything here was run on a GCP x86_64 VM (Ubuntu 24.04) and, for the own-agent part, on an Apple Silicon Mac with Docker Desktop.
+Hands-on walk of the datrail-project stack. The install pins published images (on 2026-10-29: railmon `0.1.0-m15`, raildash `0.2.0-rc.13`, rule pack 14); the steps were last walked on a Mac on 2026-10-23 with `0.1.0-m7` and `0.2.0-rc.4`. Every step says what to run, what RailDash should show, and how long it takes. Everything here was run on a GCP x86_64 VM (Ubuntu 24.04) and, for the own-agent part, on an Apple Silicon Mac with Docker Desktop.
 
 Two windows: **T1** is a shell on the host (or an SSH session with `-L 8000:127.0.0.1:8000` if the host is remote), **T2** is a browser on http://127.0.0.1:8000 . If 8000 is taken, start the stack with `RAILDASH_PORT=18000` and use that.
 
