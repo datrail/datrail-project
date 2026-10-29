@@ -417,6 +417,11 @@ while time.time() < deadline:
 sys.exit("FAIL  no GET https://api.github.com/zen from the sandboxed agent within 180 s")
 PY
 
+  # DR-266: railmon scan carries the sandbox's allow-list in the ASP, read
+  # from OpenShell by the collector (Daniel, 2026-10-28), not RailDash's record.
+  RAILDASH_TOKEN_VALUE="$token" python3 tests/openshell/collector_acceptance.py \
+    --url "http://127.0.0.1:${RAILDASH_PORT:-8000}" --phase allow-list \
+    | tee -a "$EVIDENCE_DIR/acceptance.txt"
   # DR-250: a POST the read-only rule refuses at L7. The supervisor answers
   # the agent's own TLS with a 403, so the capture carries the request, and
   # the collector carries OpenShell's denial of it.
@@ -474,6 +479,9 @@ PY
     | tee "$EVIDENCE_DIR/policy-update.log"
   RAILDASH_TOKEN_VALUE="$token" python3 tests/openshell/collector_acceptance.py \
     --url "http://127.0.0.1:${RAILDASH_PORT:-8000}" --phase denial \
+    | tee -a "$EVIDENCE_DIR/acceptance.txt"
+  RAILDASH_TOKEN_VALUE="$token" python3 tests/openshell/collector_acceptance.py \
+    --url "http://127.0.0.1:${RAILDASH_PORT:-8000}" --phase allow-list-removed \
     | tee -a "$EVIDENCE_DIR/acceptance.txt"
   # DR-250: a new sandbox under the same name is followed without restarting
   # anything (DR-247's promise, INSTALL): its container has a new name, and

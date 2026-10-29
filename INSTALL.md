@@ -339,6 +339,11 @@ before installing OpenShell, or the gateway does not start:
     `openshell policy get` and `openshell logs`, and listens on nothing.
   - OpenShell keeps 2,000 log lines a sandbox and has no resume cursor, so
     a span where denials may be missing is shown as such.
+  - It also writes each policy it reads to the `openshell-data` volume,
+    which `railmon-scan` reads, so every ASP's `egress_containment` carries
+    the sandbox's allow-list as OpenShell enforces it (RailDash's Egress line
+    counts its endpoints). The file holds the policy's fields only, never
+    the credential; without the collector the allow-list stays unread.
 
 #### Enforce the guardrail with OpenShell
 
