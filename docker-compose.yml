@@ -46,7 +46,7 @@ x-railmon: &railmon
 
 services:
   raildash:
-    image: ${RAILDASH_IMAGE:-ghcr.io/datrail/raildash:0.2.0-rc.13}
+    image: ${RAILDASH_IMAGE:-ghcr.io/datrail/raildash:0.2.0-rc.14}
     build:
       context: ${RAILDASH_SRC:-https://github.com/datrail/raildash.git}
     restart: unless-stopped
