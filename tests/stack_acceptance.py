@@ -217,12 +217,16 @@ class Guardrail:
             sys.exit(f"FAIL: the rules shown {shown} disagree with the rules that have "
                      f"counting rows {sorted(counting)}")
 
-    def wait_for_rows(self, what: str, items: set[tuple[str, str]], *, exact: bool = False) -> None:
+    def wait_for_rows(self, what: str, items: set[tuple[str, str]], *, exact: bool = False,
+                      may_count: set[tuple[str, str]] = frozenset()) -> None:
+        """Wait until every one of `items` counts and the guardrail reads
+        Violated. With `exact`, nothing else may count, apart from
+        `may_count`: rows that are expected but needn't appear."""
         def counting() -> bool:
             detail = self.detail()
             found = {(r["rule"], r["item"]) for r in detail["rows"] if r["counts"]}
-            if exact and found - items:
-                sys.exit(f"FAIL: {what}: unexpected rows {sorted(found - items)}")
+            if exact and found - items - may_count:
+                sys.exit(f"FAIL: {what}: unexpected rows {sorted(found - items - may_count)}")
             if detail["state"] == "violated" and items <= found:
                 self.check_rules(detail)
                 return True

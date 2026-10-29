@@ -8,10 +8,10 @@
    (railmon#97: a real agent's files drifted after every turn).
 3. The unedited guardrail proposal, adopted on that baseline, is Violated
    only by the model's undeclared host and, for OpenClaw's gateway, the
-   port it listens on (`--listener`) and the OpenClaw services it calls
-   itself at start (`--call`); with those allowed it reads Held
-   and stays Held through the same turns, each writing SQLite temp files
-   and a fresh mkdtemp directory.
+   port it listens on (`--listener`); the OpenClaw services the gateway
+   calls itself at start (`--call`) are among its would-be violations
+   too. With those allowed it reads Held and stays Held through the same
+   turns, each writing SQLite temp files and a fresh mkdtemp directory.
 """
 from __future__ import annotations
 
@@ -132,9 +132,11 @@ def main() -> int:
     # config names it), so its calls are out of spec until the user allows
     # them, the one click the proposal lists. A gateway's own port is
     # allowed by no proposal outside OpenShell, so it counts too, until the
-    # user allows it, and so do the OpenClaw services the gateway calls on
-    # its own (`--call`), named in no declaration either. Nothing else may
-    # count.
+    # user allows it. So do the OpenClaw services the gateway calls on its
+    # own (`--call`), named in no declaration either. It calls them once at
+    # start, before the lock, and a row is made only for a request stored
+    # after adoption, so they are in the proposal's would-be violations
+    # but count only if called again. Nothing else may count.
     guard = Guardrail(base, token, ours)
     proposal = guard.adopt(version["alignment_version_id"])
     hosts = {MODEL_HOST, *args.call}
@@ -143,15 +145,17 @@ def main() -> int:
     would_be = {(v["rule"], v["item"]) for v in proposal["would_be_violations"]}
     if would_be != expected:
         sys.exit(f"FAIL: the proposal would be violated by {sorted(would_be)}, expected {sorted(expected)}")
-    guard.wait_for_rows(f"its calls to {sorted(hosts)} and its listeners {args.listener} are "
-                        "the counting rows", expected, exact=True)
-    if args.call:
-        guard.allow_all("out_of_spec_calls", hosts)
+    started = {("out_of_spec_calls", host) for host in args.call}
+    guard.wait_for_rows(f"its calls to {MODEL_HOST} and its listeners {args.listener} are the "
+                        "counting rows", expected - started, exact=True, may_count=started)
+    called = {item for rule, item in guard.rows() if rule == "out_of_spec_calls" and item in hosts}
+    if called - {MODEL_HOST}:
+        guard.allow_all("out_of_spec_calls", called)
     else:
         guard.allow("out_of_spec_calls", MODEL_HOST)
     if args.listener:
         guard.allow_all("service_ports", set(args.listener))
-    guard.wait_for_state("held", f"with {sorted(hosts)} and {args.listener} allowed, the "
+    guard.wait_for_state("held", f"with {sorted(called)} and {args.listener} allowed, the "
                                  "guardrail reads Held")
 
     # ---- the turns go on, and nothing moves -------------------------------
