@@ -298,12 +298,19 @@ jobs:
   # a tool call every turn. It runs the images docker-compose.yml pins (or a
   # manual run's), since a user's agent meets those: its streamed calls and
   # tool calls must arrive (railmon#70), and a locked baseline and the
-  # adopted guardrail must hold through its turns (railmon#97).
+  # adopted guardrail must hold through its turns (railmon#97). Both of
+  # OpenClaw's forms: its CLI, one process per turn, and its long-running
+  # gateway, which makes every model call from one process (DR-262).
   openclaw:
     runs-on: ubuntu-26.04
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        form: [exec, gateway]
     env:
-      COMPOSE_PROJECT_NAME: datrail-ci-oc-${{ github.run_id }}-${{ github.run_attempt }}
+      COMPOSE_PROJECT_NAME: datrail-ci-oc-${{ matrix.form }}-${{ github.run_id }}-${{ github.run_attempt }}
+      OPENCLAW_FORM: ${{ matrix.form }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -316,6 +323,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: openclaw-${{ github.run_id }}-${{ github.run_attempt }}
+          name: openclaw-${{ matrix.form }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/stack
           if-no-files-found: error

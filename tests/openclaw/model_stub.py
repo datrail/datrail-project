@@ -2,7 +2,8 @@
 
 It answers every turn the way a real model does when it uses a tool: the
 first reply of a turn streams one `write` call, and the reply to that
-call's result streams a short answer. Both are server-sent events in a
+call's result streams a short answer. The note it asks for is numbered,
+so every turn writes it anew. Both are server-sent events in a
 chunked body, which is what railmon#70 was about. Every reply's chunk id
 starts with `stubreply-tool-` or `stubreply-text-`: an agent never sends a
 completion id back, so the marker found in a captured exchange can only
@@ -10,6 +11,7 @@ come from its reply.
 
 Usage: model_stub.py CERT KEY [PORT]
 """
+import itertools
 import json
 import ssl
 import sys
@@ -18,7 +20,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 MODEL = "stub-1"
-NOTE = {"path": "notes/turn.txt", "content": "The stub model asked for this note.\n"}
+NOTES = itertools.count(1)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -48,7 +50,8 @@ class Handler(BaseHTTPRequestHandler):
         base = {"id": f"stubreply-{kind}-{uuid.uuid4().hex[:12]}",
                 "object": "chat.completion.chunk", "created": int(time.time()), "model": MODEL}
         if asks_tool:
-            arguments = json.dumps(NOTE)
+            arguments = json.dumps({"path": "notes/turn.txt",
+                                    "content": f"The stub model asked for note {next(NOTES)}.\n"})
             half = len(arguments) // 2
             self._event({**base, "choices": [{"index": 0, "delta": {"role": "assistant", "tool_calls": [
                 {"index": 0, "id": f"call_{uuid.uuid4().hex[:12]}", "type": "function",

@@ -6,7 +6,8 @@
 # call the same way and the run needs no model credentials. check.py then
 # reads what the stack made of it: the streamed calls with their tool calls
 # (railmon#70), and a locked baseline and the adopted guardrail that hold
-# while the agent keeps working (railmon#97).
+# while the agent keeps working (railmon#97). OPENCLAW_FORM (exec, the
+# default, or gateway) picks how OpenClaw runs: see agent-loop.sh.
 #
 # Run only on a disposable host, as tests/stack-acceptance.sh.
 set -euo pipefail
@@ -19,7 +20,7 @@ done
 mkdir -p "$EVIDENCE_DIR"
 
 export SCAN_INTERVAL="${SCAN_INTERVAL:-10}" TURN_INTERVAL="${TURN_INTERVAL:-10}"
-export AGENT_CONTAINER=my-agent
+export AGENT_CONTAINER=my-agent OPENCLAW_FORM="${OPENCLAW_FORM:-exec}"
 compose=(docker compose)
 image=datrail-openclaw-agent:local
 network="$COMPOSE_PROJECT_NAME-openclaw"
@@ -32,7 +33,7 @@ done
 config=$("${compose[@]}" config --format json)
 railmon_image=$(jq -r '.services["railmon-collect"].image' <<<"$config")
 raildash_image=$(jq -r '.services.raildash.image' <<<"$config")
-printf 'railmon %s\nraildash %s\n' "$railmon_image" "$raildash_image" | tee "$EVIDENCE_DIR/component-images.txt"
+printf 'railmon %s\nraildash %s\nform %s\n' "$railmon_image" "$raildash_image" "$OPENCLAW_FORM" | tee "$EVIDENCE_DIR/component-images.txt"
 
 certs=$(mktemp -d)
 cleanup() {
@@ -53,6 +54,7 @@ print(json.dumps({"observed_listeners": attributes["observed_listeners"],
                   "files": [f["path"] for f in files.get("value") or []]}, indent=1))
 ' > "$EVIDENCE_DIR/observed-evidence.json" 2>&1 || true
   docker logs my-agent > "$EVIDENCE_DIR/my-agent.log" 2>&1 || true
+  docker cp my-agent:/tmp/gateway.log "$EVIDENCE_DIR/gateway.log" > /dev/null 2>&1 || true
   docker logs my-model > "$EVIDENCE_DIR/my-model.log" 2>&1 || true
   docker rm -f my-agent my-model > /dev/null 2>&1 || true
   docker network rm "$network" > /dev/null 2>&1 || true
@@ -78,7 +80,7 @@ docker run -d --name my-model --network "$network" -v "$certs:/certs:ro" "$image
 
 # INSTALL.md's command, then the agent started afterwards.
 "${compose[@]}" up -d --scale demo-agent=0 2>&1 | tee "$EVIDENCE_DIR/up.log"
-docker run -d --name my-agent --network "$network" -e TURN_INTERVAL \
+docker run -d --name my-agent --network "$network" -e TURN_INTERVAL -e OPENCLAW_FORM \
   -e NODE_EXTRA_CA_CERTS=/certs/cert.pem -v "$certs/cert.pem:/certs/cert.pem:ro" "$image" > /dev/null
 
 token=""
@@ -89,7 +91,14 @@ for _ in $(seq 120); do
 done
 [[ -n "$token" ]] || { echo "RailDash never wrote its token file" >&2; exit 1; }
 
+# OpenClaw's gateway listens on all interfaces (openclaw-gateway.json). At
+# start it also calls OpenClaw's own services, in its default config: the
+# daily update check, the model catalog and the plugin catalog (ClawHub).
+# A user's proposal lists them too; the CLI form calls none of them.
+gateway_args=()
+[[ "$OPENCLAW_FORM" != gateway ]] || gateway_args=(--listener tcp/0.0.0.0/18789
+  --call telemetry.openclaw.ai --call catalog.openclaw.ai --call clawhub.ai)
 RAILDASH_TOKEN_VALUE="$token" python3 tests/openclaw/check.py \
   --url "http://127.0.0.1:${RAILDASH_PORT:-8000}" --agent my-agent \
-  --settle "$((SCAN_INTERVAL * 3))" --watch "$((TURN_INTERVAL * 12))" \
+  --settle "$((SCAN_INTERVAL * 3))" --watch "$((TURN_INTERVAL * 12))" "${gateway_args[@]}" \
   | tee "$EVIDENCE_DIR/acceptance.txt"

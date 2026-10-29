@@ -7,9 +7,11 @@
    agent keeps taking turns, each writing a file of a new uuid name
    (railmon#97: a real agent's files drifted after every turn).
 3. The unedited guardrail proposal, adopted on that baseline, is Violated
-   only by the model's undeclared host; with that allowed it reads Held
-   and stays Held through the same turns, each writing SQLite temp files
-   and a fresh mkdtemp directory.
+   only by the model's undeclared host and, for OpenClaw's gateway, the
+   port it listens on (`--listener`); the OpenClaw services the gateway
+   calls itself at start (`--call`) are among its would-be violations
+   too. With those allowed it reads Held and stays Held through the same
+   turns, each writing SQLite temp files and a fresh mkdtemp directory.
 """
 from __future__ import annotations
 
@@ -40,6 +42,13 @@ def main() -> int:
                              "the lock")
     parser.add_argument("--watch", type=float, default=120,
                         help="seconds of further turns that must leave the baseline and guardrail be")
+    parser.add_argument("--listener", action="append", default=[],
+                        help="a listener the agent opens itself, as protocol/addr/port "
+                             "(OpenClaw's gateway: tcp/0.0.0.0/18789); repeatable")
+    parser.add_argument("--call", action="append", default=[],
+                        help="a host the agent calls itself, beside the model (OpenClaw's "
+                             "gateway: its update check, model catalog and plugin catalog); "
+                             "repeatable")
     args = parser.parse_args()
     token = os.environ.get("RAILDASH_TOKEN_VALUE")
     if not token:
@@ -121,16 +130,33 @@ def main() -> int:
     # ---- 3. the guardrail proposal, adopted -------------------------------
     # The model's host is in no declaration RailMon reads (the agent's
     # config names it), so its calls are out of spec until the user allows
-    # them, the one click the proposal lists. Nothing else may count.
+    # them, the one click the proposal lists. A gateway's own port is
+    # allowed by no proposal outside OpenShell, so it counts too, until the
+    # user allows it. So do the OpenClaw services the gateway calls on its
+    # own (`--call`), named in no declaration either. It calls them once at
+    # start, before the lock, and a row is made only for a request stored
+    # after adoption, so they are in the proposal's would-be violations
+    # but count only if called again. Nothing else may count.
     guard = Guardrail(base, token, ours)
     proposal = guard.adopt(version["alignment_version_id"])
-    expected = {("out_of_spec_calls", MODEL_HOST)}
+    hosts = {MODEL_HOST, *args.call}
+    expected = ({("out_of_spec_calls", host) for host in hosts}
+                | {("service_ports", item) for item in args.listener})
     would_be = {(v["rule"], v["item"]) for v in proposal["would_be_violations"]}
     if would_be != expected:
         sys.exit(f"FAIL: the proposal would be violated by {sorted(would_be)}, expected {sorted(expected)}")
-    guard.wait_for_rows(f"its calls to {MODEL_HOST} are the one counting row", expected, exact=True)
-    guard.allow("out_of_spec_calls", MODEL_HOST)
-    guard.wait_for_state("held", f"with {MODEL_HOST} allowed, the guardrail reads Held")
+    started = {("out_of_spec_calls", host) for host in args.call}
+    guard.wait_for_rows(f"its calls to {MODEL_HOST} and its listeners {args.listener} are the "
+                        "counting rows", expected - started, exact=True, may_count=started)
+    called = {item for rule, item in guard.rows() if rule == "out_of_spec_calls" and item in hosts}
+    if called - {MODEL_HOST}:
+        guard.allow_all("out_of_spec_calls", called)
+    else:
+        guard.allow("out_of_spec_calls", MODEL_HOST)
+    if args.listener:
+        guard.allow_all("service_ports", set(args.listener))
+    guard.wait_for_state("held", f"with {sorted(called)} and {args.listener} allowed, the "
+                                 "guardrail reads Held")
 
     # ---- the turns go on, and nothing moves -------------------------------
     newest_before = max((r["id"] for r in marked("tool")), default=0)

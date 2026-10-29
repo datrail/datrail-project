@@ -8,7 +8,7 @@ RUN apt-get update \
 ARG OPENCLAW_VERSION=2026.10.8
 RUN npm install -g --no-audit --no-fund "openclaw@${OPENCLAW_VERSION}" \
  && openclaw --version
-COPY model_stub.py agent-loop.sh openclaw.json /opt/openclaw-ci/
+COPY model_stub.py agent-loop.sh openclaw.json openclaw-gateway.json /opt/openclaw-ci/
 USER node
 WORKDIR /home/node
 CMD ["/opt/openclaw-ci/agent-loop.sh"]
