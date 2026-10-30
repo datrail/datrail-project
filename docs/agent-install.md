@@ -50,11 +50,12 @@ your shell is already bash inside WSL, run them directly.
 - `wsl` isn't found, says there is no installed distribution, or fails with
   `execvpe(bash) failed: No such file or directory`: WSL has no usable
   Ubuntu. The last one means `wsl` landed in Docker Desktop's own Linux,
-  which has no bash. First run `wsl -l -v`: if it lists an Ubuntu, run
-  `wsl --set-default <that name, exactly as listed>` (no restart needed) and
-  run the check again. Otherwise installing Ubuntu needs administrator
-  rights and a restart, so it is the person's step: stop and point them to
-  steps 1 and 2 of
+  which has no bash. First run `wsl -l -v` in the Windows shell: if it lists
+  an Ubuntu with VERSION `2`, ask the person whether to make it WSL's
+  default, then run `wsl --set-default <its name, without the *>` (no
+  restart needed) and run the check again. Otherwise installing Ubuntu
+  needs administrator rights and a restart, so it is the person's step:
+  stop and point them to steps 1 and 2 of
   https://github.com/datrail/datrail-project/blob/master/docs/setup-windows.md,
   then offer to continue.
 - `~/datrail` below is in WSL's home directory, not the Windows one. The
