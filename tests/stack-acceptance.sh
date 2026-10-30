@@ -14,6 +14,11 @@
 # docker-compose.yml pins, which is what `docker compose up -d` installs
 # (DR-137).
 #
+# STACK_MODE=existing-agent is the case install.sh is for: the user's agent
+# is already running, and the stack is brought up by
+# `install.sh --agent my-agent --yes`, which writes the .env
+# and override file this checkout's docker-compose.yml then runs with.
+#
 # STACK_MODE=openshell runs the same agent in an NVIDIA OpenShell sandbox
 # (DR-206), started before the stack, as INSTALL.md's "An agent in an
 # OpenShell sandbox" says. It needs OpenShell's gateway with the Docker
@@ -69,6 +74,10 @@ case "$mode" in
     export AGENT_CONTAINER=my-agent
     up=(up -d ${build[@]+"${build[@]}"} --scale demo-agent=0)
     ;;
+  existing-agent)
+    agent=my-agent
+    up=()
+    ;;
   openshell)
     # The stack follows the sandbox by name (DR-247): RailMon finds the
     # container, named after an id OpenShell generates, itself, and the agent
@@ -118,6 +127,9 @@ docker run --rm alpine test -r /sys/kernel/btf/vmlinux \
   || { echo "a container named datrail-demo-agent exists: stop your stack first (docker compose down)" >&2; exit 1; }
 [[ -z "$(docker ps -aq --filter "name=^my-agent$")" ]] \
   || { echo "a container named my-agent exists: remove it first (docker rm -f my-agent)" >&2; exit 1; }
+# install.sh writes these into this checkout, and the cleanup removes them.
+[[ $mode != existing-agent || ! ( -e .env || -e docker-compose.override.yml ) ]] \
+  || { echo "STACK_MODE=existing-agent writes .env and docker-compose.override.yml here: move yours aside first" >&2; exit 1; }
 project_volumes() {
   docker volume ls -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME"
 }
@@ -156,7 +168,7 @@ db = sqlite3.connect("file:/data/raildash.db?mode=ro", uri=True)
 for row in db.execute("SELECT method, host, path, authenticated, raw FROM interactions WHERE path LIKE ?", ("/mcp%",)):
     print(json.dumps(dict(zip(("method", "host", "path", "authenticated", "raw"), row))))
 ' > "$EVIDENCE_DIR/mcp-interactions.jsonl" 2>/dev/null || true
-  if [[ $mode == own-agent ]]; then
+  if [[ $mode == own-agent || $mode == existing-agent ]]; then
     # The user's own container: not the stack's, so `make clean` leaves it,
     # and it holds the RailMon image the reset removes.
     docker logs my-agent > "$EVIDENCE_DIR/my-agent.log" 2>&1 || true
@@ -178,6 +190,9 @@ for row in db.execute("SELECT method, host, path, authenticated, raw FROM intera
   { make clean && [[ -z "$(project_volumes)" ]] \
       && [[ -z "$(docker image ls -q "$railmon_image")$(docker image ls -q "$raildash_image")" ]]; } \
     > "$EVIDENCE_DIR/cleanup.log" 2>&1 || { [[ $result != 0 ]] || result=1; }
+  # What install.sh wrote into this checkout (none was there before), kept
+  # for the reset above.
+  [[ $mode != existing-agent ]] || rm -f .env docker-compose.override.yml
   exit "$result"
 }
 sandbox_containers() {
@@ -256,37 +271,9 @@ if [[ $mode == openshell ]]; then
   echo "sandbox container: $agent" | tee "$EVIDENCE_DIR/sandbox-container.txt"
   export AGENT_CONTAINER=openshell:$sandbox
 fi
-# With one image named, the other component is still built from its default
-# branch, as --build would; `up` then pulls the named one.
-if [[ ${#build[@]} == 0 && -z $pull_railmon ]]; then
-  "${compose[@]}" build railmon-collect 2>&1 | tee -a "$EVIDENCE_DIR/build.log"
-elif [[ ${#build[@]} == 0 && -z $pull_raildash ]]; then
-  "${compose[@]}" build raildash 2>&1 | tee -a "$EVIDENCE_DIR/build.log"
-fi
-"${compose[@]}" "${up[@]}" 2>&1 | tee "$EVIDENCE_DIR/up.log"
-# A published image was pulled, not built under its name (Compose builds
-# when a pull fails): the local image carries the registry's own digest for
-# the tag. On the containerd store a local build has a digest too, just not
-# that one. Every service of the component runs it.
-for pair in "railmon $pull_railmon" "raildash $pull_raildash"; do
-  read -r component image <<<"$pair"
-  [[ -n ${image:-} ]] || continue
-  remote=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$image")
-  docker image inspect --format '{{join .RepoDigests "\n"}}' "$image" | grep -qxF "${image%:*}@$remote" \
-    || { echo "$image was built here, not pulled ($remote)" >&2; exit 1; }
-  echo "$component ${image%:*}@$remote" | tee -a "$EVIDENCE_DIR/component-images.txt"
-  for id in $("${compose[@]}" ps -q); do
-    service=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.service"}}' "$id")
-    [[ $service == "$component"* || ($component == railmon && $service == demo-agent) ]] || continue
-    [[ $(docker inspect --format '{{.Config.Image}}' "$id") == "$image" ]] \
-      || { echo "$service does not run $image" >&2; exit 1; }
-  done
-done
-
-if [[ $mode == own-agent ]]; then
-  [[ -z "$(docker ps -aq --filter "name=^datrail-demo-agent$")" ]] \
-    || { echo "--scale demo-agent=0 still started the demo agent" >&2; exit 1; }
-  # The user's agent, started after the stack as INSTALL.md says: here the
+start_my_agent() {
+  # The user's agent: started after the stack as INSTALL.md says, or before
+  # it for existing-agent, as install.sh expects. Here the
   # RailMon image's Python and demo scripts under a process name of its own,
   # serving HTTPS on 8443 the moment it starts and calling itself. Not a
   # Compose service, so RailDash knows it by the scanner's agent key. Compose
@@ -307,7 +294,55 @@ if [[ $mode == own-agent ]]; then
     my-agent-bin "$demo/demo_server.py" "$certs/cert.pem" "$certs/key.pem" &
     while sleep "$DEMO_INTERVAL"; do my-agent-bin "$demo/demo_client.py" || true; done
   ' > /dev/null
+}
+if [[ $mode == existing-agent ]]; then
+  # The agent needs RailMon's image before the stack starts: pulled when
+  # named, else built as `up --build` would.
+  if [[ -n $pull_railmon ]]; then
+    docker pull "$railmon_image" 2>&1 | tee -a "$EVIDENCE_DIR/build.log"
+  else
+    "${compose[@]}" build railmon-collect 2>&1 | tee -a "$EVIDENCE_DIR/build.log"
+  fi
+  [[ -n $pull_raildash ]] || "${compose[@]}" build raildash 2>&1 | tee -a "$EVIDENCE_DIR/build.log"
+  start_my_agent
 fi
+# With one image named, the other component is still built from its default
+# branch, as --build would; `up` then pulls the named one.
+if [[ $mode == existing-agent ]]; then
+  bash install.sh --dir "$PWD" --compose-file docker-compose.yml --agent my-agent --yes \
+    2>&1 | tee "$EVIDENCE_DIR/up.log"
+  grep -qxF AGENT_CONTAINER=my-agent .env && grep -qF 'profiles: [demo]' docker-compose.override.yml \
+    || { echo "install.sh didn't write the settings" >&2; exit 1; }
+elif [[ ${#build[@]} == 0 && -z $pull_railmon ]]; then
+  "${compose[@]}" build railmon-collect 2>&1 | tee -a "$EVIDENCE_DIR/build.log"
+elif [[ ${#build[@]} == 0 && -z $pull_raildash ]]; then
+  "${compose[@]}" build raildash 2>&1 | tee -a "$EVIDENCE_DIR/build.log"
+fi
+[[ $mode == existing-agent ]] || "${compose[@]}" "${up[@]}" 2>&1 | tee "$EVIDENCE_DIR/up.log"
+# A published image was pulled, not built under its name (Compose builds
+# when a pull fails): the local image carries the registry's own digest for
+# the tag. On the containerd store a local build has a digest too, just not
+# that one. Every service of the component runs it.
+for pair in "railmon $pull_railmon" "raildash $pull_raildash"; do
+  read -r component image <<<"$pair"
+  [[ -n ${image:-} ]] || continue
+  remote=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$image")
+  docker image inspect --format '{{join .RepoDigests "\n"}}' "$image" | grep -qxF "${image%:*}@$remote" \
+    || { echo "$image was built here, not pulled ($remote)" >&2; exit 1; }
+  echo "$component ${image%:*}@$remote" | tee -a "$EVIDENCE_DIR/component-images.txt"
+  for id in $("${compose[@]}" ps -q); do
+    service=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.service"}}' "$id")
+    [[ $service == "$component"* || ($component == railmon && $service == demo-agent) ]] || continue
+    [[ $(docker inspect --format '{{.Config.Image}}' "$id") == "$image" ]] \
+      || { echo "$service does not run $image" >&2; exit 1; }
+  done
+done
+
+if [[ $mode == own-agent || $mode == existing-agent ]]; then
+  [[ -z "$(docker ps -aq --filter "name=^datrail-demo-agent$")" ]] \
+    || { echo "the stack still started the demo agent" >&2; exit 1; }
+fi
+[[ $mode != own-agent ]] || start_my_agent
 
 token=""
 for _ in $(seq 120); do
@@ -362,7 +397,7 @@ while True:
     time.sleep(5)
 PY
 
-if [[ $mode == own-agent ]]; then
+if [[ $mode == own-agent || $mode == existing-agent ]]; then
   # INSTALL says the collector follows the agent's container: after a
   # restart, with a new PID nobody looked up, the calls must keep arriving
   # (DR-187).
