@@ -182,8 +182,26 @@ then registration fails on every scan and is logged.
 
 ## Watch your own agent
 
-Run your agent in a container, then point the stack at it and leave the demo
-agent out:
+For an agent you already run, [`install.sh`](install.sh) does all of this
+section in one command: it checks that Docker can run the stack, lists the
+running containers to pick your agent from, downloads `docker-compose.yml`
+into `~/datrail`, writes your choice into a `.env` file there, starts the
+stack and waits until RailDash answers:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/datrail/datrail-project/master/install.sh | bash
+```
+
+With `--agent <container> --yes` (or `--demo --yes`) it asks nothing, so a
+script or an AI agent can run it; `--help` lists the rest. To have your AI
+agent do the install, give it [docs/agent-install.md](docs/agent-install.md).
+Your agent keeps running: nothing needs a restart. The demo agent is left
+out through a `docker-compose.override.yml` it writes beside the file, so a
+later `docker compose up -d` there leaves it out too. Running it again with
+another agent, or `--demo`, changes both in place and keeps RailDash's data.
+
+By hand, run your agent in a container, then point the stack at it and
+leave the demo agent out:
 
 ```bash
 AGENT_CONTAINER=my-agent docker compose up -d --scale demo-agent=0

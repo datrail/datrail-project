@@ -49,6 +49,18 @@ published tag. The clone is optional: `docker-compose.yml` alone is the
 whole install, and it can build from source instead
 ([INSTALL.md](INSTALL.md#images)). Then open **<http://127.0.0.1:8000>**.
 
+Already running an agent in a container? One command installs DatRail and
+points it at your agent, asking which one:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/datrail/datrail-project/master/install.sh | bash
+```
+
+Or tell your AI agent: *"Read
+https://raw.githubusercontent.com/datrail/datrail-project/master/docs/agent-install.md
+and install DatRail for me."* ([INSTALL.md](INSTALL.md#watch-your-own-agent)
+says what it does.)
+
 ### What you see in RailDash
 
 The stack comes with a small demo agent that serves HTTPS on port 8443 and
@@ -185,6 +197,8 @@ are deployed separately; their READMEs explain how.
 - [docs/setup-windows.md](docs/setup-windows.md) and
   [docs/setup-mac.md](docs/setup-mac.md): a first install on Windows (WSL2)
   or on a Mac, step by step, from installing Docker to seeing drift.
+- [docs/agent-install.md](docs/agent-install.md): the install written for
+  an AI agent to follow on a person's behalf, with `install.sh`.
 - [docs/glossary.md](docs/glossary.md): evidence bundle, ASP, baseline,
   alignment, drift, Data Guardrail, profile.
 - [docs/demo/](docs/demo/): draft demo runbook, video scripts and a throwaway

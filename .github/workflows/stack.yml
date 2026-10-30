@@ -125,6 +125,48 @@ jobs:
           path: ${{ runner.temp }}/stack
           if-no-files-found: error
 
+  # install.sh against an agent that is already running, as a user with an
+  # agent of their own runs it: the pinned published images, the agent
+  # started first, the stack brought up by `install.sh --agent my-agent
+  # --yes`, then the own-agent job's checks.
+  existing-agent:
+    if: inputs.railmon_image == '' && inputs.raildash_image == ''
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    env:
+      COMPOSE_PROJECT_NAME: datrail-ci-existing-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install with install.sh against a running agent
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/stack
+          STACK_IMAGES: pinned
+          STACK_MODE: existing-agent
+        run: bash tests/stack-acceptance.sh
+      - name: Preserve service logs and results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: existing-agent-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/stack
+          if-no-files-found: error
+
+  # install.sh's questions and choices with a stand-in docker, and
+  # shellcheck over it: seconds, no stack.
+  install-script:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: shellcheck
+        run: shellcheck install.sh tests/install-sh-test.sh
+      - name: install.sh's choices
+        run: bash tests/install-sh-test.sh
+
   # The components' own acceptance against the same pinned images, nothing
   # built (DR-233, DR-235): RailDash's ASP v1 oracle inside its image (replay,
   # drift, switch away and back, rule-pack mismatch), then RailMon's two-agent
