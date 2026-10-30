@@ -30,6 +30,29 @@ normal and is shown anything new. Nothing leaves the computer.
   and doesn't change what you do. But see step 2 for where you run.
 - Report each step's result in plain words, not command output.
 
+## On Windows: run every command in WSL
+
+DatRail runs in WSL2 (the Linux inside Windows) with Docker Desktop. If your
+shell is PowerShell or cmd, run each command on this page through WSL, as it
+is written here, inside double quotes:
+
+```powershell
+wsl -e bash -lc "curl -fsSL https://raw.githubusercontent.com/datrail/datrail-project/master/install.sh | bash -s -- --check"
+```
+
+`-e` hands the command to bash unchanged; none of the commands here contain a
+`$` or a double quote, so PowerShell passes them as they are. If your shell
+is already bash inside WSL, run them directly.
+
+- `wsl` isn't found, or says there is no installed distribution: WSL2 isn't
+  set up. That needs administrator rights and a restart, so it is the
+  person's step: stop and point them to steps 1 and 2 of
+  https://github.com/datrail/datrail-project/blob/master/docs/setup-windows.md,
+  then offer to continue.
+- `~/datrail` below is in WSL's home directory, not the Windows one. The
+  dashboard still opens in the person's Windows browser at
+  `http://127.0.0.1:8000`.
+
 ## Step 1: Check the computer
 
 ```bash
@@ -41,6 +64,11 @@ curl -fsSL https://raw.githubusercontent.com/datrail/datrail-project/master/inst
   Windows that is Docker Desktop (https://www.docker.com/products/docker-desktop/);
   on Linux, Docker Engine. Installing it needs them, so stop here and offer to
   continue once it's installed.
+  On Windows with Docker Desktop already installed, the message means
+  Docker Desktop isn't running (WSL loses the `docker` command while it is
+  closed) or its WSL integration is off for this distro: ask the person to
+  start it, or turn the integration on (Docker Desktop, Settings, Resources,
+  WSL integration), then run the check again.
 - `not running`: ask them to start Docker Desktop, wait until it says it's
   running, then run the check again.
 - Anything else: tell them the message as it is, and point them to
