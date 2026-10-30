@@ -50,14 +50,18 @@ your shell is already bash inside WSL, run them directly.
 - `wsl` isn't found, says there is no installed distribution, or fails with
   `execvpe(bash) failed: No such file or directory`: WSL has no usable
   Ubuntu. The last one means `wsl` landed in Docker Desktop's own Linux,
-  which has no bash. First run `wsl -l -v` in the Windows shell: if it lists
-  an Ubuntu with VERSION `2`, ask the person whether to make it WSL's
-  default, then run `wsl --set-default <its name, without the *>` (no
-  restart needed) and run the check again. Otherwise installing Ubuntu
-  needs administrator rights and a restart, so it is the person's step:
-  stop and point them to steps 1 and 2 of
-  https://github.com/datrail/datrail-project/blob/master/docs/setup-windows.md,
-  then offer to continue.
+  which has no bash. First run `wsl -l -v` in the Windows shell:
+  - An Ubuntu with VERSION `2`: ask the person whether to make it WSL's
+    default. If they agree, run `wsl --set-default <its name, without the *>`
+    (no restart needed) and run the check again; if not, stop.
+  - An Ubuntu with VERSION `1`: Docker Desktop can't use it. Converting it is
+    the person's step, `wsl --set-version <its name> 2` in PowerShell, which
+    can need administrator rights; then make it the default as above.
+  - No Ubuntu, or `wsl` itself is missing: installing it needs administrator
+    rights and a restart, so it is the person's step. Stop and point them to
+    steps 1 and 2 of
+    https://github.com/datrail/datrail-project/blob/master/docs/setup-windows.md,
+    then offer to continue.
 - `~/datrail` below is in WSL's home directory, not the Windows one. The
   dashboard still opens in the person's Windows browser at
   `http://127.0.0.1:8000`.
