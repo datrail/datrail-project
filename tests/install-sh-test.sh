@@ -15,7 +15,8 @@ mkdir -p "$work/bin"
 cat > "$work/bin/docker" <<'EOF'
 #!/usr/bin/env bash
 # The stand-in: FAKE_PS is `docker ps --format`'s output, FAKE_RUNNING the
-# running containers' names, FAKE_EXISTING the stopped ones'.
+# running containers' names, FAKE_EXISTING the stopped ones', FAKE_STACKS
+# the running RailDash containers' "project|directory".
 echo "docker $*" >> "$FAKE_LOG"
 last=${!#}
 case "$*" in
@@ -26,8 +27,9 @@ case "$*" in
   run\ --rm\ --privileged\ alpine*) exit 0 ;;
   "compose config") echo "name: $(basename "$PWD")" ;;
   ps\ --format*) printf '%s' "${FAKE_PS:-}" ;;
+  ps\ --filter\ label=com.docker.compose.service=raildash*) printf '%s' "${FAKE_STACKS:-}" ;;
   ps\ -q\ --filter\ label=openshell.ai/sandbox-name=*) [[ " ${FAKE_RUNNING:-} " == *" openshell:${4#label=openshell.ai/sandbox-name=} "* ]] && echo abc ;;
-  "inspect --format {{.State.Running}} "*)
+  "inspect --type container --format {{.State.Running}} "*)
     if [[ " ${FAKE_RUNNING:-} " == *" $last "* ]]; then echo true
     elif [[ " ${FAKE_EXISTING:-} " == *" $last "* ]]; then echo false
     else exit 1; fi ;;
@@ -129,6 +131,40 @@ if run "$d" --yes --agent not-yet < /dev/null && grep -q 'No container named not
   && ! grep -q 'No need to restart' "$work/out"; then
   ok "an agent not started yet"
 else bad "an agent not started yet"; fi
+
+# 6. Another copy of the stack running elsewhere; this one's own is fine.
+export FAKE_STACKS="datrail-project|/home/u/datrail-project
+"
+if run "$d" --yes --demo < /dev/null; then bad "another copy of the stack"
+elif grep -q 'already running from /home/u/datrail-project' "$work/out"; then ok "another copy of the stack"
+else bad "another copy of the stack"; fi
+export FAKE_STACKS="three|$d
+"
+if run "$d" --yes --demo < /dev/null; then ok "this copy of the stack, running"; else bad "this copy of the stack, running"; fi
+unset FAKE_STACKS
+
+# 7. An AGENT_KEY in .env for the same agent stays; a new agent gets its own.
+d=$work/five
+export FAKE_RUNNING="Big_Agent other"
+if run "$d" --yes --agent Big_Agent < /dev/null && has "$d/.env" AGENT_KEY=big_agent \
+  && sed -i.bak 's/^AGENT_KEY=.*/AGENT_KEY=my-own-key/' "$d/.env" \
+  && run "$d" --yes --agent Big_Agent < /dev/null && has "$d/.env" AGENT_KEY=my-own-key \
+  && run "$d" --yes --agent other < /dev/null && ! grep -q '^AGENT_KEY=' "$d/.env"; then
+  ok "AGENT_KEY kept for the same agent only"
+else bad "AGENT_KEY kept for the same agent only"; fi
+
+# 8. Names and numbers that can't be one.
+if run "$d" --yes --agent 'a
+RAILMON_IMAGE=evil' < /dev/null; [[ $? == 2 ]]; then ok "--agent with a newline"; else bad "--agent with a newline"; fi
+if run "$d" --yes --demo --port 70000 < /dev/null; [[ $? == 2 ]]; then ok "--port 70000"; else bad "--port 70000"; fi
+
+# 9. `curl | bash` with no terminal and no --yes: refused at once, not by
+# reading the rest of the script as answers.
+: > "$FAKE_LOG"
+if setsid -w bash -s -- --dir "$d" < "$here/install.sh" > "$work/out" 2>&1; [[ $? == 2 ]] \
+  && grep -q "no terminal to ask in" "$work/out" && [[ $(wc -l < "$work/out") -le 2 ]]; then
+  ok "piped, no terminal, no --yes"
+else bad "piped, no terminal, no --yes"; fi
 
 [[ $fails == 0 ]] || { echo "$fails case(s) failed"; exit 1; }
 echo "all cases passed"

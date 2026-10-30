@@ -127,6 +127,9 @@ docker run --rm alpine test -r /sys/kernel/btf/vmlinux \
   || { echo "a container named datrail-demo-agent exists: stop your stack first (docker compose down)" >&2; exit 1; }
 [[ -z "$(docker ps -aq --filter "name=^my-agent$")" ]] \
   || { echo "a container named my-agent exists: remove it first (docker rm -f my-agent)" >&2; exit 1; }
+# install.sh writes these into this checkout, and the cleanup removes them.
+[[ $mode != existing-agent || ! ( -e .env || -e docker-compose.override.yml ) ]] \
+  || { echo "STACK_MODE=existing-agent writes .env and docker-compose.override.yml here: move yours aside first" >&2; exit 1; }
 project_volumes() {
   docker volume ls -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME"
 }
@@ -187,7 +190,8 @@ for row in db.execute("SELECT method, host, path, authenticated, raw FROM intera
   { make clean && [[ -z "$(project_volumes)" ]] \
       && [[ -z "$(docker image ls -q "$railmon_image")$(docker image ls -q "$raildash_image")" ]]; } \
     > "$EVIDENCE_DIR/cleanup.log" 2>&1 || { [[ $result != 0 ]] || result=1; }
-  # What install.sh wrote into this checkout, kept for the reset above.
+  # What install.sh wrote into this checkout (none was there before), kept
+  # for the reset above.
   [[ $mode != existing-agent ]] || rm -f .env docker-compose.override.yml
   exit "$result"
 }

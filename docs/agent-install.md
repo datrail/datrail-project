@@ -17,9 +17,10 @@ normal and is shown anything new. Nothing leaves the computer.
 
 ## Rules while you do this
 
-- **Ask the person before step 3.** DatRail runs three containers with full
-  privileges on this computer (its eBPF probes need them). Say so in one
-  sentence and wait for a yes.
+- **Ask the person before step 1.** DatRail runs containers with full
+  control of this computer: four of its containers are privileged or reach
+  Docker itself, because its eBPF probes and scanner need that, and step 1's
+  check already starts one. Say so in one sentence and wait for a yes.
 - **Never use `sudo`, and never change Docker's settings** without the person
   saying yes to that exact command.
 - **Don't stop, restart or change the person's agent.** DatRail doesn't need
@@ -66,8 +67,7 @@ docker ps --format '{{.Names}}  {{.Image}}  {{.Status}}'
 
 ## Step 3: Install
 
-After the person has said yes (see the rules above), with the agent's
-container name in place of `NAME`:
+With the agent's container name in place of `NAME`:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/datrail/datrail-project/master/install.sh | bash -s -- --agent NAME --yes

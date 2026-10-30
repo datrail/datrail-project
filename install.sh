@@ -45,7 +45,7 @@ EOF
 
 say() { printf '%s\n' "$*"; }
 step() { printf '\n==> %s\n' "$*"; }
-die() { printf 'install.sh: %s\n' "$*" >&2; exit "${2:-1}"; }
+die() { printf 'install.sh: %s\n' "$1" >&2; exit "${2:-1}"; }
 
 agent=""
 demo=0
@@ -79,15 +79,24 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$agent" ] && [ "$demo" = 1 ] && die "--agent and --demo exclude each other" 2
 if [ -n "$port" ]; then
-  case $port in '' | *[!0-9]*) die "--port takes a number: $port" 2 ;; esac
+  case $port in *[!0-9]*) die "--port takes a number from 1 to 65535: $port" 2 ;; esac
+  [ "$port" -ge 1 ] && [ "$port" -le 65535 ] || die "--port takes a number from 1 to 65535: $port" 2
 fi
+# A container or sandbox name is letters, digits and `_.-` (Docker's own
+# rule), so nothing else reaches .env, where Compose would read it.
+case $agent in
+  *[!A-Za-z0-9_.:-]*) die "--agent takes a container name, or openshell:<sandbox>: $agent" 2 ;;
+esac
 case $ref in '' | *[!A-Za-z0-9._/-]*) die "--ref takes a branch, tag or commit: $ref" 2 ;; esac
 
 # Answers come from the terminal, so `curl ... | bash` can still ask: there
-# stdin is the script itself. Without a terminal (CI, or an agent running
-# this), they come from stdin.
+# stdin is the script itself. Without a terminal they come from stdin
+# (`bash install.sh < answers`), except when stdin is this script: then
+# there is nobody to ask, and --yes is the way.
 if [ "$yes" = 0 ] && { exec 3< /dev/tty; } 2> /dev/null; then
   :
+elif [ "$yes" = 0 ] && [ "$check_only" = 0 ] && [ -z "${BASH_SOURCE[0]:-}" ]; then
+  die "there's no terminal to ask in; run it with --yes and --agent NAME or --demo (--help lists them)" 2
 else
   exec 3<&0
 fi
@@ -147,8 +156,14 @@ fi
 cd "$dir"
 # Compose names the project after the directory; the containers it labels
 # with that name are the stack's own, not an agent to watch.
-project=$(docker compose config 2> /dev/null | sed -n 's/^name: //p')
-[ -n "$project" ] || die "docker compose can't read $target"
+project=$( (docker compose config 2> /dev/null || true) | sed -n 's/^name: //p')
+[ -n "$project" ] || die "docker compose can't read $target, or a .env beside it; \`docker compose config\` in $dir says why."
+# Another copy of the stack (a clone's quick start, say) would hold RailDash's
+# port and the demo agent's name: one copy at a time.
+other=$(docker ps --filter label=com.docker.compose.service=raildash \
+  --format '{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.project.working_dir"}}' \
+  | grep -v "^$project|" | head -n 1 || true)
+[ -z "$other" ] || die "DatRail is already running from ${other#*|} (Compose project ${other%%|*}). Stop it there first (docker compose down keeps its data), or run install.sh --dir ${other#*|} to change that one."
 
 # ------------------------------------------------------------- which agent
 # Running containers that could be the agent: one line each,
@@ -172,7 +187,7 @@ running() { # running CHOICE: the container (or sandbox's container) is up
   case $1 in
     openshell:*)
       [ -n "$(docker ps -q --filter "label=openshell.ai/sandbox-name=${1#openshell:}" --filter label=openshell.ai/isolation-role=sandbox)" ] ;;
-    *) [ "$(docker inspect --format '{{.State.Running}}' "$1" 2> /dev/null)" = true ] ;;
+    *) [ "$(docker inspect --type container --format '{{.State.Running}}' "$1" 2> /dev/null)" = true ] ;;
   esac
 }
 
@@ -240,7 +255,7 @@ if [ -n "$agent" ]; then
       [ "$desktop" = 0 ] || die "an agent in an OpenShell sandbox needs native Linux; OpenShell doesn't run on Docker Desktop (INSTALL.md#an-agent-in-an-openshell-sandbox)."
       ;;
     *)
-      docker inspect "$agent" > /dev/null 2>&1 \
+      docker inspect --type container "$agent" > /dev/null 2>&1 \
         || say "No container named $agent exists yet. DatRail will wait for it and attach when it starts."
       ;;
   esac
@@ -249,7 +264,8 @@ fi
 
 # The name RailDash and Rail Center file the agent under: the container's
 # (or sandbox's) name when it is a valid agent key, else that name made into
-# one (lower case, other characters as '-', at most 64).
+# one (lower case, other characters as '-', at most 64; `default`, which
+# RailMon keeps for itself, prefixed).
 agent_key=""
 if [ -n "$agent" ]; then
   base=${agent#openshell:}
@@ -295,13 +311,21 @@ services:
   demo-agent:
     profiles: [demo]
 EOF
+  # An AGENT_KEY already there for the same agent stays, whoever set it:
+  # changing it would file the agent anew, away from its baseline.
+  previous=""
+  [ ! -f .env ] || previous=$(sed -n 's/^AGENT_CONTAINER=//p' .env | tail -n 1)
+  if [ "$previous" != "$agent" ] || ! grep -q '^AGENT_KEY=' .env 2> /dev/null; then
+    if [ -n "$agent_key" ]; then set_env AGENT_KEY "$agent_key"; else set_env AGENT_KEY; fi
+  else
+    agent_key=$(sed -n 's/^AGENT_KEY=//p' .env | tail -n 1)
+  fi
   set_env AGENT_CONTAINER "$agent"
-  if [ -n "$agent_key" ]; then set_env AGENT_KEY "$agent_key"; else set_env AGENT_KEY; fi
   if [ "$openshell_collector" = 1 ]; then set_env COMPOSE_PROFILES openshell; else set_env COMPOSE_PROFILES; fi
   say "Watching $agent${agent_key:+, filed as $agent_key}."
 fi
 [ -z "$port" ] || set_env RAILDASH_PORT "$port"
-port=$(sed -n 's/^RAILDASH_PORT=//p' .env 2> /dev/null | tail -n 1)
+port=$(sed -n 's/^RAILDASH_PORT=//p' .env | tail -n 1)
 port=${port:-8000}
 
 # ---------------------------------------------------------------- start it
@@ -312,7 +336,8 @@ step "Starting DatRail (the first run downloads two images, about 540 MB)"
 if [ "$openshell_collector" = 0 ]; then
   COMPOSE_PROFILES=openshell docker compose rm -sf openshell-collector > /dev/null 2>&1 || true
 fi
-docker compose up -d --remove-orphans
+docker compose up -d --remove-orphans \
+  || die "the stack didn't start; \`docker compose logs\` in $dir says why."
 say "Waiting for RailDash..."
 health=""
 waited=0
