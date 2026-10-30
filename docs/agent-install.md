@@ -32,17 +32,20 @@ normal and is shown anything new. Nothing leaves the computer.
 
 ## On Windows: run every command in WSL
 
-DatRail runs in WSL2 (the Linux inside Windows) with Docker Desktop. If your
-shell is PowerShell or cmd, run each command on this page through WSL, as it
-is written here, inside double quotes:
+DatRail runs in WSL2 (the Linux inside Windows) with Docker Desktop. Unless
+your shell is bash inside WSL, run each command on this page through WSL, as
+it is written here, inside double quotes. That includes PowerShell, cmd, and
+Git Bash or another MSYS shell: there `docker` is Windows' own, which can't
+run DatRail's checks, and `~` is the Windows home.
 
 ```powershell
 wsl -e bash -lc "curl -fsSL https://raw.githubusercontent.com/datrail/datrail-project/master/install.sh | bash -s -- --check"
 ```
 
 `-e` hands the command to bash unchanged; none of the commands here contain a
-`$` or a double quote, so PowerShell passes them as they are. If your shell
-is already bash inside WSL, run them directly.
+`$` or a double quote, so the Windows shell passes them as they are. Each
+`wsl` call starts afresh, so a `cd` doesn't carry over to the next one. If
+your shell is already bash inside WSL, run them directly.
 
 - `wsl` isn't found, or says there is no installed distribution: WSL2 isn't
   set up. That needs administrator rights and a restart, so it is the
@@ -133,14 +136,12 @@ running, and starts again with Docker.
 
 ## Later
 
-All of these run in `~/datrail`:
-
 | The person asks | Run |
 | --- | --- |
-| Is it running? | `docker compose ps` |
+| Is it running? | `cd ~/datrail && docker compose ps` |
 | Watch another agent | the step 3 command with the other `NAME` |
-| Stop it (keep the data) | `docker compose down` |
-| Remove it and its data | `docker compose down -v` |
+| Stop it (keep the data) | `cd ~/datrail && docker compose down` |
+| Remove it and its data | `cd ~/datrail && docker compose down -v` |
 
 [INSTALL.md](../INSTALL.md) has every setting and what to do when something
 looks wrong.
