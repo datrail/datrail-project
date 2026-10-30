@@ -156,6 +156,9 @@ else bad "AGENT_KEY kept for the same agent only"; fi
 # 8. Names and numbers that can't be one.
 if run "$d" --yes --agent 'a
 RAILMON_IMAGE=evil' < /dev/null; [[ $? == 2 ]]; then ok "--agent with a newline"; else bad "--agent with a newline"; fi
+if printf 'c\nevil RAILMON_IMAGE=x\n' | run "$d"; [[ $? == 2 ]] && ! grep -q RAILMON_IMAGE "$d/.env"; then
+  ok "a typed name with a space"
+else bad "a typed name with a space"; fi
 if run "$d" --yes --demo --port 70000 < /dev/null; [[ $? == 2 ]]; then ok "--port 70000"; else bad "--port 70000"; fi
 
 # 9. `curl | bash` with no terminal and no --yes: refused at once, not by
@@ -165,6 +168,11 @@ if setsid -w bash -s -- --dir "$d" < "$here/install.sh" > "$work/out" 2>&1; [[ $
   && grep -q "no terminal to ask in" "$work/out" && [[ $(wc -l < "$work/out") -le 2 ]]; then
   ok "piped, no terminal, no --yes"
 else bad "piped, no terminal, no --yes"; fi
+
+# ... but with the agent named, nothing is asked, so no --yes is needed.
+if setsid -w bash -s -- --dir "$d" --demo < "$here/install.sh" > "$work/out" 2>&1; then
+  ok "piped, no terminal, --demo"
+else bad "piped, no terminal, --demo"; fi
 
 [[ $fails == 0 ]] || { echo "$fails case(s) failed"; exit 1; }
 echo "all cases passed"

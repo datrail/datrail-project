@@ -82,11 +82,6 @@ if [ -n "$port" ]; then
   case $port in *[!0-9]*) die "--port takes a number from 1 to 65535: $port" 2 ;; esac
   [ "$port" -ge 1 ] && [ "$port" -le 65535 ] || die "--port takes a number from 1 to 65535: $port" 2
 fi
-# A container or sandbox name is letters, digits and `_.-` (Docker's own
-# rule), so nothing else reaches .env, where Compose would read it.
-case $agent in
-  *[!A-Za-z0-9_.:-]*) die "--agent takes a container name, or openshell:<sandbox>: $agent" 2 ;;
-esac
 case $ref in '' | *[!A-Za-z0-9._/-]*) die "--ref takes a branch, tag or commit: $ref" 2 ;; esac
 
 # Answers come from the terminal, so `curl ... | bash` can still ask: there
@@ -95,7 +90,8 @@ case $ref in '' | *[!A-Za-z0-9._/-]*) die "--ref takes a branch, tag or commit: 
 # there is nobody to ask, and --yes is the way.
 if [ "$yes" = 0 ] && { exec 3< /dev/tty; } 2> /dev/null; then
   :
-elif [ "$yes" = 0 ] && [ "$check_only" = 0 ] && [ -z "${BASH_SOURCE[0]:-}" ]; then
+elif [ "$yes" = 0 ] && [ "$check_only" = 0 ] && [ "$demo" = 0 ] && [ -z "$agent" ] \
+  && [ -z "${BASH_SOURCE[0]:-}" ]; then
   die "there's no terminal to ask in; run it with --yes and --agent NAME or --demo (--help lists them)" 2
 else
   exec 3<&0
@@ -163,7 +159,7 @@ project=$( (docker compose config 2> /dev/null || true) | sed -n 's/^name: //p')
 other=$(docker ps --filter label=com.docker.compose.service=raildash \
   --format '{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.project.working_dir"}}' \
   | grep -v "^$project|" | head -n 1 || true)
-[ -z "$other" ] || die "DatRail is already running from ${other#*|} (Compose project ${other%%|*}). Stop it there first (docker compose down keeps its data), or run install.sh --dir ${other#*|} to change that one."
+[ -z "$other" ] || die "DatRail is already running from ${other#*|} (Compose project ${other%%|*}). Stop it there first (docker compose down keeps its data), then run this again."
 
 # ------------------------------------------------------------- which agent
 # Running containers that could be the agent: one line each,
@@ -243,6 +239,12 @@ EOF
   done
 fi
 
+# A container or sandbox name is letters, digits and `_.-` (Docker's own
+# rule), whether given or typed, so nothing else reaches .env, where Compose
+# would read it.
+case $agent in
+  *[!A-Za-z0-9_.:-]*) die "an agent is a container name, or openshell:<sandbox>: $agent" 2 ;;
+esac
 if [ -n "$agent" ]; then
   case $agent in
     openshell:) die "openshell: needs the sandbox's name: openshell:<sandbox>" 2 ;;
