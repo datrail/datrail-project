@@ -46,7 +46,7 @@ x-railmon: &railmon
 
 services:
   raildash:
-    image: ${RAILDASH_IMAGE:-ghcr.io/datrail/raildash:0.2.0-rc.14}
+    image: ${RAILDASH_IMAGE:-ghcr.io/datrail/raildash:0.2.0-rc.15}
     build:
       context: ${RAILDASH_SRC:-https://github.com/datrail/raildash.git}
     restart: unless-stopped
@@ -65,6 +65,9 @@ services:
       # file survives restarts. Set RAILDASH_TOKEN only to choose the token
       # yourself (see INSTALL.md).
       RAILDASH_TOKEN: ${RAILDASH_TOKEN:-}
+      # `off` makes the Data Guardrail read every request body as an upload
+      # again (see INSTALL.md, Settings).
+      RAILDASH_BODY_KINDS: ${RAILDASH_BODY_KINDS:-}
     healthcheck:
       # The image has no curl, so the check uses Python's standard library.
       test:
