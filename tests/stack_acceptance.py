@@ -134,8 +134,12 @@ def wait_for(what: str, check: Callable[[], Any], timeout: float, every: float =
 EXFIL_HOST = "exfil.example"
 SECOND_HOST = "second.example"
 # Run in the agent with `python3 -c AGENT_REQUEST <method> <host>`: one HTTPS
-# request to the agent's own server on 8443 with that Host header, a JSON
-# body for POST and none for GET. The collector doesn't capture this client
+# request to the agent's own server on 8443 with that Host header; for POST,
+# the `report.zip` step 6b saves, sent as `application/zip`, and for GET no
+# body. A file media type is a real upload (RailDash's body-kind step 1, REST
+# uploads design in railxia/docs `design/2026-10-30-rest-uploads`), not a few
+# parameters, so the POST is an `uploads` row whether or not RailDash reads
+# body kinds. The collector doesn't capture this client
 # (a `docker exec` is outside the agent container's process tree); it
 # captures the agent's own server reading the request, Host header and body
 # included. The demo server answers a GET to /upload with 404, which is
@@ -145,10 +149,10 @@ AGENT_REQUEST = """
 import http.client, ssl, sys
 method, host = sys.argv[1], sys.argv[2]
 conn = http.client.HTTPSConnection("127.0.0.1", 8443, context=ssl._create_unverified_context(), timeout=10)
-body = b'{"report": "quarterly numbers"}' if method == "POST" else None
+body = b"report\\n" if method == "POST" else None
 headers = {"Host": host}
 if body:
-    headers["Content-Type"] = "application/json"
+    headers["Content-Type"] = "application/zip"
 conn.request(method, "/upload", body=body, headers=headers)
 print(method, host, conn.getresponse().status)
 """
@@ -528,7 +532,7 @@ def main() -> int:
         [*agent, "python3", "-c", AGENT_REQUEST, method, host], check=True)
     send("POST", EXFIL_HOST)
     exfil = saved | {("uploads", EXFIL_HOST), ("out_of_spec_calls", EXFIL_HOST)}
-    guard.wait_for_rows("(c) a POST with a body to an unlisted host is an uploads and an "
+    guard.wait_for_rows("(c) a file POSTed to an unlisted host is an uploads and an "
                         "out_of_spec_calls violation", exfil, exact=True)
     guard.acknowledge("uploads", EXFIL_HOST)
     if guard.row("uploads", EXFIL_HOST)["counts"]:

