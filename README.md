@@ -123,7 +123,20 @@ hand:
 
   The agent turns **Violated**, with one row per rule and item:
   `/data/report.zip` under Saved files, and `exfil.example` under both
-  Uploads and Out-of-spec calls. Above the rows, Service ports and Data
+  Uploads and Out-of-spec calls. A POST that only passes a few parameters,
+  such as a search query, is a call, not an upload:
+
+  ```bash
+  docker exec datrail-demo-agent python3 -c '
+  import http.client, ssl
+  c = http.client.HTTPSConnection("127.0.0.1", 8443, context=ssl._create_unverified_context())
+  c.request("POST", "/search", body=b"{\"q\": \"invoices 2026\", \"limit\": 20}",
+            headers={"Host": "search.example", "Content-Type": "application/json"})
+  print(c.getresponse().status)'
+  ```
+
+  `search.example` shows under Out-of-spec calls only. Each Uploads row lists
+  what each body was (a file, a large or unreadable body) and why. Above the rows, Service ports and Data
   actions read held, and Saved files, Uploads and Out-of-spec calls read
   violated. **Acknowledge** a row to clear it until the same thing happens
   again; **Allow this** makes a new guardrail version that allows it. Edit,

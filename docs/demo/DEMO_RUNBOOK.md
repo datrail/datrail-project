@@ -1,6 +1,6 @@
 # datRail demo runbook: demo agent, your own agent, and an agent in an OpenShell sandbox
 
-Hands-on walk of the datrail-project stack. The install pins published images (on 2026-10-29: railmon `0.1.0-m15`, raildash `0.2.0-rc.14`, rule pack 14); the steps were last walked on a Mac on 2026-10-23 with `0.1.0-m7` and `0.2.0-rc.4`. Every step says what to run, what RailDash should show, and how long it takes. Everything here was run on a GCP x86_64 VM (Ubuntu 24.04) and, for the own-agent part, on an Apple Silicon Mac with Docker Desktop.
+Hands-on walk of the datrail-project stack. The install pins published images (on 2026-10-31: railmon `0.1.0-m15`, raildash `0.2.0-rc.15`, rule pack 14); the steps were last walked on a Mac on 2026-10-23 with `0.1.0-m7` and `0.2.0-rc.4`. Every step says what to run, what RailDash should show, and how long it takes. Everything here was run on a GCP x86_64 VM (Ubuntu 24.04) and, for the own-agent part, on an Apple Silicon Mac with Docker Desktop.
 
 Two windows: **T1** is a shell on the host (or an SSH session with `-L 8000:127.0.0.1:8000` if the host is remote), **T2** is a browser on http://127.0.0.1:8000 . If 8000 is taken, start the stack with `RAILDASH_PORT=18000` and use that.
 
@@ -100,6 +100,16 @@ print(c.getresponse().status)'
 ```
 
 Within a minute **VIOLATED**: Saved files `/data/report.zip`; Uploads and Out-of-spec calls one row each, `exfil.example`. Service ports and Data actions stay held.
+
+Optional: a POST of a search query's few parameters, to another host, is a call, not an upload. `search.example` appears under Out-of-spec calls only:
+
+```bash
+docker exec datrail-demo-agent python3 -c '
+import http.client, ssl
+c = http.client.HTTPSConnection("127.0.0.1", 8443, context=ssl._create_unverified_context())
+c.request("POST", "/search", body=b"{\"q\": \"invoices 2026\", \"limit\": 20}", headers={"Host": "search.example", "Content-Type": "application/json"})
+print(c.getresponse().status)'
+```
 
 Optional: show **Acknowledge** (clears the row until it recurs) and **Allow this** (a new version that permits it).
 
