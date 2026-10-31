@@ -149,7 +149,7 @@ AGENT_REQUEST = """
 import http.client, ssl, sys
 method, host = sys.argv[1], sys.argv[2]
 conn = http.client.HTTPSConnection("127.0.0.1", 8443, context=ssl._create_unverified_context(), timeout=10)
-body = b"report\n" if method == "POST" else None
+body = b"report\\n" if method == "POST" else None
 headers = {"Host": host}
 if body:
     headers["Content-Type"] = "application/zip"
