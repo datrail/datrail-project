@@ -556,12 +556,12 @@ def main() -> int:
     if guard.row("uploads", SECOND_HOST) is not None:
         sys.exit(f"FAIL: a GET without a body to {SECOND_HOST} was judged an upload")
     print("ok:   ... and not an upload")
-    # (f) REST uploads M4: a POST whose body is a search query's few
+    # (e2) REST uploads M4: a POST whose body is a search query's few
     # parameters is a call, not an upload (RailDash's body kinds, on by
     # default; railxia/docs `design/2026-10-30-rest-uploads`).
     send("POST", SEARCH_HOST, "json")
     final = final | {("out_of_spec_calls", SEARCH_HOST)}
-    guard.wait_for_rows("(f) a JSON POST of a few parameters to a third unlisted host is "
+    guard.wait_for_rows("(e2) a JSON POST of a few parameters to a third unlisted host is "
                         "an out_of_spec_calls violation", final, exact=True)
     if guard.row("uploads", SEARCH_HOST) is not None:
         sys.exit(f"FAIL: a parameters POST to {SEARCH_HOST} was judged an upload")

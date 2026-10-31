@@ -572,15 +572,16 @@ and a script that reaches a tool through a name it doesn't spell keeps the
 rules Unverified for a while. If the server belongs there, use **Allow this**
 on its row.
 
-**An Uploads row goes away, or a Narrow uploads offer appears, after upgrading to RailDash `0.2.0-rc.15`.**
+**A query POST no longer makes an Uploads row, or a Narrow uploads offer appears, after upgrading to RailDash `0.2.0-rc.15`.**
 From that version on, the Data Guardrail reads what each request body was.
 A POST that only passes a few parameters (a search query, an ID, a filter)
 to a host that isn't an upload host is an out-of-spec call, not an upload,
 unless the agent sends more than a day's budget of them (256 KiB a day to
-each host, or each wildcard entry the guardrail allows calls to, and 1 MiB
-for the agent; an edit can raise them). A file, a large body, or one RailDash
+each host, or each wildcard entry the guardrail allows calls to, or 1 MiB
+for the agent, whichever is passed first; an edit can raise them). A file, a large body, or one RailDash
 can't read still counts. Versions you already have keep their upload hosts,
-so nothing that was Held turns Violated. The panel offers **Narrow uploads**
+so nothing that was Held turns Violated, and rows recorded before the
+upgrade stay until you acknowledge them. The panel offers **Narrow uploads**
 for an upload host the last day only sent parameters to, and an Uploads row
 lists each body with its reasons; **This is parameters** answers one RailDash
 couldn't decide. `RAILDASH_BODY_KINDS=off` goes back to reading every body as
