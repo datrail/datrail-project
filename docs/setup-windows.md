@@ -10,6 +10,8 @@ It runs inside WSL2, the Linux that Windows can run alongside itself, using Dock
 
 **Not on Windows:** an agent in an OpenShell sandbox needs native Linux ([INSTALL.md](../INSTALL.md#an-agent-in-an-openshell-sandbox)).
 
+**Already running your own agent in a container?** One command installs DatRail for it: see [Watch an agent you already run](#watch-an-agent-you-already-run).
+
 ## Before you start
 
 - Windows 11 (Windows 10 21H2 or later also works for WSL2)
@@ -137,6 +139,42 @@ That is a working install.
    Within a minute RailDash shows **DRIFT DETECTED**, and `observed_listeners` has gained port 9000.
 
 The rest of the walk (the Data Guardrail, then breaking it) is in the README, [What you see in RailDash](../README.md#what-you-see-in-raildash).
+
+## Watch an agent you already run
+
+Steps 4 to 7 run DatRail with its demo agent. If you already run your own agent in a Docker container, one command installs DatRail and points it at that agent instead. Do Steps 1 to 3 first, then, in Ubuntu:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/datrail/datrail-project/master/install.sh | bash
+```
+
+It checks the PC again, then lists the containers running now:
+
+```text
+==> Which agent should DatRail watch?
+Containers running now:
+   1) my-agent   (python:3.12-slim, Up 10 minutes)
+   d) the demo agent, to try DatRail first
+   ...
+   n) my agent doesn't run in a container
+Your choice:
+```
+
+Type your agent's number and press Enter. It puts DatRail's files in `~/datrail` (you don't need the clone from Step 4), starts it, and ends with `DatRail is running`. The first time, it downloads the images, about 540 MB. Your agent keeps running: nothing needs a restart.
+
+Then open http://127.0.0.1:8000 in your Windows browser. As your agent works:
+
+- **Interactions** lists the services it calls, within a minute or two.
+- Its **Agent Security Profile** appears within a few minutes (RailMon scans every minute). An idle agent shows little.
+- Once it has done its normal work for a while, lock that profile as the baseline, as in Step 7. Anything it does later that the baseline doesn't cover shows as **DRIFT DETECTED**.
+
+**Your agent has to run in a Docker container.** Docker Desktop can't see an agent running directly in Windows or in Ubuntu, so it won't be in the list. Pick `n` and the script explains. Run the agent in a container first, or pick `d` to try DatRail with the demo agent.
+
+**Or let your AI agent do the install.** Tell it: *"Read https://raw.githubusercontent.com/datrail/datrail-project/master/docs/agent-install.md and install DatRail for me."* That page has it ask you before anything that needs full control of the PC, and it never touches your agent.
+
+**Already started DatRail from Step 5?** Only one copy runs at a time. Stop that one first: in `~/datrail-project`, run `docker compose down`. If you forget, the script stops and tells you.
+
+**Later,** run these in `~/datrail` (`cd ~/datrail` first): `docker compose ps` to check it, `docker compose down` to stop it (its data is kept), or `docker compose down -v` to also delete the data. Run the install command again to watch another agent.
 
 ## Stop and start over
 
