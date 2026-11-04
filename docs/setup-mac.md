@@ -110,6 +110,8 @@ Note: with Docker Desktop, DatRail sees only agents running in Docker containers
 
 On an Intel Mac, `aarch64` reads `x86_64`. If you see a message starting with `install.sh:` instead, the check found a problem: see [If something goes wrong](#if-something-goes-wrong).
 
+When you run the install command again later, to switch agents or update DatRail, it may also print `Updating the docker-compose.yml already there (the old one is kept as docker-compose.yml.old).` That's expected: your data is kept.
+
 ### 4.2 It asks which agent to watch
 
 ```text
@@ -252,7 +254,7 @@ Removing it deletes DatRail's data and its downloads. It never touches your agen
 | `install.sh: DatRail is already running from ...` | Another copy of DatRail is running. In the folder the message names, run `docker compose down` (its data is kept), then run the install command again. |
 | `Your choice:` comes back with `Type one of the numbers or letters above.` | Type exactly one of the choices shown, such as `1` or `d`, and press **Return**. |
 | Your agent isn't in the list | It has to run in a Docker container, and the container has to be running now. Check Step 3. If it isn't started yet, pick `c` and type its name. |
-| Port 8000 is already in use | Another program uses that port. Install on another one: `curl -fsSL https://raw.githubusercontent.com/datrail/datrail-project/master/install.sh \| bash -s -- --port 18000`, then open http://127.0.0.1:18000 . |
+| `install.sh: the stack didn't start; ...` | Look at the lines just above it. If they mention port 8000 (`port is already allocated` or `address already in use`), another program uses that port: install on another one with `curl -fsSL https://raw.githubusercontent.com/datrail/datrail-project/master/install.sh \| bash -s -- --port 18000`, then open http://127.0.0.1:18000 . Otherwise, in `~/datrail`, run `docker compose logs` to see why, then run the install command again. |
 | The install takes several minutes | It's downloading DatRail, about 540 MB. A slow connection takes longer. Later starts take seconds. |
 | `install.sh: RailDash didn't become healthy in 3 minutes` | In `~/datrail`, run `docker compose logs raildash` to see why, then run the install command again. |
 | The browser says it can't reach 127.0.0.1:8000 | DatRail isn't running, or Docker Desktop is closed. Open Docker Desktop, then in `~/datrail` run `docker compose ps`. If you installed on another port, use that one. |
