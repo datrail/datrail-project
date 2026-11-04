@@ -104,6 +104,8 @@ First it prints:
 ==> Checking that this machine can run DatRail
 Docker aarch64, Docker Desktop: OK
 Note: with Docker Desktop, DatRail sees only agents running in Docker containers, not one running directly on this computer.
+
+==> Getting docker-compose.yml into /Users/yourname/datrail
 ```
 
 On an Intel Mac, `aarch64` reads `x86_64`. If you see a message starting with `install.sh:` instead, the check found a problem: see [If something goes wrong](#if-something-goes-wrong).
@@ -121,14 +123,14 @@ Containers running now:
 Your choice:
 ```
 
-Your list shows your own containers in place of `my-agent`. Type one choice and press **Return**:
+Your list shows your own containers in place of `my-agent`. If none are running, it says `No container is running now, apart from DatRail's own.` instead, followed by the same letters. Type one choice and press **Return**:
 
 | Type | To |
 | --- | --- |
 | A number, such as `1` | Watch that container, your agent. It keeps running: there's no need to restart it. |
 | `d` | Try DatRail with its demo agent: a small agent that comes with DatRail and calls itself every 30 seconds. This guide's later steps show what it does. |
 | `c` | Watch a container that isn't running yet. Type its name when asked. DatRail attaches to it when it starts. |
-| `n` | Stop here if your agent doesn't run in a container. The installer explains what to do and ends without installing anything. |
+| `n` | Stop here if your agent doesn't run in a container. The installer explains what to do and ends without starting DatRail. |
 | `o` | Not for a Mac: OpenShell sandboxes need a Linux computer. |
 
 You can watch one agent at a time. To switch later, run the install command again.

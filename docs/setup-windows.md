@@ -35,7 +35,7 @@ The [glossary](glossary.md) explains every term in more detail.
 
 You need:
 
-- **Windows 11, or Windows 10 version 21H2 or later.** To check: press **Windows key + R**, type `winver`, and press **Enter**.
+- **An up-to-date Windows 11 or Windows 10.** Docker Desktop's [system requirements](https://docs.docker.com/desktop/setup/install/windows-install/) list the versions it supports. To check yours: press **Windows key + R**, type `winver`, and press **Enter**.
 - **A PC with an Intel or AMD processor.** To check: open **Settings**, then **System**, then **About**, and look at **Processor**. PCs with an ARM processor (such as Snapdragon) haven't been tested.
 - **Virtualization turned on.** WSL needs it, and most PCs have it on already. To check: open **Task Manager** (Ctrl + Shift + Esc), click **Performance**, then **CPU**, and look for **Virtualization: Enabled**. If it says Disabled, see [If something goes wrong](#if-something-goes-wrong).
 - **Administrator rights on the PC**, for the installs.
@@ -143,6 +143,8 @@ First it prints:
 ==> Checking that this machine can run DatRail
 Docker x86_64, Docker Desktop: OK
 Note: with Docker Desktop, DatRail sees only agents running in Docker containers, not one running directly on this computer.
+
+==> Getting docker-compose.yml into /home/alex/datrail
 ```
 
 If you see a message starting with `install.sh:` instead, the check found a problem: see [If something goes wrong](#if-something-goes-wrong).
@@ -160,14 +162,14 @@ Containers running now:
 Your choice:
 ```
 
-Your list shows your own containers in place of `my-agent`. Type one choice and press **Enter**:
+Your list shows your own containers in place of `my-agent`. If none are running, it says `No container is running now, apart from DatRail's own.` instead, followed by the same letters. Type one choice and press **Enter**:
 
 | Type | To |
 | --- | --- |
 | A number, such as `1` | Watch that container, your agent. It keeps running: there's no need to restart it. |
 | `d` | Try DatRail with its demo agent: a small agent that comes with DatRail and calls itself every 30 seconds. This guide's later steps show what it does. |
 | `c` | Watch a container that isn't running yet. Type its name when asked. DatRail attaches to it when it starts. |
-| `n` | Stop here if your agent doesn't run in a container. The installer explains what to do and ends without installing anything. |
+| `n` | Stop here if your agent doesn't run in a container. The installer explains what to do and ends without starting DatRail. |
 | `o` | Not for Windows: OpenShell sandboxes need a Linux computer. |
 
 You can watch one agent at a time. To switch later, run the install command again.
@@ -285,6 +287,7 @@ Removing it deletes DatRail's data and its downloads. It never touches your agen
 | Task Manager shows **Virtualization: Disabled**, or `wsl --install` fails with error `0x80370102` | Virtualization is off in your PC's firmware (BIOS or UEFI). Turn it on there; its name depends on the maker, often **Intel VT-x**, **Intel Virtualization Technology** or **AMD-V / SVM Mode**. Your PC maker's support site shows how. |
 | `wsl -l -v` shows `1` next to Ubuntu | In PowerShell as administrator, run `wsl --set-version Ubuntu 2`, then check again. |
 | The command `docker` could not be found in this WSL 2 distro | Docker Desktop isn't running, or its WSL integration is off for Ubuntu (Step 2, step 6). Right after Docker Desktop starts, wait a few seconds and try again. |
+| `install.sh: Docker isn't installed` | On Windows this usually means Docker Desktop is closed, or its WSL integration is off for Ubuntu: closing Docker Desktop removes the `docker` command from Ubuntu. Open Docker Desktop, wait until it says **Engine running**, check its WSL integration (Step 2, step 6), then run the install command again. If Docker Desktop isn't installed yet, install it first (Step 2). |
 | `install.sh: Docker is installed but not running` | Open Docker Desktop, wait until it says **Engine running**, then run the install command again. |
 | `install.sh: Docker can't run a privileged container with BTF` | Update Docker Desktop to its latest version (whale icon in the taskbar, **Check for updates**), check the settings in Step 2, and run the install command again. [INSTALL.md, Prerequisites](../INSTALL.md#prerequisites) lists the setups that work. |
 | `install.sh: DatRail is already running from ...` | Another copy of DatRail is running. In the folder the message names, run `docker compose down` (its data is kept), then run the install command again. |
