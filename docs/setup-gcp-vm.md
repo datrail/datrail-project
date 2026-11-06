@@ -103,7 +103,7 @@ That is a working install.
    docker exec -d datrail-demo-agent python3 -m http.server 9000 --bind 127.0.0.1
    ```
 
-   Within a minute RailDash shows **DRIFT DETECTED**, and `observed_listeners` has gained port 9000.
+   Within a minute RailDash shows **DRIFT DETECTED**, and `observed_listeners` has gained port 9000. `observed_file_access` changes too, for the files Python opened to start the server.
 
 The rest of the walk (the Data Guardrail, then breaking it) is in the README, [What you see in RailDash](../README.md#what-you-see-in-raildash).
 
@@ -145,5 +145,6 @@ DatRail starts again by itself when the VM starts, and RailDash keeps its data. 
 | `ls: cannot access '/var/lib/datrail-vm/ready'` | Docker is still installing. Wait a minute. If it is still missing after 5 minutes, `sudo journalctl -u google-startup-scripts -n 50` shows why. |
 | Port 8000 is already in use on your computer | Connect with another port and install on the same one: `./gcp-vm.sh ssh --port 18000`, then on the VM add `--port 18000` to the install command and open http://127.0.0.1:18000 . |
 | The dashboard stopped answering | The SSH session from Step 3 ended. Connect again with `./gcp-vm.sh ssh`. |
+| A second `gcp-vm.sh ssh` window says `bind [127.0.0.1]:8000: Address already in use` | Harmless: the first window already carries the dashboard, and the second still gives you a shell on the VM. |
 
 More in [INSTALL.md, Troubleshooting](../INSTALL.md#troubleshooting).
