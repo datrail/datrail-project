@@ -36,7 +36,7 @@ chmod +x gcp-vm.sh
 ./gcp-vm.sh create --project YOUR-PROJECT
 ```
 
-It creates a VM named `datrail-<your user name>` in `us-east1-b` (`--name` and `--zone` change those), with Ubuntu 24.04 and no external IP, and it ends with:
+It creates a VM named after your Google account (for `ana@example.com`, `datrail-ana`) in `us-east1-b` (`--name` and `--zone` change those), with Ubuntu 24.04 and no external IP, and it ends with:
 
 ```text
 Created. Docker installs in the background over the next 2 minutes or so.
@@ -129,6 +129,8 @@ On your computer:
 ./gcp-vm.sh delete    # when you no longer need it; deletes the disk too
 ./gcp-vm.sh status    # whether it exists and is running
 ```
+
+`delete` asks you to type the VM's name first (`--yes` skips that). The VM carries an `owner` label with your Google account, and `delete` won't delete a VM someone else made.
 
 DatRail starts again by itself when the VM starts, and RailDash keeps its data. On the VM, `cd ~/datrail` and `docker compose down -v` stops it and deletes the data.
 
