@@ -40,6 +40,8 @@ RailDash listens on `127.0.0.1` only.
 | **Windows, WSL2 with Docker Desktop (Intel/AMD x86_64)** | Agents in containers | Containers run in Docker Desktop's own Linux VM, so the probes see only what runs inside that VM. The demo agent works; an agent running natively in your WSL distro is not visible, so run it in a container. An agent in an [OpenShell sandbox](#an-agent-in-an-openshell-sandbox) needs native Linux. |
 | **macOS, Intel or Apple Silicon, with Docker Desktop** | Agents in containers (run on Apple Silicon with Docker Desktop; on Intel in CI, with Colima) | Containers run in Docker Desktop's Linux VM (arm64 on Apple Silicon), so the probes see only what runs inside that VM: the demo agent and your own agent in a container, not an agent running natively on the Mac. The images are the ones CI runs on x86_64 and arm64 Linux, and CI's own-agent job uses Docker Desktop's containerd image store; Docker Desktop's VM kernel needs BTF (the check under Prerequisites). To check a Mac install, follow the [quick start](README.md#quick-start). `make test` asks Docker's engine, not the Mac, for the architecture and BTF, and runs under macOS's own bash and Python 3 with `jq` on `PATH`; CI's `macos-intel` job runs it weekly on an Intel Mac, with Colima's Linux VM as Docker's engine and macOS's own bash 3.2 and `/usr/bin/python3`; GitHub's Apple Silicon runners can't run a VM, so arm64 is proved on Linux arm64 and on a Mac by hand. With Homebrew's docker CLI (as with Colima), `make test` needs the `docker-buildx` plugin for its digest check; Docker Desktop ships it. An agent in an [OpenShell sandbox](#an-agent-in-an-openshell-sandbox) needs native Linux. |
 
+No Linux machine of your own? [docs/setup-gcp-vm.md](docs/setup-gcp-vm.md) creates a Linux VM in Google Cloud with [`gcp-vm.sh`](gcp-vm.sh) and installs DatRail on it, step by step.
+
 ## Run it
 
 ```bash
@@ -156,7 +158,9 @@ that checkout first), or run
 ### Sending bundles to Rail Center
 
 The stack is local by default. To also send each evidence bundle to a Rail
-Center, set `RAIL_CENTER_URL` to its base URL. `railmon-scan` then runs
+Center, set `RAIL_CENTER_URL` to its base URL. You need a Rail Center you
+have been given access to, and a token it issued for this stack; DatRail
+does not come with one. `railmon-scan` then runs
 `railmon scan --register`, which POSTs the same bundle it delivers to RailDash
 to Rail Center's `/v1/agents/register`, every `SCAN_INTERVAL` seconds. An
 unchanged bundle is re-sent as the same bytes, so Rail Center records a

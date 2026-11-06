@@ -5,7 +5,7 @@ Working material for the datRail 0.2 demo and the four short videos. Drafts: wha
 | File | What it is |
 | --- | --- |
 | [DEMO_RUNBOOK.md](DEMO_RUNBOOK.md) | The hands-on walk, step by step with what RailDash shows and how long each step takes: Part 0 where to run it, A the demo agent, B your own agent, C an agent in an OpenShell sandbox (what it blocked, and enforcing the guardrail with it), troubleshooting, measured timings. |
-| [GCP_VM_SETUP.md](GCP_VM_SETUP.md) | A throwaway Linux VM on GCP in five commands, for hosts that cannot run the probes natively (Macs) or OpenShell. |
+| [GCP_VM_SETUP.md](GCP_VM_SETUP.md) | A throwaway Linux VM on GCP in five commands, for hosts that cannot run the probes natively (Macs) or OpenShell. For a customer, [setup-gcp-vm.md](../setup-gcp-vm.md) is the tested guide, with `gcp-vm.sh` and `install.sh`. |
 | [CAPABILITIES_DEMO_TABLE.md](CAPABILITIES_DEMO_TABLE.md) | The 18 capabilities delivered in 0.2, each with the command that produces its drift or violation and where the step is scripted (runbook part, CI step in `tests/stack_acceptance.py`). |
 | [videos/](videos/) | One script per video: intro, port drift, tool misuse, egress containment. |
 
