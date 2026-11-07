@@ -297,11 +297,17 @@ def click(page: Page, label: str, *, within: str = "body", exact: bool = True) -
 
 
 def row_button(page: Page, item: str, label: str) -> None:
-    """Click `label` on the guardrail row whose item is `item`."""
+    """Click `label` on the guardrail row whose item is `item`, once the
+    page has drawn it (the API can have the row before the page's refresh)."""
     row = page.locator("article.guardrail-card tr", has=page.locator(f'code:text-is("{item}")'))
-    if row.count() != 1:
-        screenshot(page, "row")
-        fail(f"{row.count()} guardrail rows {item!r}, expected one")
+    t0 = time.monotonic()
+    while row.count() != 1:
+        if time.monotonic() - t0 > 60:
+            screenshot(page, "row")
+            fail(f"{row.count()} guardrail rows {item!r}, expected one")
+        if time.monotonic() - t0 > 30:
+            page.reload(wait_until="networkidle")
+        page.wait_for_timeout(2000)
     click(page, label, within=f'article.guardrail-card tr:has(code:text-is("{item}"))')
 
 
