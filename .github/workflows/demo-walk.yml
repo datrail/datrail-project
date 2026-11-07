@@ -1,12 +1,13 @@
 name: Walk the demo runbook in a browser
 
-# docs/demo/DEMO_RUNBOOK.md's Part A as a presenter gives it (DR-205, the
-# KubeCon demo): tests/demo_walk.py runs Part A's command blocks word for
-# word on a fresh runner, at the stack's default settings and the images the
-# install pins, clicks the buttons the runbook names in RailDash's page, and
-# checks the page shows what the runbook says. It keeps a screenshot of every
-# step, the transcript and the timings. Parts B and C (your own agent,
-# OpenShell) are what the stack's own-agent and openshell jobs check.
+# docs/demo/DEMO_RUNBOOK.md's Parts A and C as a presenter gives them (DR-205,
+# the KubeCon demo): tests/demo_walk.py runs the part's command blocks word
+# for word on a fresh runner, at the stack's default settings and the images
+# the install pins, clicks the buttons the runbook names in RailDash's page,
+# and checks the page shows what the runbook says. It keeps a screenshot of
+# every step, the transcript and the timings. Part C (the agent in an
+# OpenShell sandbox) starts from tests/openshell/install.sh, C1's CI form.
+# Part B (your own agent) is what the stack's own-agent job checks.
 # Run by hand before a demo, and on a change to the runbook or to the pins.
 on:
   workflow_dispatch:
@@ -15,6 +16,7 @@ on:
       - docs/demo/DEMO_RUNBOOK.md
       - docker-compose.yml
       - tests/demo_walk.py
+      - tests/openshell/**
       - .github/workflows/demo-walk.yml
 
 permissions:
@@ -22,7 +24,11 @@ permissions:
 
 jobs:
   walk:
-    name: walk (x86_64)
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [A, C]
+    name: walk Part ${{ matrix.part }} (x86_64)
     runs-on: ubuntu-26.04
     timeout-minutes: 45
     steps:
@@ -37,9 +43,14 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/pw"
           "$RUNNER_TEMP/pw/bin/pip" install -q playwright==1.64.1
           "$RUNNER_TEMP/pw/bin/python" -m playwright install --with-deps chromium
-      - name: Walk Part A
+      # C1's CI form: OpenShell's .deb, pinned, and its gateway on Docker.
+      - name: Install OpenShell and start its gateway
+        if: matrix.part == 'C'
+        run: bash tests/openshell/install.sh
+      - name: Walk Part ${{ matrix.part }}
         env:
           EVIDENCE_DIR: ${{ runner.temp }}/walk
+          WALK_PART: ${{ matrix.part }}
         run: |
           mkdir -p "$EVIDENCE_DIR"
           "$RUNNER_TEMP/pw/bin/python" -I tests/demo_walk.py
@@ -47,11 +58,16 @@ jobs:
         if: failure()
         run: |
           cd "$HOME/datrail-project"
+          export COMPOSE_PROFILES=openshell
           { docker compose ps -a; docker compose logs --no-color; } > "$RUNNER_TEMP/walk/services.log" 2>&1 || true
+          if [ "${{ matrix.part }}" = C ]; then
+            openshell logs my-agent -n 2000 > "$RUNNER_TEMP/walk/my-agent.log" 2>&1 || true
+            journalctl --user -u openshell-gateway --no-pager > "$RUNNER_TEMP/walk/openshell-gateway.log" 2>&1 || true
+          fi
       - name: Preserve the walk's evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: demo-walk-${{ github.run_id }}-${{ github.run_attempt }}
+          name: demo-walk-${{ matrix.part }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/walk
           if-no-files-found: error
