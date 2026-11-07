@@ -1,0 +1,57 @@
+name: Walk the demo runbook in a browser
+
+# docs/demo/DEMO_RUNBOOK.md's Part A as a presenter gives it (DR-205, the
+# KubeCon demo): tests/demo_walk.py runs Part A's command blocks word for
+# word on a fresh runner, at the stack's default settings and the images the
+# install pins, clicks the buttons the runbook names in RailDash's page, and
+# checks the page shows what the runbook says. It keeps a screenshot of every
+# step, the transcript and the timings. Parts B and C (your own agent,
+# OpenShell) are what the stack's own-agent and openshell jobs check.
+# Run by hand before a demo, and on a change to the runbook or to the pins.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - docs/demo/DEMO_RUNBOOK.md
+      - docker-compose.yml
+      - tests/demo_walk.py
+      - .github/workflows/demo-walk.yml
+
+permissions:
+  contents: read
+
+jobs:
+  walk:
+    name: walk (x86_64)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # The runbook's commands start with `cd ~/datrail-project`.
+      - name: Put the checkout where the runbook expects it
+        run: ln -s "$GITHUB_WORKSPACE" "$HOME/datrail-project"
+      - name: Playwright's Chromium, pinned
+        run: |
+          python3 -m venv "$RUNNER_TEMP/pw"
+          "$RUNNER_TEMP/pw/bin/pip" install -q playwright==1.64.1
+          "$RUNNER_TEMP/pw/bin/python" -m playwright install --with-deps chromium
+      - name: Walk Part A
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/walk
+        run: |
+          mkdir -p "$EVIDENCE_DIR"
+          "$RUNNER_TEMP/pw/bin/python" -I tests/demo_walk.py
+      - name: The services' logs, if the walk failed
+        if: failure()
+        run: |
+          cd "$HOME/datrail-project"
+          { docker compose ps -a; docker compose logs --no-color; } > "$RUNNER_TEMP/walk/services.log" 2>&1 || true
+      - name: Preserve the walk's evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: demo-walk-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/walk
+          if-no-files-found: error
