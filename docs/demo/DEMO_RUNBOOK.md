@@ -133,7 +133,7 @@ Within seconds DATA ACTIONS shows three rows: `upload_file · upload` (carrying 
 
 ### A7. Egress (30 s)
 
-The card's Egress reads **Open**. **Require containment** → g3, and Egress containment is violated (the demo agent is on an ordinary Docker network). An agent in an OpenShell sandbox reads Contained; that is Part C.
+The card's Egress reads **Open**. **Require containment** → g3 (one later if you showed A5's optional **Allow this**), and Egress containment is violated (the demo agent is on an ordinary Docker network). An agent in an OpenShell sandbox reads Contained; that is Part C.
 
 Order note: do A6 before A7, or wait a few seconds after Require containment before sending the A6 commands. On raildash before #82 (merged 10/15), a call captured in the same second a version is created was not judged.
 

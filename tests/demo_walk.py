@@ -293,9 +293,10 @@ def main() -> int:
                           second_asp, 300)
         # The file list can still grow while the agent's first calls import
         # (stack_acceptance.py's settle). The walk locks what a presenter
-        # sees once a scan interval passes with no newer ASP.
+        # sees once two scan intervals (60 s, plus the scan itself) pass
+        # with no newer ASP.
         for _ in range(5):
-            time.sleep(70)
+            time.sleep(130)
             if demo_asps()[0]["asp_id"] == newest:
                 break
             newest = wait_for("the newest ASP still has 8443 and demo_client.py", second_asp, 60)
