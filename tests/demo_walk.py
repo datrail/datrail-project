@@ -729,8 +729,13 @@ def walk_c() -> int:
         for word in ("127.0.0.1", "roll"):
             if word not in header:
                 fail(f"the runbook says the header comment covers {word!r}")
-        for section in ("filesystem_policy:", "landlock:", "process:", "api.github.com",
-                        "enforcement: audit", "/usr/local/bin/my-agent-bin"):
+        # The static sections the import carried come back unchanged;
+        # `process` only when the sandbox's policy sets one.
+        imported_policy = (home / "my-agent-policy.yaml").read_text()
+        statics = [f"{name}:" for name in ("filesystem_policy", "landlock", "process")
+                   if re.search(rf"^{name}:", imported_policy, re.M)]
+        note(f"      static sections imported: {statics}")
+        for section in (*statics, "api.github.com", "enforcement: audit", "/usr/local/bin/my-agent-bin"):
             if section not in export:
                 fail(f"the runbook says the export carries {section!r}")
         screenshot(page, "c10-download")
