@@ -192,12 +192,17 @@ def rows_are(what: str, want: set[tuple[str, str]], state: str = "violated") -> 
 
 shot_number = 0
 
+# RailDash's top bar and session rail are sticky, so a full-page capture taken
+# while scrolled draws them partway down the page, over whatever card is there
+# (the guardrail card's badge, in practice). Unstick them for the capture only.
+UNSTICK = ".topbar, .rail { position: static !important; } .rail { height: auto !important; }"
+
 
 def screenshot(page: Page, name: str) -> None:
     global shot_number
     shot_number += 1
     path = EVIDENCE / f"{shot_number:02d}-{name}.png"
-    page.screenshot(path=str(path), full_page=True)
+    page.screenshot(path=str(path), full_page=True, style=UNSTICK)
     note(f"screenshot: {path.name}")
 
 
