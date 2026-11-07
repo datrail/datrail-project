@@ -1,197 +1,304 @@
-# DatRail on Windows, step by step
+# Install DatRail on Windows
 
-A first install on Windows 11, from installing WSL2 to seeing drift in RailDash. For a Mac, see [setup-mac.md](setup-mac.md). For every setting and option, see [INSTALL.md](../INSTALL.md).
+DatRail is an open-source tool for people who want to keep an eye on what their own AI agent does with their data, on their own computer. This guide takes you from nothing to DatRail watching an agent on your Windows PC, one step at a time. It shows what you should see after each step, so you can tell it worked before you move on.
 
-## What you end up with
+It takes about 20 minutes the first time, most of it installing WSL and Docker Desktop. Using a Mac instead? See [Install DatRail on a Mac](setup-mac.md).
 
-DatRail running on your Windows PC: RailMon watching a demo AI agent, and the RailDash dashboard open in your browser at http://127.0.0.1:8000.
+## What you get
 
-It runs inside WSL2, the Linux that Windows can run alongside itself, using Docker Desktop. Docker Desktop runs containers in its own small Linux machine, so DatRail watches agents running in Docker containers: the demo agent, and your own agent if you run it in a container. To watch an agent running directly in your WSL distro instead, install Docker Engine in the distro (see [INSTALL.md](../INSTALL.md#prerequisites)).
+DatRail watches what an AI agent does: the services it calls, the files it opens and the ports it listens on. It learns the agent's normal behavior and tells you when the agent does something new. You see it all in a dashboard in your web browser.
 
-**Not on Windows:** an agent in an OpenShell sandbox needs native Linux ([INSTALL.md](../INSTALL.md#an-agent-in-an-openshell-sandbox)).
+DatRail has two parts, and both run on your PC:
 
-**Already running your own agent in a container?** One command installs DatRail for it: see [Watch an agent you already run](#watch-an-agent-you-already-run).
+- **RailMon**, the monitor, which watches the agent
+- **RailDash**, the dashboard, which you open in your browser at http://127.0.0.1:8000
+
+DatRail runs on Linux. On Windows, it runs inside **WSL** (Windows Subsystem for Linux), a part of Windows that runs Linux alongside it. You install WSL in Step 1, and you never have to leave Windows to use DatRail: the dashboard opens in your usual browser.
+
+> [!IMPORTANT]
+> **Your agent needs to run in a Docker container.** DatRail is built for agents that already run in a sandbox, such as a Docker container. It can't see an agent running directly on your PC, in Windows or in WSL. DatRail watches an agent inside its sandbox. It doesn't sandbox the agent for you. No agent in a container yet? You can try DatRail with its demo agent first.
+
+### Words you'll see
+
+| Word | What it means |
+| --- | --- |
+| **Container** | A sealed-off space where a program runs, separate from the rest of your PC. Docker Desktop runs containers. |
+| **WSL and Ubuntu** | WSL lets Windows run Linux. Ubuntu is the version of Linux this guide installs in it. |
+| **Profile (ASP)** | DatRail's record of what the agent did: the ports it listened on and the files it opened. RailDash calls it an Agent Security Profile, or ASP. |
+| **Baseline** | A profile you choose as "this is normal for my agent". |
+| **Drift** | Something the agent did that its baseline doesn't cover. |
+| **Data Guardrail** | Rules for what the agent may do with data: uploads, saved files, ports and calls. You approve every rule. |
+
+The [glossary](glossary.md) explains every term in more detail.
 
 ## Before you start
 
-- Windows 11 (Windows 10 21H2 or later also works for WSL2)
-- Administrator rights on the PC, for the installs
-- About 10 GB of free disk space
-- An internet connection: the first start downloads DatRail's images
+You need:
 
-Time: about 20 minutes the first time, most of it installing WSL2 and Docker Desktop. DatRail itself starts in under a minute.
+- **An up-to-date Windows 11 or Windows 10.** Docker Desktop's [system requirements](https://docs.docker.com/desktop/setup/install/windows-install/) list the versions it supports. To check yours: press **Windows key + R**, type `winver`, and press **Enter**.
+- **A PC with an Intel or AMD processor.** To check: open **Settings**, then **System**, then **About**, and look at **Processor**. PCs with an ARM processor (such as Snapdragon) haven't been tested.
+- **Virtualization turned on.** WSL needs it, and most PCs have it on already. To check: open **Task Manager** (Ctrl + Shift + Esc), click **Performance**, then **CPU**, and look for **Virtualization: Enabled**. If it says Disabled, see [If something goes wrong](#if-something-goes-wrong).
+- **Administrator rights on the PC**, for the installs.
+- **About 10 GB of free disk space**: WSL, Docker Desktop and DatRail together.
+- **An internet connection**, for the downloads.
 
-## Step 1: Install WSL2 and Ubuntu
+## Step 1: Install WSL and Ubuntu
 
-1. Open **PowerShell as administrator** (Start menu, type PowerShell, right-click, Run as administrator).
-2. Run:
+If you already have WSL with Ubuntu, skip to "Check that it's WSL version 2" below.
+
+1. **Open PowerShell as administrator.** Open the Start menu and type **PowerShell**. Right-click **Windows PowerShell** and choose **Run as administrator**. When Windows asks whether to allow this app to make changes, click **Yes**.
+2. **Install WSL and Ubuntu.** Copy this command, right-click in the PowerShell window to paste it, and press **Enter**:
 
    ```powershell
    wsl --install -d Ubuntu
    ```
 
-3. Restart the PC when asked.
-4. After the restart an **Ubuntu** window opens. Choose a Linux user name and password. This is your Linux user, separate from your Windows login.
-5. Check it is WSL version 2. In PowerShell:
+   It downloads and installs WSL and Ubuntu. This takes a few minutes.
+3. **Restart the PC** if it asks you to.
+4. **Set up your Linux user.** After the install (or after the restart), an **Ubuntu** window opens and finishes setting up. If it doesn't open, open **Ubuntu** from the Start menu. It asks for:
+   - **A user name**: lowercase letters and no spaces, such as `alex`. It doesn't have to match your Windows name.
+   - **A password**, typed twice. Nothing appears on screen while you type it: that's normal. Remember it, because Ubuntu asks for it now and then.
 
-   ```powershell
-   wsl -l -v
-   ```
+   When it's done, the window shows a line ending in `$`, such as `alex@DESKTOP-1234:~$`. This is where you type commands.
 
-   The `VERSION` column next to Ubuntu must say `2`.
+**Check that it's WSL version 2.** In PowerShell, run:
+
+```powershell
+wsl -l -v
+```
+
+You should see Ubuntu with `2` in the `VERSION` column:
+
+```text
+  NAME      STATE           VERSION
+* Ubuntu    Running         2
+```
+
+If it says `1`, see [If something goes wrong](#if-something-goes-wrong).
 
 ## Step 2: Install Docker Desktop and connect it to Ubuntu
 
-1. Download Docker Desktop for Windows from https://www.docker.com/products/docker-desktop/ and install it with the default options.
-2. Start Docker Desktop and wait until it says the engine is running.
-3. Open **Settings**:
-   - **General**: "Use the WSL 2 based engine" is ticked.
-   - **Resources, then WSL integration**: turn on the switch for **Ubuntu**.
-4. Click **Apply and restart**.
+DatRail runs inside Docker Desktop, a free app that runs containers on your PC. If you already have it, skip to step 6 below to check its settings.
 
-Docker Desktop has to be running whenever you use DatRail. If it is closed, the `docker` command disappears from Ubuntu.
+1. Go to https://www.docker.com/products/docker-desktop/ and click **Download Docker Desktop**. Choose **Windows - AMD64** (it's the one for both Intel and AMD processors).
+2. Open the downloaded file, `Docker Desktop Installer.exe`. Click **Yes** if Windows asks whether to allow it to make changes.
+3. On the configuration page, keep **Use WSL 2 instead of Hyper-V** ticked, and click **OK**. It takes a few minutes.
+4. When it's done, click **Close**. If it asks you to sign out or restart, do so.
+5. Open **Docker Desktop** from the Start menu. Accept its service agreement. It may ask you to sign in to a Docker account or answer a short survey: neither is needed for DatRail, and you can choose **Skip** for both.
+6. **Connect it to Ubuntu.** Click the gear icon at the top right to open **Settings**, then:
+   - Under **General**, check that **Use the WSL 2 based engine** is ticked.
+   - Under **Resources**, then **WSL integration**, turn on the switch next to **Ubuntu**.
+7. Click **Apply & restart**.
 
-## Step 3: Check that everything is ready
+**Check that it's running.** The Docker whale icon appears in the taskbar, near the clock (you may need to click the **^** arrow to see it). In the Docker Desktop window, the bottom left corner should say **Engine running**, in green.
 
-Open **Ubuntu** from the Start menu. Every command from here on runs in that Ubuntu window, not in PowerShell.
+Docker Desktop has to be running whenever you use DatRail. If you quit it, DatRail stops too, and it starts again when you open Docker Desktop.
+
+## Step 3: Open Ubuntu
+
+You install and manage DatRail from the Ubuntu window, not from PowerShell.
+
+1. Open the Start menu, type **Ubuntu**, and press **Enter**. A window opens with a line ending in `$`.
+
+**How to run a command from this guide:** copy it (each command box has a copy button on its top right), right-click in the Ubuntu window to paste it, then press **Enter**. From here on, every command in this guide runs in the Ubuntu window.
+
+**Check that Ubuntu can reach Docker.** Run:
 
 ```bash
 docker version
 ```
 
-Shows both a Client and a Server section. If you get "command not found", see Troubleshooting.
+You should see two sections, **Client** and **Server**. If it says the command `docker` could not be found in this WSL 2 distro, Docker Desktop isn't running, or its WSL integration is off for Ubuntu (Step 2, step 6). Right after Docker Desktop starts, wait a few seconds and try again.
 
-```bash
-docker compose version
-```
+## Step 4: Find your agent's container (skip if you're trying the demo agent)
 
-Shows Docker Compose v2 or later.
+The installer lists the containers running now, and you pick your agent from that list. So, before you start the installer:
 
-```bash
-docker run --rm alpine ls /sys/kernel/btf/vmlinux
-```
-
-Prints `/sys/kernel/btf/vmlinux`. This checks that Docker's Linux kernel has what RailMon's probes need (BTF).
-
-```bash
-docker run --rm --privileged hello-world
-```
-
-Prints "Hello from Docker!". RailMon needs privileged containers, and this checks they are allowed.
-
-## Step 4: Get DatRail
-
-In Ubuntu, from your Linux home folder:
-
-```bash
-cd ~
-git clone https://github.com/datrail/datrail-project.git
-cd datrail-project
-```
-
-Keep it in your Linux home (`~`), not under `/mnt/c/...` (your Windows drive), where everything runs much slower.
-
-**If you cloned datrail-project before,** do not reuse an old copy without updating it: clone fresh, or in the old folder run `git pull`. Older versions asked for `RAILDASH_TAG` and `RAILMON_TAG` and fail with these steps.
-
-## Step 5: Start it
-
-```bash
-docker compose up -d
-```
-
-The first time, this downloads the published RailMon and RailDash images, each pinned to a fixed version: under a minute on a normal connection. Later starts take seconds.
-
-Then check:
-
-```bash
-docker compose ps
-```
-
-Six services are `Up`, and `raildash` says `(healthy)`. If `raildash` still says `starting`, wait a minute and run it again.
-
-**To update later,** get the newest version of datrail-project and start again. The new file pins newer images, and Docker downloads them:
-
-```bash
-git pull
-docker compose up -d
-```
-
-## Step 6: Open the dashboard
-
-In your **Windows** browser, open http://127.0.0.1:8000 .
-
-Within a minute or two you should see:
-
-- **Interactions**: the demo agent's calls to `127.0.0.1:8443`: `POST /v1/demo` and `/v1/demo/other`, and calls to its tool server at `/mcp` (`POST`, `GET`, and a `DELETE` that ends each session with `204`). Each call shows twice, once from each side, because the demo agent calls itself.
-- **Agent Security Profile alignment**: a profile (ASP) for the demo agent. Click **Inspect evidence** to see its open port 8443 and the files it opened.
-
-That is a working install.
-
-## Step 7: Try the demo
-
-1. **Lock a baseline.** Wait until there are two profiles under "Agent Security Profile alignment" (the second arrives a minute after the first, with file access). On the newest one, click **Lock this as your alignment baseline**. The status reads **ALIGNED, v1.0 (active)**. Drift can only be detected once a baseline is locked.
-2. **Make the demo agent open a new port:**
+1. Make sure your agent's container is running.
+2. Find its name. In Docker Desktop, click **Containers** on the left: the **Name** column lists each container. Or, in Ubuntu, run:
 
    ```bash
-   docker exec -d datrail-demo-agent python3 -m http.server 9000 --bind 127.0.0.1
+   docker ps --format '{{.Names}}'
    ```
 
-   Within a minute RailDash shows **DRIFT DETECTED**, and `observed_listeners` has gained port 9000.
+   It prints one name per line, such as `my-agent`.
 
-The rest of the walk (the Data Guardrail, then breaking it) is in the README, [What you see in RailDash](../README.md#what-you-see-in-raildash).
+If your agent's container isn't running right now, you can still type its name in the installer (option `c`), and DatRail attaches to it when it starts.
 
-## Watch an agent you already run
+## Step 5: Install DatRail
 
-Steps 4 to 7 run DatRail with its demo agent. If you already run your own agent in a Docker container, one command installs DatRail and points it at that agent instead. Do Steps 1 to 3 first, then, in Ubuntu:
+In Ubuntu, run:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/datrail/datrail-project/master/install.sh | bash
 ```
 
-It checks the PC again, then lists the containers running now:
+This downloads DatRail's installer and runs it. It adds a `datrail` folder to your Ubuntu home folder and runs DatRail's containers in Docker Desktop.
+
+### 5.1 It checks your PC
+
+First it prints:
+
+```text
+==> Checking that this machine can run DatRail
+Docker x86_64, Docker Desktop: OK
+Note: with Docker Desktop, DatRail sees only agents running in Docker containers, not one running directly on this computer.
+
+==> Getting docker-compose.yml into /home/alex/datrail
+```
+
+If you see a message starting with `install.sh:` instead, the check found a problem: see [If something goes wrong](#if-something-goes-wrong).
+
+When you run the install command again later, to switch agents or update DatRail, it may also print `Updating the docker-compose.yml already there (the old one is kept as docker-compose.yml.old).` That's expected: your data is kept.
+
+### 5.2 It asks which agent to watch
 
 ```text
 ==> Which agent should DatRail watch?
 Containers running now:
    1) my-agent   (python:3.12-slim, Up 10 minutes)
    d) the demo agent, to try DatRail first
-   ...
+   o) an agent in an OpenShell sandbox that isn't running yet (you'll type its name)
+   c) a container that isn't running yet (you'll type its name)
    n) my agent doesn't run in a container
 Your choice:
 ```
 
-Type your agent's number and press Enter. It puts DatRail's files in `~/datrail` (you don't need the clone from Step 4), starts it, and ends with `DatRail is running`. The first time, it downloads the images, about 540 MB. Your agent keeps running: nothing needs a restart.
+Your list shows your own containers in place of `my-agent`. If none are running, it says `No container is running now, apart from DatRail's own.` instead, followed by the same letters. Type one choice and press **Enter**:
 
-Then open http://127.0.0.1:8000 in your Windows browser. As your agent works:
+| Type | To |
+| --- | --- |
+| A number, such as `1` | Watch that container, your agent. It keeps running: there's no need to restart it. |
+| `d` | Try DatRail with its demo agent: a small agent that comes with DatRail and calls itself every 30 seconds. This guide's later steps show what it does. |
+| `c` | Watch a container that isn't running yet. Type its name when asked. DatRail attaches to it when it starts. |
+| `n` | Stop here if your agent doesn't run in a container. The installer explains what to do and ends without starting DatRail. |
+| `o` | Not for Windows: OpenShell sandboxes need a Linux computer. |
 
-- **Interactions** lists the services it calls, within a minute or two.
-- Its **Agent Security Profile** appears within a few minutes (RailMon scans every minute). An idle agent shows little.
-- Once it has done its normal work for a while, lock that profile as the baseline, as in Step 7. Anything it does later that the baseline doesn't cover shows as **DRIFT DETECTED**.
+You can watch one agent at a time. To switch later, run the install command again.
 
-**Your agent has to run in a Docker container.** Docker Desktop can't see an agent running directly in Windows or in Ubuntu, so it won't be in the list. Pick `n` and the script explains. Run the agent in a container first, or pick `d` to try DatRail with the demo agent.
+### 5.3 It downloads and starts DatRail
 
-**Or let your AI agent do the install.** Tell it: *"Read https://raw.githubusercontent.com/datrail/datrail-project/master/docs/agent-install.md and install DatRail for me."* That page has it ask you before anything that needs full control of the PC, and it never touches your agent.
+```text
+==> Writing the settings to /home/alex/datrail/.env
+Watching my-agent.
 
-**Already started DatRail from Step 5?** Only one copy runs at a time. Stop that one first: in `~/datrail-project`, run `docker compose down`. If you forget, the script stops and tells you.
-
-**Later,** run these in `~/datrail` (`cd ~/datrail` first): `docker compose ps` to check it, `docker compose down` to stop it (its data is kept), or `docker compose down -v` to also delete the data. Run the install command again to watch another agent.
-
-## Stop and start over
-
-```bash
-docker compose down        # stop; the dashboard's data is kept
-docker compose down -v     # stop and delete the data, for a fresh start
+==> Starting DatRail (the first run downloads two images, about 540 MB)
 ```
 
-## Troubleshooting
+The download takes about a minute on a normal connection, and the window shows its progress. Then:
+
+```text
+Waiting for RailDash...
+```
+
+and a short table of DatRail's parts, each one `Up`. If you picked your own agent, it also tells you that the agent doesn't need a restart. A file the agent opened before DatRail started, such as its configuration, shows up once the agent opens that file again.
+
+### 5.4 It's running
+
+The installer ends with:
+
+```text
+==> DatRail is running
+Open http://127.0.0.1:8000 in a browser on this computer.
+```
+
+DatRail is installed. Its files are in a folder called `datrail` in your Ubuntu home folder. You don't need to open or change anything in there, but you can see it from File Explorer: type `\\wsl$\Ubuntu\home` in the address bar, then open your Linux user's folder.
+
+## Step 6: Open the dashboard
+
+In your usual Windows web browser, go to http://127.0.0.1:8000 . This page lives on your PC, so it only works on this computer.
+
+Within a few minutes you should see two things:
+
+- **Interactions**: every call the agent makes, with where it went, the method, the path and the result. The demo agent's calls go to itself, at `127.0.0.1:8443`, so each one shows twice, once from each side.
+- **Agent Security Profile alignment**: the agent's profiles. The first one appears within a few minutes, with the ports the agent listens on and the files it opened. Click **Inspect evidence** on a profile to see them.
+
+RailMon checks the agent every minute. A new profile appears only when it finds something new, so an agent that's sitting idle shows little. Let your agent do its normal work.
+
+## Step 7: Lock a baseline
+
+A baseline tells DatRail what's normal for your agent.
+
+1. **Let the agent do its normal work for a while**, so its profile covers what it usually does. With the demo agent, wait until there are two profiles under **Agent Security Profile alignment**. The second arrives about a minute after the first, with the files the agent opened.
+2. **On the newest profile, click Lock this as your alignment baseline.** The status changes to **ALIGNED, v1.0 (active)**.
+
+From now on, DatRail compares everything the agent does with this baseline.
+
+**See drift with the demo agent.** Make it open a port it didn't have before. In Ubuntu:
+
+```bash
+docker exec -d datrail-demo-agent python3 -m http.server 9000 --bind 127.0.0.1
+```
+
+Within a minute, RailDash shows **DRIFT DETECTED**. Under the drift, `observed_listeners` lists the new port, 9000. That's DatRail noticing something new.
+
+With your own agent, drift appears the same way when it does something its baseline doesn't cover. You can accept the new behavior as a new baseline, or switch back to an earlier one.
+
+## Step 8: Adopt a Data Guardrail
+
+Once a baseline is locked, the **Data Guardrail** panel proposes rules for the agent based on it: what the agent already did is allowed. It shows every rule before you approve it, and lists what would break the rules today.
+
+1. **Read the proposal**, then click **Adopt**.
+2. **Within a minute, anything outside the rules shows as a row.** With the demo agent there are two, both under **Service ports**: its own port 8443, and port 9000, still open from the drift step.
+3. **Decide on each row:**
+   - **Allow this** adds it to the rules, as a new version of the guardrail. Use it for something the agent is meant to do. With the demo agent, click **Allow all 2** under Service ports to allow both ports at once.
+   - **Acknowledge** clears the row for now. It comes back if the same thing happens again.
+4. **After the next check, a minute or two later, the agent reads Held**: it's inside its rules.
+
+**See a broken rule with the demo agent.** Make it save a file its rules don't allow. In Ubuntu:
+
+```bash
+docker exec datrail-demo-agent sh -c 'mkdir -p /data && echo report > /data/report.zip'
+```
+
+Within a minute or two the agent reads **Violated**, with `/data/report.zip` under **Saved files**.
+
+From the same panel you can edit the rules, switch to an earlier version, or turn the guardrail off. [What you see in RailDash](../README.md#what-you-see-in-raildash) goes further: uploads, calls to unknown hosts, and what each tool may do with data.
+
+## Using DatRail day to day
+
+DatRail keeps running in the background and starts again whenever Docker Desktop does. To manage it, open Ubuntu and go to its folder first:
+
+```bash
+cd ~/datrail
+```
+
+Then:
+
+| To | Run |
+| --- | --- |
+| Check that it's running | `docker compose ps` (each part reads `Up`) |
+| See what it's doing | `docker compose logs -f` (press **Ctrl + C** to stop watching) |
+| Stop it (its data is kept) | `docker compose down` |
+| Start it again | `docker compose up -d` |
+| Watch a different agent | Run the install command from Step 5 again |
+| Update to the latest version | Run the install command from Step 5 again. It keeps your data. |
+| Remove it completely | `docker compose down -v --rmi all`, then `cd ~ && rm -rf ~/datrail` |
+
+Removing it deletes DatRail's data and its downloads. It never touches your agent or its container. Docker Desktop and WSL stay installed. Remove them from **Settings**, then **Apps**, if you no longer need them.
+
+## Other ways to install
+
+- **Let your AI agent install it.** Tell your agent: *"Read https://raw.githubusercontent.com/datrail/datrail-project/master/docs/agent-install.md and install DatRail for me."* That page has it ask you before anything that needs full control of your PC, and it never changes your agent.
+- **Every setting and option,** including building DatRail from source, is in [INSTALL.md](../INSTALL.md).
+
+## If something goes wrong
 
 | What you see | What to do |
 | --- | --- |
-| `docker: command not found` in Ubuntu | Docker Desktop is not running, or WSL integration is off for Ubuntu (Step 2). Right after Docker Desktop starts, wait a few seconds and try again. |
-| An error asking for `RAILDASH_TAG` or `RAILMON_TAG` | You are in an old copy of datrail-project. Clone fresh, or `git pull` (Step 4). |
-| Port 8000 is already in use | Start with another port: `RAILDASH_PORT=18000 docker compose up -d`, then open http://127.0.0.1:18000 . |
-| The first `docker compose up -d` takes a few minutes | It is downloading the images; a slow connection takes longer. Later starts take seconds. |
-| Another DatRail is already running (port 8000 taken, or `datrail-demo-agent` already exists) | Stop the old one first: in its folder, `docker compose down` (or `down -v` to also delete its data). |
-| No interactions appear | `docker compose logs railmon-collect` shows what the collector attached to. Check Docker Desktop is running and the BTF check in Step 3 passed. |
+| Task Manager shows **Virtualization: Disabled**, or `wsl --install` fails with error `0x80370102` | Virtualization is off in your PC's firmware (BIOS or UEFI). Turn it on there; its name depends on the maker, often **Intel VT-x**, **Intel Virtualization Technology** or **AMD-V / SVM Mode**. Your PC maker's support site shows how. |
+| `wsl -l -v` shows `1` next to Ubuntu | In PowerShell as administrator, run `wsl --set-version Ubuntu 2`, then check again. |
+| The command `docker` could not be found in this WSL 2 distro | Docker Desktop isn't running, or its WSL integration is off for Ubuntu (Step 2, step 6). Right after Docker Desktop starts, wait a few seconds and try again. |
+| `install.sh: Docker isn't installed` | On Windows this usually means Docker Desktop is closed, or its WSL integration is off for Ubuntu: closing Docker Desktop removes the `docker` command from Ubuntu. Open Docker Desktop, wait until it says **Engine running**, check its WSL integration (Step 2, step 6), then run the install command again. If Docker Desktop isn't installed yet, install it first (Step 2). |
+| `install.sh: Docker is installed but not running` | Open Docker Desktop, wait until it says **Engine running**, then run the install command again. |
+| `install.sh: Docker can't run a privileged container with BTF` | Update Docker Desktop to its latest version (whale icon in the taskbar, **Check for updates**), check the settings in Step 2, and run the install command again. [INSTALL.md, Prerequisites](../INSTALL.md#prerequisites) lists the setups that work. |
+| `install.sh: DatRail is already running from ...` | Another copy of DatRail is running. In the folder the message names, run `docker compose down` (its data is kept), then run the install command again. |
+| `Your choice:` comes back with `Type one of the numbers or letters above.` | Type exactly one of the choices shown, such as `1` or `d`, and press **Enter**. |
+| Your agent isn't in the list | It has to run in a Docker container, and the container has to be running now. Check Step 4. If it isn't started yet, pick `c` and type its name. |
+| `install.sh: the stack didn't start; ...` | Look at the lines just above it. If they mention port 8000 (`port is already allocated` or `address already in use`), another program uses that port: install on another one with `curl -fsSL https://raw.githubusercontent.com/datrail/datrail-project/master/install.sh \| bash -s -- --port 18000`, then open http://127.0.0.1:18000 . Otherwise, in `~/datrail`, run `docker compose logs` to see why, then run the install command again. |
+| The install takes several minutes | It's downloading DatRail, about 540 MB. A slow connection takes longer. Later starts take seconds. |
+| `install.sh: RailDash didn't become healthy in 3 minutes` | In `~/datrail`, run `docker compose logs raildash` to see why, then run the install command again. |
+| The browser says it can't reach 127.0.0.1:8000 | DatRail isn't running, or Docker Desktop is closed. Open Docker Desktop, then in `~/datrail` run `docker compose ps`. If you installed on another port, use that one. |
+| No interactions after a few minutes | Check that your agent is doing some work. In `~/datrail`, `docker compose logs railmon-collect` shows what the monitor attached to. |
 
-More in [INSTALL.md, Troubleshooting](../INSTALL.md#troubleshooting).
+Still stuck? More help is in [INSTALL.md, Troubleshooting](../INSTALL.md#troubleshooting), or ask on [GitHub](https://github.com/datrail/datrail-project/issues).
