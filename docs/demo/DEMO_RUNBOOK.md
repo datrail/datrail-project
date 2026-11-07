@@ -77,9 +77,9 @@ At the next scan (`SCAN_INTERVAL`, 60 s by default; CI runs at 10 s): **DRIFT DE
 
 Scroll to "Data Guardrail":
 
-- The proposal lists: Uploads to 127.0.0.1, Saved files `**/__pycache__/*.pyc`, Data actions allowed `read_doc: read`, `upload_file` blocked until allowed; under "would be violations" two rows, `tcp/127.0.0.1/8443` and `127.0.0.1`.
-- **Adopt** → version g1, VIOLATED, three rows: 9000 and 8443 (Service ports), 127.0.0.1 (Out-of-spec calls).
-- Service ports **Allow all 2** → g2; on the 127.0.0.1 row **Allow this** → g3. Within seconds to a minute: **HELD**.
+- The proposal lists: Uploads to 127.0.0.1, Saved files `**/__pycache__/*.pyc`, Data actions allowed `read_doc: read`, `upload_file` blocked until allowed; under "would be violations" one row, `tcp/127.0.0.1/8443` (the agent's own listener: the proposal allows no port). Calls to 127.0.0.1 are already in spec, because the demo agent declares its MCP server there.
+- **Adopt** → version g1, VIOLATED, two rows under Service ports: 9000 and 8443.
+- Service ports **Allow all 2** → g2. Within seconds to a minute: **HELD**.
 
 Say: the baseline is "what it normally does"; the guardrail turns that into rules, and anything unseen needs a human.
 
@@ -133,7 +133,7 @@ Within seconds DATA ACTIONS shows three rows: `upload_file · upload` (carrying 
 
 ### A7. Egress (30 s)
 
-The card's Egress reads **Open**. **Require containment** → g4, and Egress containment is violated (the demo agent is on an ordinary Docker network). An agent in an OpenShell sandbox reads Contained; that is Part C.
+The card's Egress reads **Open**. **Require containment** → g3, and Egress containment is violated (the demo agent is on an ordinary Docker network). An agent in an OpenShell sandbox reads Contained; that is Part C.
 
 Order note: do A6 before A7, or wait a few seconds after Require containment before sending the A6 commands. On raildash before #82 (merged 10/15), a call captured in the same second a version is created was not judged.
 

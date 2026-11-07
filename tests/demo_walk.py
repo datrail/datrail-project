@@ -7,8 +7,9 @@ itself: it runs Part A's fenced command blocks word for word, in order, at
 the stack's default settings and the images the install pins, clicks the
 buttons the runbook names in RailDash's page (Playwright's Chromium), and
 checks that the page then shows what the runbook says it shows. RailDash's
-API is read only to know when a step has landed and to say exactly what
-differs when it hasn't. A screenshot of the page is kept at every step.
+API is read to know when a step has landed, and to check what the runbook
+says that the page doesn't spell out (version labels, the content kind, the
+egress level), saying exactly what differs when it doesn't match. A screenshot of the page is kept at every step.
 
 Run it from the checkout the runbook's commands expect (`~/datrail-project`)
 on a disposable host: A0 runs `docker compose down -v`.
@@ -221,6 +222,32 @@ def page_shows(page: Page, what: str, *needles: str, timeout: float = 90) -> Non
         page.wait_for_timeout(2000)
 
 
+def badge_reads(page: Page, what: str, selector: str, label: str, timeout: float = 90) -> None:
+    """Wait until the element `selector` (a card's state badge, the Egress
+    line) reads `label`: the card's own state, not a rule's line that
+    happens to carry the same word."""
+    t0 = time.monotonic()
+    reloaded = False
+    while True:
+        found = page.locator(selector)
+        texts = [t.strip() for t in found.all_inner_texts()]
+        if len(texts) == 1 and label.lower() in texts[0].lower():
+            note(f"ok after {time.monotonic() - t0:.0f}s: {what} reads {texts[0]!r}")
+            return
+        if not reloaded and time.monotonic() - t0 > timeout / 2:
+            page.reload(wait_until="networkidle")
+            reloaded = True
+        if time.monotonic() - t0 > timeout:
+            screenshot(page, "badge")
+            fail(f"{what} ({selector}) reads {texts}, expected one reading {label!r}")
+        page.wait_for_timeout(2000)
+
+
+ASP_BADGE = "article.asp-state-card .asp-state-head .asp-state"
+GUARDRAIL_BADGE = "article.guardrail-card .asp-state-head .asp-state"
+EGRESS_LINE = "article.guardrail-card p.guardrail-egress"
+
+
 def click(page: Page, label: str, *, within: str = "body", exact: bool = True) -> None:
     button = page.locator(within).get_by_role("button", name=label, exact=exact)
     if button.count() != 1:
@@ -264,6 +291,16 @@ def main() -> int:
             return newest if 8443 in ports and DEMO_SCRIPT in files else None
         newest = wait_for("a second ASP, with 127.0.0.1:8443 listening and demo_client.py read",
                           second_asp, 300)
+        # The file list can still grow while the agent's first calls import
+        # (stack_acceptance.py's settle). The walk locks what a presenter
+        # sees once a scan interval passes with no newer ASP.
+        for _ in range(5):
+            time.sleep(70)
+            if demo_asps()[0]["asp_id"] == newest:
+                break
+            newest = wait_for("the newest ASP still has 8443 and demo_client.py", second_asp, 60)
+        else:
+            fail("the demo agent's ASP was still changing after five scan intervals")
         page_shows(page, "the interaction log, the ASP panel and the observed data action",
                    "/v1/demo", "/v1/demo/other", "/mcp", "Agent Security Profile alignment",
                    "Observed security profile", f"{TOOL}read_doc")
@@ -276,7 +313,8 @@ def main() -> int:
             asps = demo_asps()
             return api(f"/api/asps/{asps[0]['asp_id']}/state").get("state") == "ALIGNED"
         wait_for("the newest ASP is ALIGNED with the locked baseline", aligned, 60)
-        page_shows(page, "ALIGNED · v1.0 (active)", "Aligned", "v1.0", "active")
+        badge_reads(page, "the ASP card", ASP_BADGE, "Aligned")
+        page_shows(page, "ALIGNED · v1.0 (active)", "v1.0", "active")
         note(f"      locked on {newest}'s card")
         screenshot(page, "a2-aligned")
 
@@ -298,15 +336,16 @@ def main() -> int:
         unexpected = set(drift["changes"]) - {"observed_listeners", "observed_file_access"}
         if unexpected:
             fail(f"the runbook names observed_listeners and observed_file_access; the drift also has {sorted(unexpected)}")
-        page_shows(page, "DRIFT DETECTED with observed_listeners", "Drift detected", "observed_listeners")
+        badge_reads(page, "the ASP card", ASP_BADGE, "Drift detected")
+        page_shows(page, "observed_listeners among the drift", "observed_listeners")
         screenshot(page, "a3-drift")
 
         say("A4. Data Guardrail")
         proposal = wait_for("a guardrail is proposed", lambda: guardrail()["proposal"], 60)
         would_be = {v["item"] for v in proposal["would_be_violations"]}
         note(f"      would be violations: {sorted(would_be)}")
-        if would_be != {"tcp/127.0.0.1/8443", "127.0.0.1"}:
-            fail(f"the runbook names two would-be violations, tcp/127.0.0.1/8443 and 127.0.0.1; the proposal has {sorted(would_be)}")
+        if would_be != {"tcp/127.0.0.1/8443"}:
+            fail(f"the runbook names one would-be violation, tcp/127.0.0.1/8443; the proposal has {sorted(would_be)}")
         blocked = [b["tool"] for b in proposal.get("data_actions_blocked") or []]
         if f"{TOOL}upload_file" not in blocked:
             fail(f"the runbook says upload_file is blocked until allowed; blocked: {blocked}")
@@ -315,20 +354,17 @@ def main() -> int:
                    "upload_file", "tcp/127.0.0.1/8443")
         screenshot(page, "a4-proposal")
         click(page, "Adopt", within="section.guardrail-proposal")
-        detail = rows_are("Adopt: g1, Violated by 9000, 8443 and 127.0.0.1", {
-            ("service_ports", "tcp/127.0.0.1/9000"), ("service_ports", "tcp/127.0.0.1/8443"),
-            ("out_of_spec_calls", "127.0.0.1")})
+        detail = rows_are("Adopt: g1, Violated by 9000 and 8443 under Service ports", {
+            ("service_ports", "tcp/127.0.0.1/9000"), ("service_ports", "tcp/127.0.0.1/8443")})
         if detail["active"]["guardrail"]["version"] != "g1":
             fail(f"Adopt made {detail['active']['guardrail']['version']}, the runbook says g1")
-        page_shows(page, "Violated, with Allow all 2", "Violated", "Allow all 2")
+        badge_reads(page, "the guardrail card", GUARDRAIL_BADGE, "Violated")
+        page_shows(page, "Allow all 2", "Allow all 2")
         screenshot(page, "a4-violated")
         click(page, "Allow all 2")
         wait_for("Allow all 2 makes g2", lambda: guardrail()["active"]["guardrail"]["version"] == "g2", 60)
-        page.reload(wait_until="networkidle")
-        click(page, "Allow this", within='tr:has(td > code:text-is("127.0.0.1"))')
-        wait_for("Allow this makes g3", lambda: guardrail()["active"]["guardrail"]["version"] == "g3", 60)
         rows_are("HELD within a minute", set(), state="held")
-        page_shows(page, "HELD", "Held")
+        badge_reads(page, "the guardrail card", GUARDRAIL_BADGE, "Held")
         screenshot(page, "a4-held")
 
         say("A5. Violations")
@@ -340,6 +376,7 @@ def main() -> int:
         rules = {rule: r["state"] for rule, r in detail["rules"].items()}
         if rules.get("service_ports") != "held" or rules.get("data_actions") != "held":
             fail(f"the runbook says Service ports and Data actions stay held: {rules}")
+        badge_reads(page, "the guardrail card", GUARDRAIL_BADGE, "Violated")
         page_shows(page, "the three rows", "/data/report.zip", "exfil.example")
         screenshot(page, "a5-violated")
         run_block("A5", 2, contains="search.example")
@@ -384,12 +421,12 @@ def main() -> int:
         reading = (guardrail().get("egress") or {}).get("reading") or {}
         if reading.get("level") != "open":
             fail(f"the runbook says Egress reads Open: {reading}")
-        page_shows(page, "Egress: Open", "Egress", "Open")
+        badge_reads(page, "the Egress line", EGRESS_LINE, "Egress: Open")
         click(page, "Require containment")
-        detail = rows_are("Require containment: g4, egress containment violated",
+        detail = rows_are("Require containment: g3, egress containment violated",
                           three | {not_offered, ("egress_containment", "open")})
-        if detail["active"]["guardrail"]["version"] != "g4":
-            fail(f"Require containment made {detail['active']['guardrail']['version']}, the runbook says g4")
+        if detail["active"]["guardrail"]["version"] != "g3":
+            fail(f"Require containment made {detail['active']['guardrail']['version']}, the runbook says g3")
         page_shows(page, "egress containment violated", "Egress containment")
         screenshot(page, "a7-egress")
         browser.close()
