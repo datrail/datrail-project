@@ -289,7 +289,7 @@ A=$(docker ps --format '{{.Names}}' --filter label=openshell.ai/sandbox-name=my-
 
 - The first ASP's `observed_listeners` has three rows, all under the process name `openshell-sandb`: `127.0.0.1:8443`, `127.0.0.53:53 tcp`, `127.0.0.53:53 udp`. OpenShell opens the agent's sockets, and 53 is its own DNS.
 - The agent is named `my-agent` (the key).
-- The Data Guardrail card's Egress reads **Contained: it should not reach outside hosts itself; OpenShell enforces an allow-list**, read from Docker (sandbox labels, no network of its own, no runtime socket, no privilege). The proposal already requires containment, so there is no Require containment click.
+- Once you lock (C7), the Data Guardrail card's Egress reads **Contained: it should not reach outside hosts itself; OpenShell enforces an allow-list**, read from Docker (sandbox labels, no network of its own, no runtime socket, no privilege). The proposal already requires containment, so there is no Require containment click.
 
 ### C7. Lock, drift, guardrail, violations, data actions
 
@@ -299,7 +299,7 @@ Lock the baseline as in A2. Before adopting, give RailDash the sandbox's policy 
 openshell sandbox get my-agent --policy-only > ~/my-agent-policy.yaml
 ```
 
-T2: the agent's Data Guardrail card, under the Egress line (which already lists `api.github.com:443`, read by the collector), **Import a newer policy** (it reads **Import OpenShell policy** when no policy is held yet), choose `~/my-agent-policy.yaml`. Then the same as A3 and A4 with `$A` in place of `datrail-demo-agent`; the proposal allows `api.github.com` too. Differences: after Adopt the Service ports group has two rows (8443, 9000; the proposal already allows OpenShell's DNS on 53), so it is **Allow all 2**; Egress containment is held from the start. A5 and A6 work the same in the sandbox, but their rows keep counting until you **Allow this** or **Acknowledge** each one, so show them after C10, or clear them before C8, which expects Held to start from.
+T2: the agent's Data Guardrail card, under the Egress line (which already lists `api.github.com:443`, read by the collector), **Import a newer policy** (it reads **Import OpenShell policy** when no policy is held yet), choose `~/my-agent-policy.yaml`. Then the same as A3 and A4 with `$A` in place of `datrail-demo-agent`; the proposal allows `api.github.com` too. Differences: after Adopt the Service ports group has two rows (8443, 9000; the proposal already allows OpenShell's DNS on 53), so it is **Allow all 2**; Egress containment is held from the start. A5 and A6 work the same in the sandbox, but their rows keep counting, and C8 expects Held to start from: show them after C10. (Acknowledge doesn't hold for A5's saved file: every new ASP lists it again.)
 
 ### C8. A call that leaves the sandbox (1 minute)
 

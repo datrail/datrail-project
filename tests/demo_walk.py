@@ -209,8 +209,13 @@ def rows_are(what: str, want: set[tuple[str, str]], state: str = "violated") -> 
         if extra:
             fail(f"{what}: rows the runbook doesn't name count: {sorted(extra)}")
         return detail if detail["state"] == state and counting(detail) == want else None
-    detail = wait_for(what, check, last_seen=lambda: f"{guardrail()['state']}, "
-                      f"counting {sorted(counting(guardrail()))}")
+    def last_seen() -> str:
+        try:
+            detail = guardrail()
+            return f"{detail['state']}, counting {sorted(counting(detail))}"
+        except (URLError, OSError, KeyError, ValueError) as error:
+            return f"(guardrail unreadable: {error})"
+    detail = wait_for(what, check, last_seen=last_seen)
     note(f"      rows: {sorted(counting(detail))}; rules: "
          f"{ {rule: r['state'] for rule, r in (detail['rules'] or {}).items()} }")
     return detail
@@ -520,9 +525,11 @@ def policy_revisions(out: str) -> dict[str, str]:
 
 
 def loaded(out: str) -> str:
+    """The revision a presenter notes as N: the first row whose status is
+    Loaded, as stack-acceptance.sh reads it."""
     found = [rev for rev, status in policy_revisions(out).items() if status == "Loaded"]
-    if len(found) != 1:
-        fail(f"policy list shows {len(found)} Loaded revisions, the runbook expects one: {policy_revisions(out)}")
+    if not found:
+        fail(f"policy list shows no Loaded revision: {policy_revisions(out)}")
     return found[0]
 
 
@@ -565,7 +572,7 @@ def walk_c() -> int:
     t0 = time.monotonic()
     while True:
         out = run_block("C4", 1, contains="openshell sandbox list")
-        if any(line.split()[:1] == ["my-agent"] and "Ready" in line for line in out.splitlines()):
+        if any(re.search(r"\bmy-agent\b", line) and "Ready" in line for line in out.splitlines()):
             break
         if time.monotonic() - t0 > 120:
             fail("openshell sandbox list doesn't show my-agent Ready within 2 minutes")
@@ -604,19 +611,19 @@ def walk_c() -> int:
         newest = settled(newest, second_asp)
         listeners = answered(newest, "observed_listeners")
         note(f"      observed_listeners: {json.dumps(listeners)}")
-        ports = sorted(row.get("port") for row in listeners)
-        if ports != [53, 53, 8443] or not all("openshell-sandb" in json.dumps(row) for row in listeners) \
+        ports = sorted(str(row.get("port")) for row in listeners)
+        if ports != ["53", "53", "8443"] or not all("openshell-sandb" in json.dumps(row) for row in listeners) \
                 or sum("127.0.0.53" in json.dumps(row) for row in listeners) != 2:
             fail("the runbook says three listeners, all openshell-sandb: 127.0.0.1:8443 and 127.0.0.53:53 tcp and udp")
         page_shows(page, "the agent named my-agent", "my-agent")
-        badge_reads(page, "the Egress line", EGRESS_LINE, SANDBOX_BADGE_WORDS[0])
-        page_shows(page, "Contained, enforced by OpenShell", *SANDBOX_BADGE_WORDS)
-        if page.get_by_role("button", name="Require containment", exact=True).count():
-            fail("the runbook says there is no Require containment click in a sandbox")
-        screenshot(page, "c6-contained")
+        screenshot(page, "c6-listeners")
 
         say("C7. Lock, drift, guardrail")
         lock(page)
+        # C6's Egress line is on the guardrail card, which a lock brings.
+        badge_reads(page, "the Egress line", EGRESS_LINE, SANDBOX_BADGE_WORDS[0])
+        page_shows(page, "Contained, enforced by OpenShell", *SANDBOX_BADGE_WORDS)
+        screenshot(page, "c7-contained")
         page_shows(page, "api.github.com:443 on the Egress line, read by the collector",
                    "api.github.com:443", "read by the collector")
         run_block("C7", 0, contains="--policy-only > ~/my-agent-policy.yaml")
@@ -628,7 +635,7 @@ def walk_c() -> int:
         with page.expect_file_chooser() as chooser:
             click(page, label)
         chooser.value.set_files(str(home / "my-agent-policy.yaml"))
-        page_shows(page, "the import", "Imported")
+        page_shows(page, "the import", "Imported 1 endpoint")
         def imported() -> bool:
             policy = guardrail().get("openshell_policy")
             return bool(policy) and policy.get("source") != "collector"
@@ -645,6 +652,10 @@ def walk_c() -> int:
         rows_are("Adopt: Violated by 8443 and 9000 under Service ports", {
             ("service_ports", "tcp/127.0.0.1/9000"), ("service_ports", "tcp/127.0.0.1/8443")})
         page_shows(page, "Allow all 2", "Allow all 2")
+        # A version is in force now, which is when RailDash offers Require
+        # containment to one that doesn't require it.
+        if page.get_by_role("button", name="Require containment", exact=True).count():
+            fail("the runbook says there is no Require containment click in a sandbox")
         screenshot(page, "c7-violated")
         click(page, "Allow all 2")
         detail = rows_are("Allow all 2: HELD", set(), state="held")
@@ -728,7 +739,9 @@ def walk_c() -> int:
         policy = sandbox_policy()
         if "raildash_api_github_com" not in policy or "github_api:" in policy:
             fail("the runbook says the sandbox's policy has raildash_api_github_com where github_api was")
-        page_shows(page, f"revision {after} on the Egress line", f"revision {after}", timeout=SCAN_WAIT)
+        wait_for(f"the collector posts revision {after}", lambda: str(
+            (guardrail().get("openshell_policy") or {}).get("revision")) == after)
+        page_shows(page, f"revision {after}, read by the collector", f"revision {after},", timeout=SCAN_WAIT)
         screenshot(page, "c10-applied")
         run_block("C10", 2, contains="--base --output json | jq -e .policy > before.json",
                   replace={"--rev N": f"--rev {before}"})
