@@ -215,6 +215,9 @@ are deployed separately; their READMEs explain how.
 - [docs/setup-windows.md](docs/setup-windows.md) and
   [docs/setup-mac.md](docs/setup-mac.md): a first install on Windows (WSL2)
   or on a Mac, step by step, from installing Docker to seeing drift.
+- [docs/setup-gcp-vm.md](docs/setup-gcp-vm.md): the same on your own Linux
+  VM in Google Cloud, created with [`gcp-vm.sh`](gcp-vm.sh), with RailDash
+  in your own browser.
 - [docs/agent-install.md](docs/agent-install.md): the install written for
   an AI agent to follow on a person's behalf, with `install.sh`.
 - [docs/glossary.md](docs/glossary.md): evidence bundle, ASP, baseline,
