@@ -287,7 +287,7 @@ A=$(docker ps --format '{{.Names}}' --filter label=openshell.ai/sandbox-name=my-
 
 ### C6. What is different from Part A
 
-- The first ASP's `observed_listeners` has three rows, all under the process name `openshell-sandb`: `127.0.0.1:8443`, `127.0.0.53:53 tcp`, `127.0.0.53:53 udp`. OpenShell opens the agent's sockets, and 53 is its own DNS.
+- The first ASP's `observed_listeners` has three rows: `127.0.0.1:8443` under the agent's own name, `my-agent-bin`, and `127.0.0.53:53` tcp and udp under `openshell-sandb`, OpenShell's own DNS inside the sandbox.
 - The agent is named `my-agent` (the key).
 - Once you lock (C7), the Data Guardrail card's Egress reads **Contained: it should not reach outside hosts itself; OpenShell enforces an allow-list**, read from Docker (sandbox labels, no network of its own, no runtime socket, no privilege). The proposal already requires containment, so there is no Require containment click.
 

@@ -611,10 +611,12 @@ def walk_c() -> int:
         newest = settled(newest, second_asp)
         listeners = answered(newest, "observed_listeners")
         note(f"      observed_listeners: {json.dumps(listeners)}")
-        ports = sorted(str(row.get("port")) for row in listeners)
-        if ports != ["53", "53", "8443"] or not all("openshell-sandb" in json.dumps(row) for row in listeners) \
-                or sum("127.0.0.53" in json.dumps(row) for row in listeners) != 2:
-            fail("the runbook says three listeners, all openshell-sandb: 127.0.0.1:8443 and 127.0.0.53:53 tcp and udp")
+        rows = sorted((str(row.get("addr")), str(row.get("port")), str(row.get("protocol")),
+                       str(row.get("process"))) for row in listeners)
+        if rows != [("127.0.0.1", "8443", "tcp", "my-agent-bin"), ("127.0.0.53", "53", "tcp", "openshell-sandb"),
+                    ("127.0.0.53", "53", "udp", "openshell-sandb")]:
+            fail("the runbook says three listeners: 127.0.0.1:8443 under my-agent-bin, "
+                 "and 127.0.0.53:53 tcp and udp under openshell-sandb")
         page_shows(page, "the agent named my-agent", "my-agent")
         screenshot(page, "c6-listeners")
 
