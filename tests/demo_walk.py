@@ -637,11 +637,13 @@ def walk_c() -> int:
         with page.expect_file_chooser() as chooser:
             click(page, label)
         chooser.value.set_files(str(home / "my-agent-policy.yaml"))
-        page_shows(page, "the import", "Imported 1 endpoint")
         def imported() -> bool:
             policy = guardrail().get("openshell_policy")
             return bool(policy) and policy.get("source") != "collector"
         wait_for("RailDash holds the imported policy", imported, 60)
+        # The button's own "Imported 1 endpoint." goes with the card's
+        # redraw; the policy's line stays.
+        page_shows(page, "the import", "OpenShell's policy, imported")
         screenshot(page, "c7-imported")
         drift(**{"datrail-demo-agent": "$A"})
         badge_reads(page, "the ASP card", ASP_BADGE, "Drift detected")
