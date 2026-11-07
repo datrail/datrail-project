@@ -57,7 +57,7 @@ Six services Up, raildash `(healthy)`. Open http://127.0.0.1:8000 .
 
 - Interactions count rising; the Interaction log shows `POST 127.0.0.1:8443 /v1/demo`, `/v1/demo/other`, `/mcp`, status 200, in pairs (client side and server side).
 - Under "Agent Security Profile alignment" the first ASP arrives within a minute, a second one a minute later (with file access). **Inspect evidence**: `observed_listeners` has `127.0.0.1:8443`, `observed_file_access` has `demo_client.py`.
-- "Observed security profile" already lists DATA ACTIONS `mcp@127.0.0.1/mcp__read_doc · read`.
+- "Observed security profile" already lists DATA ACTIONS `mcp__demo__read_doc · read` (the demo agent declares its MCP server as `demo`).
 
 Say: this is the agent's security check-up, one per minute; nothing new is stored when nothing changed.
 
