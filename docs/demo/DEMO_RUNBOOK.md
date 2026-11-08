@@ -1,6 +1,6 @@
 # datRail demo runbook: demo agent, your own agent, and an agent in an OpenShell sandbox
 
-Hands-on walk of the datrail-project stack. The install pins published images (on 2026-11-06: railmon `0.1.0-m16`, raildash `0.2.0-rc.16`, rule pack 14); the steps were last walked on a Mac on 2026-10-23 with `0.1.0-m7` and `0.2.0-rc.4`. Every step says what to run, what RailDash should show, and how long it takes. Everything here was run on a GCP x86_64 VM (Ubuntu 24.04) and, for the own-agent part, on an Apple Silicon Mac with Docker Desktop.
+Hands-on walk of the datrail-project stack. The install pins published images (on 2026-11-06: railmon `0.1.0-m16`, raildash `0.2.0-rc.16`, rule pack 14); Parts A and C are walked in a browser in CI (`demo-walk.yml`) on every change to this runbook or the pins, at the default intervals; the last walk by hand was on a Mac on 2026-10-23 with `0.1.0-m7` and `0.2.0-rc.4`. Every step says what to run, what RailDash should show, and how long it takes. Everything here was run on a GCP x86_64 VM (Ubuntu 24.04) and, for the own-agent part, on an Apple Silicon Mac with Docker Desktop.
 
 Two windows: **T1** is a shell on the host (or an SSH session with `-L 8000:127.0.0.1:8000` if the host is remote), **T2** is a browser on http://127.0.0.1:8000 . If 8000 is taken, start the stack with `RAILDASH_PORT=18000` and use that.
 
@@ -376,17 +376,33 @@ COMPOSE_PROFILES=openshell docker compose down -v
 
 ## Timings measured
 
-Measured at CI's `SCAN_INTERVAL=10`. The stack's default is 60 s, so on a default install anything that waits for a scan takes up to a minute.
+On a default install (`SCAN_INTERVAL` 60 s), from the browser walk on 2026-11-07 (railmon `0.1.0-m16`, raildash `0.2.0-rc.16`, a GitHub-hosted x86_64 runner). A wait on the next scan takes up to a minute, so these vary by up to that much from run to run.
+
+| Step | Part A | Part C |
+| --- | --- | --- |
+| A0 / C5: stack up | 18 s | 7 s (C5) |
+| First interactions in the Interaction log | 35 s | - |
+| Second ASP (A2 / C5's lock can start) | 25 s more | 65 s |
+| A3: drift after opening a port | 50 s | 35 s |
+| A4: guardrail proposed, Adopt, Allow all 2, Held | 1 s | 4 s |
+| A5: VIOLATED after the upload commands | 52 s | - |
+| A6: the three data-action rows | 6 s | - |
+| A6: `not offered` | 77 s more | - |
+| A7: Require containment | 1 s | - |
+| C8: GET through OpenShell's supervisor | - | 5 s |
+| C8: Violated by the trigger file and loopback sockets | - | 41 s |
+| C9: Blocked by OpenShell | - | 52 s |
+| C10: collector posts the applied policy's revision | - | 52 s |
+| Whole part, commands and waits only (no talking) | 7 min 9 s | 7 min 37 s, with OpenShell already installed (C1) |
+
+Earlier measurements at CI's `SCAN_INTERVAL=10` and by hand:
 
 | Step | Measured |
 | --- | --- |
 | First start, image-only install (Mac, 23 Oct) | 18 s |
 | Build from source (`make update`), VM e2-standard-4 | 4 min 51 s |
 | Build from source, railmon on an M-series Mac, cold cache | about 2 min |
-| First ASP after `up` | about 1 min |
-| Drift after opening a port | within 15 s at `SCAN_INTERVAL=10`; up to a minute at the default |
-| Held after Allow | seconds to 1 min |
-| Violations after the commands | within 30 s at `SCAN_INTERVAL=10`; up to a minute at the default |
-| Data-action rows | seconds; `not offered` after 1 min |
+| Drift after opening a port | within 15 s at `SCAN_INTERVAL=10` |
+| Violations after the commands | within 30 s at `SCAN_INTERVAL=10` |
 | GET through OpenShell's supervisor | 10 to 30 s after `touch /sandbox/outbound` |
 | `make test`: demo / own-agent / openshell | 417 s / 433 s / 464 s (10/15); 696 s (with rebuild) / 422 s / 438 s on 10/20; image-only demo run 426 s |
