@@ -319,7 +319,7 @@ The policy lets the agent read `api.github.com`, not write to it. Make it try:
 docker exec $A touch /sandbox/post
 ```
 
-Within a minute (the collector polls every 60 s; CI sets 10) the Egress line shows **Blocked by OpenShell**: `api.github.com:443` with `POST /markdown` and OpenShell's reason (`L7_REQUEST deny … not permitted by policy`). The Interaction log also has the `POST api.github.com /markdown`, answered 403 by OpenShell's supervisor. Neither the denial nor the blocked POST counts against the guardrail: an attempt OpenShell blocked is not a violation, because nothing left the sandbox (Lebin, 10-27). The trigger file `/sandbox/post` does count, as a saved file, like C8's (allow it as there). Until the collector's next poll the section may say "1 request answered 403 … waits for OpenShell's log"; once the denial arrives that line goes, and no Uploads row appears for `api.github.com`. Stop it:
+Within a minute (the collector polls every 60 s; the stack test in CI sets 10) the Egress line shows **Blocked by OpenShell**: `api.github.com:443` with `POST /markdown` and OpenShell's reason (`L7_REQUEST deny … not permitted by policy`). The Interaction log also has the `POST api.github.com /markdown`, answered 403 by OpenShell's supervisor. Neither the denial nor the blocked POST counts against the guardrail: an attempt OpenShell blocked is not a violation, because nothing left the sandbox (Lebin, 10-27). The trigger file `/sandbox/post` does count, as a saved file, like C8's (allow it as there). Until the collector's next poll the section may say "1 request answered 403 … waits for OpenShell's log"; once the denial arrives that line goes, and no Uploads row appears for `api.github.com`. Stop it:
 
 ```bash
 docker exec $A rm -f /sandbox/post
@@ -393,7 +393,7 @@ On a default install (`SCAN_INTERVAL` 60 s), from the browser walk on 2026-11-07
 | C8: Violated by the trigger file and loopback sockets | - | 41 s |
 | C9: Blocked by OpenShell | - | 52 s |
 | C10: collector posts the applied policy's revision | - | 52 s |
-| Whole part, commands and waits only (no talking) | 7 min 9 s | 7 min 37 s, with OpenShell already installed (C1) |
+| The whole CI walk, which also waits 130 s for the ASP to settle before the lock and starts a browser | 7 min 9 s | 7 min 37 s, with OpenShell already installed (C1) |
 
 Earlier measurements at CI's `SCAN_INTERVAL=10` and by hand:
 
