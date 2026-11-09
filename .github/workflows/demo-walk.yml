@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       openshell_version:
-        description: "An OpenShell release for Part C instead of the pinned one, e.g. 0.1.7 (with its .deb's sha256)"
+        description: "An OpenShell release for Part C instead of the pinned one, e.g. 0.1.5 (with its .deb's sha256)"
         required: false
         default: ""
       openshell_deb_sha256:

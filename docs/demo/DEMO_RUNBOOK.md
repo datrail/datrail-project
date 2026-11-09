@@ -206,13 +206,13 @@ systemctl --user enable --now openshell-gateway
 openshell gateway add https://127.0.0.1:17670 --local --name openshell
 ```
 
-(`tests/openshell/install.sh` does the same with a pinned 0.1.5 .deb, but it is written for CI hosts; its header says so.) Check:
+(`tests/openshell/install.sh` does the same with a pinned 0.1.7 .deb, but it is written for CI hosts; its header says so.) Check:
 
 ```bash
 openshell status
 ```
 
-`Status: Connected` and the version you installed (CI pins 0.1.5). If it says not reachable: `systemctl --user restart openshell-gateway` and check again.
+`Status: Connected` and the version you installed (CI pins 0.1.7). If it says not reachable: `systemctl --user restart openshell-gateway` and check again.
 
 ### C2. Start clean
 
