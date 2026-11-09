@@ -9,8 +9,19 @@ name: Walk the demo runbook in a browser
 # OpenShell sandbox) starts from tests/openshell/install.sh, C1's CI form.
 # Part B (your own agent) is what the stack's own-agent job checks.
 # Run by hand before a demo, and on a change to the runbook or to the pins.
+# A manual run can walk Part C on another OpenShell release than the pinned
+# one, such as the latest one OpenShell's own installer gives a presenter.
 on:
   workflow_dispatch:
+    inputs:
+      openshell_version:
+        description: "An OpenShell release for Part C instead of the pinned one, e.g. 0.1.7 (with its .deb's sha256)"
+        required: false
+        default: ""
+      openshell_deb_sha256:
+        description: "The sha256 of that release's amd64 .deb, from its openshell-checksums-sha256.txt"
+        required: false
+        default: ""
   pull_request:
     paths:
       - docs/demo/DEMO_RUNBOOK.md
@@ -46,6 +57,9 @@ jobs:
       # C1's CI form: OpenShell's .deb, pinned, and its gateway on Docker.
       - name: Install OpenShell and start its gateway
         if: matrix.part == 'C'
+        env:
+          OPENSHELL_VERSION: ${{ inputs.openshell_version }}
+          OPENSHELL_DEB_SHA256: ${{ inputs.openshell_deb_sha256 }}
         run: bash tests/openshell/install.sh
       - name: Walk Part ${{ matrix.part }}
         env:
