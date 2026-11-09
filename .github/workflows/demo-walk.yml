@@ -65,6 +65,7 @@ jobs:
         env:
           EVIDENCE_DIR: ${{ runner.temp }}/walk
           WALK_PART: ${{ matrix.part }}
+          OPENSHELL_VERSION: ${{ inputs.openshell_version }}
         run: |
           mkdir -p "$EVIDENCE_DIR"
           "$RUNNER_TEMP/pw/bin/python" -I tests/demo_walk.py

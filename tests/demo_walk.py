@@ -552,7 +552,9 @@ def walk_c() -> int:
     home = Path.home()
 
     say("C1. Install OpenShell")
-    note("      (tests/openshell/install.sh installed the pinned .deb and ran C1's second block's steps, "
+    # A manual run on another release (demo-walk.yml's inputs) names it.
+    release = f"OpenShell {os.environ['OPENSHELL_VERSION']}'s" if os.environ.get("OPENSHELL_VERSION") else "the pinned"
+    note(f"      (tests/openshell/install.sh installed {release} .deb and ran C1's second block's steps, "
          "as the runbook says CI does)")
     run_block("C1", 0, contains="enable-linger")
     out = run_block("C1", 2, contains="openshell status")
