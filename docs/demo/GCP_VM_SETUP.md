@@ -64,7 +64,7 @@ git clone https://github.com/datrail/datrail-project.git && cd datrail-project
 docker compose up -d            # pulls the pinned images: under a minute
 ```
 
-Then the runbook (`DEMO_RUNBOOK.md`): Part A on the demo agent, Part C after `bash tests/openshell/install.sh` (OpenShell 0.1.5 as CI pins it, Docker driver). The CI script also runs here as is: `STACK_MODE=demo|own-agent|openshell make test` (7 to 8 minutes each), and against the pinned images as `STACK_IMAGES=pinned make test`.
+Then the runbook (`DEMO_RUNBOOK.md`): Part A on the demo agent, Part C after `bash tests/openshell/install.sh` (OpenShell 0.1.7 as CI pins it, Docker driver). The CI script also runs here as is: `STACK_MODE=demo|own-agent|openshell make test` (7 to 8 minutes each), and against the pinned images as `STACK_IMAGES=pinned make test`.
 
 Known hiccup: if a nested build dies with `curl: (35) Connection reset`, the Docker bridge MTU is above the host's; `docker build --network host` for railmon gets past it (I did not hit it on this VM).
 

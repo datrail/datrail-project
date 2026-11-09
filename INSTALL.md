@@ -411,7 +411,7 @@ openshell policy set my-agent --policy before.json --wait
 default `fail_closed`, a revision the sandbox can't load blocks its
 traffic, so check `openshell policy list` after setting one.
 
-This repository's CI runs this with OpenShell 0.1.5 and the demo agent
+This repository's CI runs this with OpenShell 0.1.7 and the demo agent
 (`STACK_MODE=openshell`): the same walk as the own-agent job, then a call
 to `api.github.com` through OpenShell's supervisor, the import, the
 collector's policy and denials, the export (a sandbox created from it
