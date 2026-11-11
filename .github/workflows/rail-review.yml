@@ -89,36 +89,88 @@ jobs:
           MODEL: ${{ vars.RAIL_REVIEW_MODEL || 'claude-opus-5-5' }}
           REPO: ${{ github.repository }}
         run: |
-          set -uo pipefail
-          npm install --global --no-fund --no-audit "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION" >/dev/null
+          # Not -e: the run's cost, turns and error are summarised either way.
+          set +e -uo pipefail
+          npm install --global --no-fund --no-audit "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION" >/dev/null ||
+            { echo "::error::could not install Claude Code $CLAUDE_CODE_VERSION"; exit 1; }
           test -s .claude/commands/rail-review.md || { echo "::error::.claude/commands/rail-review.md is missing"; exit 1; }
+
+          # Text in the diff or in PR comments reaches the model, so treat it
+          # as able to ask for anything the tools allow. The allow rules below
+          # name read-only git and gh subcommands; these wrappers also refuse
+          # the flags that would turn them into a file write, a command run,
+          # a read outside the repo or a request to another host.
+          bin="$RUNNER_TEMP/rr-bin"
+          mkdir -p "$bin"
+          cat >"$bin/git" <<'WRAP'
+          #!/bin/bash
+          for a in "$@"; do
+            case "$a" in
+              --ou*|--ext*|--tex*|--no-ind*|--cont*|--op*|-O*|--up*|--exe*|--rec*|--git-dir*|--work-tree*)
+                echo "git: '$a' is not allowed in the rail-review job" >&2; exit 2 ;;
+            esac
+          done
+          exec /usr/bin/git "$@"
+          WRAP
+          cat >"$bin/gh" <<'WRAP'
+          #!/bin/bash
+          prev=
+          for a in "$@"; do
+            case "$prev" in -R|--repo) [ "$a" = "$REPO" ] || { echo "gh: only $REPO" >&2; exit 2; } ;; esac
+            case "$a" in
+              --repo=*) [ "${a#--repo=}" = "$REPO" ] || { echo "gh: only $REPO" >&2; exit 2; } ;;
+              -R?*|--hostname*|--web|-w) echo "gh: '$a' is not allowed in the rail-review job" >&2; exit 2 ;;
+            esac
+            prev=$a
+          done
+          exec "$GH_REAL" "$@"
+          WRAP
+          chmod +x "$bin/git" "$bin/gh"
+          export GH_REAL; GH_REAL=$(command -v gh)
+          export GH_HOST=github.com GIT_PAGER=cat PAGER=cat GIT_CONFIG_NOSYSTEM=1
+
           prompt="Run the code review that .claude/commands/rail-review.md describes, on PR #$PR of $REPO. Read that file and follow it exactly.
 
           This is a GitHub Actions run. Differences from a developer's run:
-          - The PR head $HEAD_SHA is already checked out at HEAD with full history, and origin/$BASE_REF is fetched. Use TARGET=HEAD and BASE_REF=origin/$BASE_REF. Do not run git fetch; read files with git show, git diff, git log, git blame or the Read tool.
-          - gh is authenticated read-only for $REPO: gh pr view, gh pr diff and gh pr list work.
+          - The PR head $HEAD_SHA is already checked out at HEAD with full history, and origin/$BASE_REF is fetched. Use TARGET=HEAD and BASE_REF=origin/$BASE_REF; do not resolve them yourself. Do not run git fetch. Read files with the Read and Grep tools, or with git show, git diff, git log and git blame run as single commands (no pipes, no command substitution).
+          - gh is authenticated read-only for $REPO: gh pr view, gh pr diff and gh pr list work, for this repo only.
           - The Head: line must be exactly $HEAD_SHA.
           - Your final message is posted verbatim as the review, so it must be only the section 7 output, starting with the line '### Rail review'. Nothing before or after it."
-          # Read-only tools only: no file writes, no network beyond gh's reads.
-          claude -p "$prompt" \
+
+          PATH="$bin:$PATH" claude -p "$prompt" \
             --model "$MODEL" \
             --output-format json \
             --allowedTools "Read" "Grep" "Glob" "Task" "Agent" \
               "Bash(git diff:*)" "Bash(git log:*)" "Bash(git show:*)" "Bash(git blame:*)" \
-              "Bash(git rev-parse:*)" "Bash(git merge-base:*)" "Bash(git symbolic-ref:*)" \
-              "Bash(git ls-files:*)" "Bash(git grep:*)" \
+              "Bash(git rev-parse:*)" "Bash(git merge-base:*)" "Bash(git ls-files:*)" \
               "Bash(gh pr view:*)" "Bash(gh pr diff:*)" "Bash(gh pr list:*)" \
             --disallowedTools "Write" "Edit" "NotebookEdit" "WebFetch" "WebSearch" \
+              "Read(//proc/**)" "Read(//sys/**)" "Read(//dev/**)" "Read(//root/**)" \
+              "Read(//home/runner/work/_temp/**)" "Read(//home/runner/runners/**)" \
+              "Read(//home/runner/actions-runner/**)" "Read(//home/runner/.claude/**)" \
             >"$RUNNER_TEMP/claude.json"
           rc=$?
-          jq -r '.result // empty' "$RUNNER_TEMP/claude.json" >"$RUNNER_TEMP/review.md" || true
+          jq -r '.result // empty' "$RUNNER_TEMP/claude.json" >"$RUNNER_TEMP/review.md"
+
+          # The review is posted publicly: never with a credential in it.
+          leak=false
+          for v in "$ANTHROPIC_API_KEY" "$CLAUDE_CODE_OAUTH_TOKEN" "$GH_TOKEN"; do
+            [ -n "$v" ] && grep -qF -- "$v" "$RUNNER_TEMP/review.md" && leak=true
+          done
+          grep -qE 'sk-ant-|gh[opsur]_[A-Za-z0-9]{20}|github_pat_' "$RUNNER_TEMP/review.md" && leak=true
+          if $leak; then
+            : >"$RUNNER_TEMP/review.md"
+            echo "::error::The review output carried a credential; it was discarded and nothing is posted. Rotate the key if it was a real one."
+          fi
           {
-            echo "claude exit $rc, is_error $(jq -r '.is_error' "$RUNNER_TEMP/claude.json" 2>/dev/null), model $MODEL"
-            echo "cost USD $(jq -r '.total_cost_usd // "?"' "$RUNNER_TEMP/claude.json" 2>/dev/null), turns $(jq -r '.num_turns // "?"' "$RUNNER_TEMP/claude.json" 2>/dev/null)"
+            echo "claude exit $rc, is_error $(jq -r '.is_error' "$RUNNER_TEMP/claude.json"), model $MODEL"
+            echo "cost USD $(jq -r '.total_cost_usd // "?"' "$RUNNER_TEMP/claude.json"), turns $(jq -r '.num_turns // "?"' "$RUNNER_TEMP/claude.json")"
             echo
             cat "$RUNNER_TEMP/review.md"
-          } >>"$GITHUB_STEP_SUMMARY"
+          } >>"$GITHUB_STEP_SUMMARY" 2>/dev/null
           mkdir -p "$RUNNER_TEMP/out" && cp "$RUNNER_TEMP/review.md" "$RUNNER_TEMP/out/review.md"
+          $leak && exit 1
+          exit 0
 
       - if: steps.key.outputs.configured == 'true'
         uses: actions/upload-artifact@v7
@@ -156,7 +208,7 @@ jobs:
           [ -s "$summary" ] || skip "the review printed nothing"
           grep -q '^### Rail review' "$summary" || skip "no '### Rail review' heading in the output"
           grep -qx "Head: $HEAD_SHA" "$summary" || skip "the output has no 'Head: $HEAD_SHA' line"
-          if grep -q '^No issues found' "$summary"; then
+          if grep -q '^No issues found' "$summary" && ! grep -qE '^Found [0-9]+ issues?:' "$summary"; then
             state=success findings=0
             desc="Passed on ${HEAD_SHA:0:12}"
           else
@@ -170,6 +222,7 @@ jobs:
           info=$(gh api "repos/$REPO/pulls/$PR" --jq '{state, head: .head.sha}')
           [ "$(jq -r .state <<<"$info")" = open ] || skip "the PR is no longer open"
           [ "$(jq -r .head <<<"$info")" = "$HEAD_SHA" ] || skip "the PR moved past $HEAD_SHA"
+          grep -qE 'sk-ant-|gh[opsur]_[A-Za-z0-9]{20}|github_pat_' "$summary" && skip "the output looks like it carries a credential"
 
           body=$(printf '<!-- rail-review sha=%s state=%s -->\n%s\n\n_`rail-review` status: **%s** on %s, posted by the [rail-review Action](%s)._\n' \
             "$HEAD_SHA" "$state" "$(cat "$summary")" "$state" "$HEAD_SHA" "$RUN_URL")
