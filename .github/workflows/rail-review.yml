@@ -104,11 +104,15 @@ jobs:
           mkdir -p "$bin"
           cat >"$bin/git" <<'WRAP'
           #!/bin/bash
+          no() { echo "git: '$1' is not allowed in the rail-review job" >&2; exit 2; }
           for a in "$@"; do
             case "$a" in
-              --ou*|--ext*|--tex*|--no-ind*|--cont*|--op*|-O*|--up*|--exe*|--rec*|--git-dir*|--work-tree*)
-                echo "git: '$a' is not allowed in the rail-review job" >&2; exit 2 ;;
+              --ou*|--ext*|--tex*|--no-ind*|--cont*|--op*|-O*|--up*|--exe*|--rec*|--git-dir*|--work-tree*) no "$a" ;;
+              # A path outside the repo: git diff turns it into --no-index.
+              /*|*=/*|../*|..|*/../*|*/..) no "$a" ;;
             esac
+            # blame prints a revs file's lines back in its errors.
+            [ "${1:-}" = blame ] && case "$a" in -S*|--ignore-rev*) no "$a" ;; esac
           done
           exec /usr/bin/git "$@"
           WRAP
@@ -120,6 +124,9 @@ jobs:
             case "$a" in
               --repo=*) [ "${a#--repo=}" = "$REPO" ] || { echo "gh: only $REPO" >&2; exit 2; } ;;
               -R?*|--hostname*|--web|-w) echo "gh: '$a' is not allowed in the rail-review job" >&2; exit 2 ;;
+              "https://github.com/$REPO/"*) ;;
+              # A URL or HOST/OWNER/REPO argument names another host.
+              *://*|[!-]*.*/*/*) echo "gh: only $REPO on github.com" >&2; exit 2 ;;
             esac
             prev=$a
           done
