@@ -105,14 +105,20 @@ jobs:
           cat >"$bin/git" <<'WRAP'
           #!/bin/bash
           no() { echo "git: '$1' is not allowed in the rail-review job" >&2; exit 2; }
+          # blame prints a revs file's lines (-S, bundled as -wS too) back in
+          # its errors; git log -L covers what the review needs from it.
+          sub= skip=false
+          for a in "$@"; do
+            if $skip; then skip=false; elif [ "$a" = -c ] || [ "$a" = -C ]; then skip=true
+            elif [ "${a#-}" = "$a" ]; then sub=$a; break; fi
+          done
+          [ "$sub" = blame ] && no blame
           for a in "$@"; do
             case "$a" in
               --ou*|--ext*|--tex*|--no-ind*|--cont*|--op*|-O*|--up*|--exe*|--rec*|--git-dir*|--work-tree*) no "$a" ;;
               # A path outside the repo: git diff turns it into --no-index.
               /*|*=/*|../*|..|*/../*|*/..) no "$a" ;;
             esac
-            # blame prints a revs file's lines back in its errors.
-            [ "${1:-}" = blame ] && case "$a" in -S*|--ignore-rev*) no "$a" ;; esac
           done
           exec /usr/bin/git "$@"
           WRAP
@@ -125,9 +131,11 @@ jobs:
               --repo=*) [ "${a#--repo=}" = "$REPO" ] || { echo "gh: only $REPO" >&2; exit 2; } ;;
               -R?*|--hostname*|--web|-w) echo "gh: '$a' is not allowed in the rail-review job" >&2; exit 2 ;;
               "https://github.com/$REPO/"*) ;;
-              # A URL or HOST/OWNER/REPO argument names another host.
-              *://*|[!-]*.*/*/*) echo "gh: only $REPO on github.com" >&2; exit 2 ;;
+              *://*) echo "gh: only $REPO on github.com" >&2; exit 2 ;;
             esac
+            # HOST/OWNER/REPO names another host too.
+            [[ "$a" =~ ^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+/[^/[:space:]]+/[^/[:space:]]+$ ]] &&
+              { echo "gh: only $REPO on github.com" >&2; exit 2; }
             prev=$a
           done
           exec "$GH_REAL" "$@"
@@ -139,7 +147,7 @@ jobs:
           prompt="Run the code review that .claude/commands/rail-review.md describes, on PR #$PR of $REPO. Read that file and follow it exactly.
 
           This is a GitHub Actions run. Differences from a developer's run:
-          - The PR head $HEAD_SHA is already checked out at HEAD with full history, and origin/$BASE_REF is fetched. Use TARGET=HEAD and BASE_REF=origin/$BASE_REF; do not resolve them yourself. Do not run git fetch. Read files with the Read and Grep tools, or with git show, git diff, git log and git blame run as single commands (no pipes, no command substitution).
+          - The PR head $HEAD_SHA is already checked out at HEAD with full history, and origin/$BASE_REF is fetched. Use TARGET=HEAD and BASE_REF=origin/$BASE_REF; do not resolve them yourself. Do not run git fetch. Read files with the Read and Grep tools, or with git show, git diff and git log run as single commands (no pipes, no command substitution). git blame is not available here: use git log -L<start>,<end>:<path> for a line range's history.
           - gh is authenticated read-only for $REPO: gh pr view, gh pr diff and gh pr list work, for this repo only.
           - The Head: line must be exactly $HEAD_SHA.
           - Your final message is posted verbatim as the review, so it must be only the section 7 output, starting with the line '### Rail review'. Nothing before or after it."
@@ -148,7 +156,7 @@ jobs:
             --model "$MODEL" \
             --output-format json \
             --allowedTools "Read" "Grep" "Glob" "Task" "Agent" \
-              "Bash(git diff:*)" "Bash(git log:*)" "Bash(git show:*)" "Bash(git blame:*)" \
+              "Bash(git diff:*)" "Bash(git log:*)" "Bash(git show:*)" \
               "Bash(git rev-parse:*)" "Bash(git merge-base:*)" "Bash(git ls-files:*)" \
               "Bash(gh pr view:*)" "Bash(gh pr diff:*)" "Bash(gh pr list:*)" \
             --disallowedTools "Write" "Edit" "NotebookEdit" "WebFetch" "WebSearch" \
