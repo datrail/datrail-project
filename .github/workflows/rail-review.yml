@@ -1,0 +1,180 @@
+# /rail-review as a GitHub Action: review each pushed PR head and post the
+# required `rail-review` commit status on that exact SHA.
+#
+# Template from the DatRail workspace (ci/workflows/rail-review.yml, see
+# ci/README.md). The review procedure is .claude/commands/rail-review.md, copied
+# into this repo beside it, so a developer's own `/rail-review` and this job
+# run the same prompt.
+#
+# Two jobs, so the model never holds a token that can write: `review` runs
+# Claude Code with a read-only GITHUB_TOKEN and read-only tools, and saves the
+# printed review; `post` runs no model, checks the review names this PR's
+# current head, and posts the summary comment and the status.
+#
+# - No ANTHROPIC_API_KEY (or CLAUDE_CODE_OAUTH_TOKEN) secret: the job says so
+#   and posts nothing; the workspace's 6-hourly check reviews the PR instead.
+# - "No issues found" posts `success`; "Found N issues" posts `failure` with
+#   the findings. A finding resolved without a code change (false positive,
+#   split into a ticket) is resolved the usual way: the workspace's
+#   tools/rail-review-status.sh posts `success` with a `### Resolution`.
+# - A run that ends without a verdict for the current head (model error,
+#   timeout, a later push) posts nothing, and the next push or the 6-hourly
+#   check covers it. It never claims a review passed.
+# - Draft PRs and PRs from forks are skipped: a fork's PR gets no secrets.
+name: rail-review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: rail-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions: {}
+
+env:
+  PR: ${{ github.event.pull_request.number }}
+  HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+  BASE_REF: ${{ github.event.pull_request.base.ref }}
+  CLAUDE_CODE_VERSION: 2.1.322
+
+jobs:
+  review:
+    if: >-
+      !github.event.pull_request.draft &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      configured: ${{ steps.key.outputs.configured }}
+    steps:
+      - id: key
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          if [ -n "$ANTHROPIC_API_KEY$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+            echo configured=true >>"$GITHUB_OUTPUT"
+          else
+            echo configured=false >>"$GITHUB_OUTPUT"
+            echo "::notice::No ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN secret: nothing reviewed or posted here. The workspace's 6-hourly check reviews this PR."
+          fi
+
+      - if: steps.key.outputs.configured == 'true'
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.HEAD_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      # fetch-depth 0 brings every branch, so origin/<base> is there; point
+      # origin/HEAD at it, as the command resolves the base from origin/HEAD.
+      - if: steps.key.outputs.configured == 'true'
+        name: Check the base and head
+        run: |
+          git rev-parse --verify --quiet "refs/remotes/origin/$BASE_REF" >/dev/null
+          git symbolic-ref refs/remotes/origin/HEAD "refs/remotes/origin/$BASE_REF"
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+
+      - if: steps.key.outputs.configured == 'true'
+        name: Review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          MODEL: ${{ vars.RAIL_REVIEW_MODEL || 'claude-opus-5-5' }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          npm install --global --no-fund --no-audit "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION" >/dev/null
+          test -s .claude/commands/rail-review.md || { echo "::error::.claude/commands/rail-review.md is missing"; exit 1; }
+          prompt="Run the code review that .claude/commands/rail-review.md describes, on PR #$PR of $REPO. Read that file and follow it exactly.
+
+          This is a GitHub Actions run. Differences from a developer's run:
+          - The PR head $HEAD_SHA is already checked out at HEAD with full history, and origin/$BASE_REF is fetched. Use TARGET=HEAD and BASE_REF=origin/$BASE_REF. Do not run git fetch; read files with git show, git diff, git log, git blame or the Read tool.
+          - gh is authenticated read-only for $REPO: gh pr view, gh pr diff and gh pr list work.
+          - The Head: line must be exactly $HEAD_SHA.
+          - Your final message is posted verbatim as the review, so it must be only the section 7 output, starting with the line '### Rail review'. Nothing before or after it."
+          # Read-only tools only: no file writes, no network beyond gh's reads.
+          claude -p "$prompt" \
+            --model "$MODEL" \
+            --output-format json \
+            --allowedTools "Read" "Grep" "Glob" "Task" "Agent" \
+              "Bash(git diff:*)" "Bash(git log:*)" "Bash(git show:*)" "Bash(git blame:*)" \
+              "Bash(git rev-parse:*)" "Bash(git merge-base:*)" "Bash(git symbolic-ref:*)" \
+              "Bash(git ls-files:*)" "Bash(git grep:*)" \
+              "Bash(gh pr view:*)" "Bash(gh pr diff:*)" "Bash(gh pr list:*)" \
+            --disallowedTools "Write" "Edit" "NotebookEdit" "WebFetch" "WebSearch" \
+            >"$RUNNER_TEMP/claude.json"
+          rc=$?
+          jq -r '.result // empty' "$RUNNER_TEMP/claude.json" >"$RUNNER_TEMP/review.md" || true
+          {
+            echo "claude exit $rc, is_error $(jq -r '.is_error' "$RUNNER_TEMP/claude.json" 2>/dev/null), model $MODEL"
+            echo "cost USD $(jq -r '.total_cost_usd // "?"' "$RUNNER_TEMP/claude.json" 2>/dev/null), turns $(jq -r '.num_turns // "?"' "$RUNNER_TEMP/claude.json" 2>/dev/null)"
+            echo
+            cat "$RUNNER_TEMP/review.md"
+          } >>"$GITHUB_STEP_SUMMARY"
+          mkdir -p "$RUNNER_TEMP/out" && cp "$RUNNER_TEMP/review.md" "$RUNNER_TEMP/out/review.md"
+
+      - if: steps.key.outputs.configured == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: rail-review
+          path: ${{ runner.temp }}/out/review.md
+          retention-days: 30
+
+  post:
+    needs: review
+    if: needs.review.outputs.configured == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      statuses: write
+      pull-requests: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: rail-review
+          path: ${{ runner.temp }}/in
+
+      - name: Post the rail-review status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          summary="$RUNNER_TEMP/in/review.md"
+          skip() { echo "::warning::No status posted: $*. The next push or the workspace's 6-hourly check reviews this head."; exit 0; }
+
+          # Same checks as the workspace's tools/rail-review-status.sh: a
+          # review of this exact SHA, with a verdict.
+          [ -s "$summary" ] || skip "the review printed nothing"
+          grep -q '^### Rail review' "$summary" || skip "no '### Rail review' heading in the output"
+          grep -qx "Head: $HEAD_SHA" "$summary" || skip "the output has no 'Head: $HEAD_SHA' line"
+          if grep -q '^No issues found' "$summary"; then
+            state=success findings=0
+            desc="Passed on ${HEAD_SHA:0:12}"
+          else
+            findings=$(sed -n 's/^Found \([0-9][0-9]*\) issues\{0,1\}:.*/\1/p' "$summary" | head -1)
+            [ -n "$findings" ] || skip "the output says neither 'No issues found' nor 'Found N issues'"
+            state=failure
+            desc="$findings open finding(s) on ${HEAD_SHA:0:12}"
+          fi
+
+          # Only the PR's current head, on an open PR.
+          info=$(gh api "repos/$REPO/pulls/$PR" --jq '{state, head: .head.sha}')
+          [ "$(jq -r .state <<<"$info")" = open ] || skip "the PR is no longer open"
+          [ "$(jq -r .head <<<"$info")" = "$HEAD_SHA" ] || skip "the PR moved past $HEAD_SHA"
+
+          body=$(printf '<!-- rail-review sha=%s state=%s -->\n%s\n\n_`rail-review` status: **%s** on %s, posted by the [rail-review Action](%s)._\n' \
+            "$HEAD_SHA" "$state" "$(cat "$summary")" "$state" "$HEAD_SHA" "$RUN_URL")
+          comment=$(gh api "repos/$REPO/issues/$PR/comments" -f body="$body" --jq .html_url)
+          gh api "repos/$REPO/statuses/$HEAD_SHA" \
+            -f state="$state" -f context=rail-review -f description="$desc" -f target_url="$comment" \
+            --jq '"\(.context) \(.state) on \(.url | split("/") | last)"'
+          echo "summary: $comment"
