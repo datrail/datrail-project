@@ -1,8 +1,14 @@
 # Installing DatRail (RailMon + RailDash)
 
 [README.md](README.md) has the short version. This page covers the details:
-what the stack needs, every setting, watching your own agent, and what to do
-when something looks wrong.
+what the stack needs, running it, watching your own agent, the images it
+runs, every setting, and what to do when something looks wrong.
+
+First time with Docker, or on a Mac or Windows? [docs/setup-mac.md](docs/setup-mac.md)
+and [docs/setup-windows.md](docs/setup-windows.md) walk a first install step by
+step, and [docs/setup-gcp-vm.md](docs/setup-gcp-vm.md) creates a Linux VM in
+Google Cloud with [`gcp-vm.sh`](gcp-vm.sh) and installs DatRail on it. This
+page is the reference behind them.
 
 Everything runs locally. There is no cloud account and no sign-in, and
 RailDash listens on `127.0.0.1` only.
@@ -38,11 +44,30 @@ RailDash listens on `127.0.0.1` only.
 | **Linux, native (x86_64 or arm64)** | Yes | Real kernel with BTF; the probes see host processes. CI runs the quick start on both architectures. |
 | **Windows, WSL2 with Docker Engine installed in the distro (Intel/AMD x86_64)** | Yes | WSL2 runs a real Linux kernel with BTF; the probes see the distro's processes. |
 | **Windows, WSL2 with Docker Desktop (Intel/AMD x86_64)** | Agents in containers | Containers run in Docker Desktop's own Linux VM, so the probes see only what runs inside that VM. The demo agent works; an agent running natively in your WSL distro is not visible, so run it in a container. An agent in an [OpenShell sandbox](#an-agent-in-an-openshell-sandbox) needs native Linux. |
-| **macOS, Intel or Apple Silicon, with Docker Desktop** | Agents in containers (run on Apple Silicon with Docker Desktop; on Intel in CI, with Colima) | Containers run in Docker Desktop's Linux VM (arm64 on Apple Silicon), so the probes see only what runs inside that VM: the demo agent and your own agent in a container, not an agent running natively on the Mac. The images are the ones CI runs on x86_64 and arm64 Linux, and CI's own-agent job uses Docker Desktop's containerd image store; Docker Desktop's VM kernel needs BTF (the check under Prerequisites). To check a Mac install, follow the [quick start](README.md#quick-start). `make test` asks Docker's engine, not the Mac, for the architecture and BTF, and runs under macOS's own bash and Python 3 with `jq` on `PATH`; CI's `macos-intel` job runs it weekly on an Intel Mac, with Colima's Linux VM as Docker's engine and macOS's own bash 3.2 and `/usr/bin/python3`; GitHub's Apple Silicon runners can't run a VM, so arm64 is proved on Linux arm64 and on a Mac by hand. With Homebrew's docker CLI (as with Colima), `make test` needs the `docker-buildx` plugin for its digest check; Docker Desktop ships it. An agent in an [OpenShell sandbox](#an-agent-in-an-openshell-sandbox) needs native Linux. |
+| **macOS, Intel or Apple Silicon, with Docker Desktop** | Agents in containers (run on Apple Silicon with Docker Desktop; on Intel in CI, with Colima) | Containers run in Docker Desktop's Linux VM (arm64 on Apple Silicon), so the probes see only what runs inside that VM: the demo agent and your own agent in a container, not an agent running natively on the Mac. An agent in an [OpenShell sandbox](#an-agent-in-an-openshell-sandbox) needs native Linux. The notes below say how a Mac install is checked. |
 
-No Linux machine of your own? [docs/setup-gcp-vm.md](docs/setup-gcp-vm.md) creates a Linux VM in Google Cloud with [`gcp-vm.sh`](gcp-vm.sh) and installs DatRail on it, step by step.
+**On a Mac.** The images are the ones CI runs on x86_64 and arm64 Linux, and
+CI's own-agent job uses Docker Desktop's containerd image store; Docker
+Desktop's VM kernel needs BTF (the check under Prerequisites). To check a Mac
+install, follow the [quick start](README.md#quick-start). `make test` asks
+Docker's engine, not the Mac, for the architecture and BTF, and runs under
+macOS's own bash and Python 3 with `jq` on `PATH`; CI's `macos-intel` job
+runs it weekly on an Intel Mac, with Colima's Linux VM as Docker's engine and
+macOS's own bash 3.2 and `/usr/bin/python3`; GitHub's Apple Silicon runners
+can't run a VM, so arm64 is proved on Linux arm64 and on a Mac by hand. With
+Homebrew's docker CLI (as with Colima), `make test` needs the `docker-buildx`
+plugin for its digest check; Docker Desktop ships it.
+
+No Linux machine of your own? [docs/setup-gcp-vm.md](docs/setup-gcp-vm.md)
+creates one in Google Cloud, step by step.
 
 ## Run it
+
+Three ways start the same stack. The clone below brings the demo agent along;
+one downloaded file does the same ([Without the
+repository](#without-the-repository)); and for an agent you already run,
+[`install.sh`](install.sh) does the whole install in one command ([Watch your
+own agent](#watch-your-own-agent)).
 
 ```bash
 git clone https://github.com/datrail/datrail-project.git
@@ -110,80 +135,26 @@ clean` leaves them: the published `ghcr.io/datrail/railmon` and
 `railmon:local` and `raildash:local` if you built with `make stack-local`. Remove those with `docker image rm` if nothing
 else uses them.
 
-## Settings
+### Without the repository
 
-Set these in your shell or in a `.env` file next to `docker-compose.yml`.
-All are optional.
-
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `AGENT_CONTAINER` | `datrail-demo-agent` | The container to watch. `railmon-collect`, `railmon-listen` and `railmon-files` attach to it and `railmon-scan` scans it. `openshell:<sandbox>` watches an OpenShell sandbox by its name (see [An agent in an OpenShell sandbox](#an-agent-in-an-openshell-sandbox)). |
-| `AGENT_KEY` | the container name, or for `openshell:<sandbox>` usually the sandbox name (see [An agent in an OpenShell sandbox](#an-agent-in-an-openshell-sandbox)) | The identity RailDash files ASPs under, when the agent has no deployment identity of its own (see [docs/glossary.md](docs/glossary.md#identity)). A container started by Compose is identified by its Compose project and service instead. |
-| `COLLECT_TARGET` | unset | Only to choose the processes `railmon collect` taps yourself, instead of `AGENT_CONTAINER`'s: `--comm NAME`, `--pid PID`, `--uid UID`, or `--binary-path PATH`. These match across the whole host. |
-| `SCAN_INTERVAL` | `60` | Seconds between scans. |
-| `RAIL_HOST_ID` | `datrail-local` | The name of this machine in every evidence bundle. |
-| `RAIL_CENTER_URL` | unset | A Rail Center to send every evidence bundle to as well (see [Sending bundles to Rail Center](#sending-bundles-to-rail-center)). Unset, no bundle leaves this machine. |
-| `RAIL_AUTH_MODE`, `RAIL_AUTH_TOKEN`, `RAIL_AUTH_AUDIENCE` | `none` | The credential `railmon-scan` presents to Rail Center. Used only with `RAIL_CENTER_URL`. |
-| `RAILDASH_PORT` | `8000` | The local port RailDash is published on (always on `127.0.0.1`). |
-| `RAILDASH_BODY_KINDS` | on | Whether the Data Guardrail tells a real upload (a file, a large or unknown body) from a POST that only passes a few parameters, such as a search query. `off` reads every request body as an upload. |
-| `RAILDASH_TOKEN` | unset | RailDash's local write token, if you want to choose it (see below): at least 16 characters of `A-Z a-z 0-9 - _ . ~ + / =`, or RailDash does not start. |
-| `RAILMON_IMAGE`, `RAILDASH_IMAGE` | `ghcr.io/datrail/railmon:0.1.0-m16`, `ghcr.io/datrail/raildash:0.2.0-rc.17` | The image each component runs (see [Images](#images)). |
-| `RAILMON_SRC`, `RAILDASH_SRC` | the GitHub repositories | Where to build each image from, when you build (see [Build from source](#build-from-source)). |
-| `DEMO_INTERVAL` | `30` | Seconds between the demo agent's calls. |
-| `OPENSHELL_CONFIG_DIR` | `$HOME/.config/openshell` | The OpenShell CLI's configuration, which the opt-in `openshell-collector` mounts read-only (see [An agent in an OpenShell sandbox](#an-agent-in-an-openshell-sandbox)). |
-| `OPENSHELL_SANDBOX` | the name in `AGENT_CONTAINER=openshell:<sandbox>` | The sandbox `openshell-collector` reads. |
-| `OPENSHELL_INTERVAL` | `60` | Seconds between `openshell-collector`'s polls (5 to 3600). |
-
-### The RailDash token
-
-Every RailDash route that changes ASP or baseline state, including the one
-evidence bundles are delivered to, requires RailDash's local write token in an
-`X-RailDash-Token` header. The dashboard page carries it for your browser.
-RailDash also writes it to `raildash.db.token` beside its database, and
-`railmon-scan` and `railmon-collect` read it from there (a read-only mount),
-so the stack needs no token configuration. The collector sends it with every
-capture, which marks the capture as its own rather than anyone's who can
-reach the webhook, and with a heartbeat every 60 seconds while it is attached
-to the agent. A capture without the token is still shown.
-
-RailDash keeps the token in that file across restarts, so `railmon-scan`
-keeps delivering after either side restarts. Set `RAILDASH_TOKEN` to choose
-the token yourself. A RailDash image built before stable-token support (an
-old local build, or an old checkout in `RAILDASH_SRC`) generates a new token
-on every start instead; if `docker compose logs railmon-scan` then shows
-`HTTP 403` after RailDash restarted, rebuild with `make update` (updating
-that checkout first), or run
-`docker compose restart railmon-scan`.
-
-### Sending bundles to Rail Center
-
-The stack is local by default. To also send each evidence bundle to a Rail
-Center, set `RAIL_CENTER_URL` to its base URL. You need a Rail Center you
-have been given access to, and a token it issued for this stack; DatRail
-does not come with one. `railmon-scan` then runs
-`railmon scan --register`, which POSTs the same bundle it delivers to RailDash
-to Rail Center's `/v1/agents/register`, every `SCAN_INTERVAL` seconds. An
-unchanged bundle is re-sent as the same bytes, so Rail Center records a
-duplicate rather than a new row.
+`docker-compose.yml` reads nothing else from this repository: the build
+contexts are git URLs and every volume is a named one. So one file is the
+whole install:
 
 ```bash
-RAIL_CENTER_URL=https://rail-center.example.com \
-RAIL_AUTH_MODE=bearer RAIL_AUTH_TOKEN=... docker compose up -d
+mkdir datrail && cd datrail
+curl -fsSLO https://raw.githubusercontent.com/datrail/datrail-project/master/docker-compose.yml
+docker compose up -d
 ```
 
-`RAIL_AUTH_MODE` is `none` (the default, which sends no credential),
-`bearer` (sends `RAIL_AUTH_TOKEN`), or `gcp` (mints an identity token for
-`RAIL_AUTH_AUDIENCE` from the host's service account, on Google Cloud).
-Setting `RAIL_AUTH_TOKEN` with `none` is refused rather than ignored. The
-two deliveries are independent: if Rail Center is unreachable or refuses the
-bundle, `docker compose logs railmon-scan` says so, and RailDash still gets
-every bundle.
-
-Rail Center files the agent under its agent key (`AGENT_KEY`, or the
-container name). It accepts a key of up to 64 characters that starts with
-a lower-case letter or digit and continues with those, `.`, `_` or `-`.
-For a container named otherwise, set `AGENT_KEY` to such a name; until
-then registration fails on every scan and is logged.
+The `docker compose` commands in this page work the same from that
+directory, and settings go in your shell or a `.env` file beside the
+downloaded file. There is no Makefile there: `make clean` is
+`docker compose down -v --remove-orphans --rmi all`, with
+`COMPOSE_PROFILES=openshell` in front if you ran the OpenShell collector. Compose names the
+project after the directory, so a stack started here doesn't share
+RailDash's database with one started from a clone. CI checks that the file
+reads nothing from its checkout.
 
 ## Watch your own agent
 
@@ -466,27 +437,6 @@ RAILMON_SRC=../railmon RAILDASH_SRC=../raildash \
 RAILMON_IMAGE=datrail-railmon:local RAILDASH_IMAGE=datrail-raildash:local docker compose up -d --build
 ```
 
-### Without the repository
-
-`docker-compose.yml` reads nothing else from this repository: the build
-contexts are git URLs and every volume is a named one. So one file is the
-whole install:
-
-```bash
-mkdir datrail && cd datrail
-curl -fsSLO https://raw.githubusercontent.com/datrail/datrail-project/master/docker-compose.yml
-docker compose up -d
-```
-
-The `docker compose` commands in this page work the same from that
-directory, and settings go in your shell or a `.env` file beside the
-downloaded file. There is no Makefile there: `make clean` is
-`docker compose down -v --remove-orphans --rmi all`, with
-`COMPOSE_PROFILES=openshell` in front if you ran the OpenShell collector. Compose names the
-project after the directory, so a stack started here doesn't share
-RailDash's database with one started from a clone. CI checks that the file
-reads nothing from its checkout.
-
 ### What CI proves
 
 This repository's CI runs the install exactly as pinned, pulling both
@@ -503,6 +453,81 @@ to this page, [`tests/install-walk.sh`](tests/install-walk.sh) walks this
 page itself on fresh x86_64 and arm64 VMs at the default settings: the
 clone, Run it and Verify, Watch your own agent, Stop and reset, and Without
 the repository, each command as this page gives it.
+
+## Settings
+
+Set these in your shell or in a `.env` file next to `docker-compose.yml`.
+All are optional.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `AGENT_CONTAINER` | `datrail-demo-agent` | The container to watch. `railmon-collect`, `railmon-listen` and `railmon-files` attach to it and `railmon-scan` scans it. `openshell:<sandbox>` watches an OpenShell sandbox by its name (see [An agent in an OpenShell sandbox](#an-agent-in-an-openshell-sandbox)). |
+| `AGENT_KEY` | the container name, or for `openshell:<sandbox>` usually the sandbox name (see [An agent in an OpenShell sandbox](#an-agent-in-an-openshell-sandbox)) | The identity RailDash files ASPs under, when the agent has no deployment identity of its own (see [docs/glossary.md](docs/glossary.md#identity)). A container started by Compose is identified by its Compose project and service instead. |
+| `COLLECT_TARGET` | unset | Only to choose the processes `railmon collect` taps yourself, instead of `AGENT_CONTAINER`'s: `--comm NAME`, `--pid PID`, `--uid UID`, or `--binary-path PATH`. These match across the whole host. |
+| `SCAN_INTERVAL` | `60` | Seconds between scans. |
+| `RAIL_HOST_ID` | `datrail-local` | The name of this machine in every evidence bundle. |
+| `RAIL_CENTER_URL` | unset | A Rail Center to send every evidence bundle to as well (see [Sending bundles to Rail Center](#sending-bundles-to-rail-center)). Unset, no bundle leaves this machine. |
+| `RAIL_AUTH_MODE`, `RAIL_AUTH_TOKEN`, `RAIL_AUTH_AUDIENCE` | `none` | The credential `railmon-scan` presents to Rail Center. Used only with `RAIL_CENTER_URL`. |
+| `RAILDASH_PORT` | `8000` | The local port RailDash is published on (always on `127.0.0.1`). |
+| `RAILDASH_BODY_KINDS` | on | Whether the Data Guardrail tells a real upload (a file, a large or unknown body) from a POST that only passes a few parameters, such as a search query. `off` reads every request body as an upload. |
+| `RAILDASH_TOKEN` | unset | RailDash's local write token, if you want to choose it (see below): at least 16 characters of `A-Z a-z 0-9 - _ . ~ + / =`, or RailDash does not start. |
+| `RAILMON_IMAGE`, `RAILDASH_IMAGE` | `ghcr.io/datrail/railmon:0.1.0-m16`, `ghcr.io/datrail/raildash:0.2.0-rc.17` | The image each component runs (see [Images](#images)). |
+| `RAILMON_SRC`, `RAILDASH_SRC` | the GitHub repositories | Where to build each image from, when you build (see [Build from source](#build-from-source)). |
+| `DEMO_INTERVAL` | `30` | Seconds between the demo agent's calls. |
+| `OPENSHELL_CONFIG_DIR` | `$HOME/.config/openshell` | The OpenShell CLI's configuration, which the opt-in `openshell-collector` mounts read-only (see [An agent in an OpenShell sandbox](#an-agent-in-an-openshell-sandbox)). |
+| `OPENSHELL_SANDBOX` | the name in `AGENT_CONTAINER=openshell:<sandbox>` | The sandbox `openshell-collector` reads. |
+| `OPENSHELL_INTERVAL` | `60` | Seconds between `openshell-collector`'s polls (5 to 3600). |
+
+### The RailDash token
+
+Every RailDash route that changes ASP or baseline state, including the one
+evidence bundles are delivered to, requires RailDash's local write token in an
+`X-RailDash-Token` header. The dashboard page carries it for your browser.
+RailDash also writes it to `raildash.db.token` beside its database, and
+`railmon-scan` and `railmon-collect` read it from there (a read-only mount),
+so the stack needs no token configuration. The collector sends it with every
+capture, which marks the capture as its own rather than anyone's who can
+reach the webhook, and with a heartbeat every 60 seconds while it is attached
+to the agent. A capture without the token is still shown.
+
+RailDash keeps the token in that file across restarts, so `railmon-scan`
+keeps delivering after either side restarts. Set `RAILDASH_TOKEN` to choose
+the token yourself. A RailDash image built before stable-token support (an
+old local build, or an old checkout in `RAILDASH_SRC`) generates a new token
+on every start instead; if `docker compose logs railmon-scan` then shows
+`HTTP 403` after RailDash restarted, rebuild with `make update` (updating
+that checkout first), or run
+`docker compose restart railmon-scan`.
+
+### Sending bundles to Rail Center
+
+The stack is local by default. To also send each evidence bundle to a Rail
+Center, set `RAIL_CENTER_URL` to its base URL. You need a Rail Center you
+have been given access to, and a token it issued for this stack; DatRail
+does not come with one. `railmon-scan` then runs
+`railmon scan --register`, which POSTs the same bundle it delivers to RailDash
+to Rail Center's `/v1/agents/register`, every `SCAN_INTERVAL` seconds. An
+unchanged bundle is re-sent as the same bytes, so Rail Center records a
+duplicate rather than a new row.
+
+```bash
+RAIL_CENTER_URL=https://rail-center.example.com \
+RAIL_AUTH_MODE=bearer RAIL_AUTH_TOKEN=... docker compose up -d
+```
+
+`RAIL_AUTH_MODE` is `none` (the default, which sends no credential),
+`bearer` (sends `RAIL_AUTH_TOKEN`), or `gcp` (mints an identity token for
+`RAIL_AUTH_AUDIENCE` from the host's service account, on Google Cloud).
+Setting `RAIL_AUTH_TOKEN` with `none` is refused rather than ignored. The
+two deliveries are independent: if Rail Center is unreachable or refuses the
+bundle, `docker compose logs railmon-scan` says so, and RailDash still gets
+every bundle.
+
+Rail Center files the agent under its agent key (`AGENT_KEY`, or the
+container name). It accepts a key of up to 64 characters that starts with
+a lower-case letter or digit and continues with those, `.`, `_` or `-`.
+For a container named otherwise, set `AGENT_KEY` to such a name; until
+then registration fails on every scan and is logged.
 
 ## Troubleshooting
 
