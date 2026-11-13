@@ -109,6 +109,30 @@ class SelfTest(unittest.TestCase):
         events = events_from(snaps, parse_time(iso(1)))
         self.assertEqual([(e.at, e.delta) for e in events], [(parse_time(iso(4)), 1)])
 
+    def test_a_claimed_row_rising_again_is_a_repeat_not_a_false_positive(self):
+        # Every new ASP lists /data/report.zip again (RailDash adds a hit per
+        # source), long after its task's window.
+        run = DemoRun()
+        for at, count in ((40, 2), (300, 3)):
+            run.extra.append((at, {"rule": "saved_files", "item": "/data/report.zip",
+                                   "count": count, "counts": True}))
+        d = run.write()
+        # The extra rows shadow the base one in each snapshot: keep the highest.
+        lines = []
+        for line in (d / "snapshots.jsonl").read_text().splitlines():
+            snap = json.loads(line)
+            best = {}
+            for row in snap["rows"]:
+                key = (row["rule"], row["item"])
+                if key not in best or row["count"] > best[key]["count"]:
+                    best[key] = row
+            snap["rows"] = list(best.values())
+            lines.append(json.dumps(snap))
+        (d / "snapshots.jsonl").write_text("\n".join(lines) + "\n")
+        report = score(d)
+        self.assertEqual(check_expected(report, SCENARIO["expected"]), [])
+        self.assertEqual(report["false_positives"]["repeats_of_detected_rows"], 2)
+
     def test_refused_is_out_of_the_denominator(self):
         run = DemoRun()
         run.actions[1]["outcome"] = "refused"

@@ -1,6 +1,6 @@
 {
  "name": "demo-agent self-test",
- "about": "The scorer self-test (design §6): datRail's scripted demo agent, whose guardrail rows are known (docs/demo/DEMO_RUNBOOK.md Part A, A5 and A6, in datrail-project). The scorer must give exactly the expected rows and no false positives before a real agent is attached.",
+ "about": "The scorer self-test (design §6): datRail's scripted demo agent, whose guardrail rows are known (docs/demo/DEMO_RUNBOOK.md Part A, A5 and A6, in datrail-project). The scorer must give exactly the expected rows and no false positives before a real agent is attached. The MCP tasks name no calls for capture coverage: their POST to 127.0.0.1/mcp has the same host and path as the demo agent's own loop, so only a body marker could tell them apart; the §4.1a stand-ins get paths of their own.",
  "agent": {
   "name": "datrail demo agent",
   "runtime": "python3 (ssl, system OpenSSL)",
@@ -98,14 +98,6 @@
     "/opt/railmon/tools/local-demo/demo_mcp_call.py",
     "upload_file"
    ],
-   "calls": [
-    {
-     "method": "POST",
-     "path": "/mcp",
-     "host": "127.0.0.1",
-     "tls": "python ssl (OpenSSL)"
-    }
-   ],
    "expect": [
     {
      "rule": "data_actions",
@@ -121,14 +113,6 @@
     "python3",
     "/opt/railmon/tools/local-demo/demo_mcp_call.py",
     "export_all"
-   ],
-   "calls": [
-    {
-     "method": "POST",
-     "path": "/mcp",
-     "host": "127.0.0.1",
-     "tls": "python ssl (OpenSSL)"
-    }
    ],
    "expect": [
     {

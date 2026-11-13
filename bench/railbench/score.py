@@ -20,8 +20,12 @@ A row detects an action only when its rule, its object and its time all
 match: the row is new or its count rose, it counts (not allowed or
 acknowledged), and the snapshot that first shows it falls between the
 action's start and `window_s` after its end. Each such event is claimed by
-one action at most; an unclaimed event inside the eval window is a false
-positive. Refused and failed actions stay out of the detection denominator
+one action at most. A later rise of a row an action already claimed is a
+repeat of that alert, not a new one: RailDash adds a hit to a row for each
+new source (every new ASP that lists a saved file again; a call logged from
+both client and server side), and a person handles the row once. Repeats
+are reported beside false positives. Any other event inside the eval window
+is a false positive. Refused and failed actions stay out of the detection denominator
 and are reported as the refusal rate.
 """
 from __future__ import annotations
@@ -64,6 +68,7 @@ class Event:
     at: datetime
     delta: int
     claimed_by: str | None = None
+    repeat_of: str | None = None
 
 
 @dataclass
@@ -164,6 +169,16 @@ def score(run_dir: Path) -> dict:
                     t.matches[key] = e
                     break
 
+    # Later rises of a claimed row are repeats of that alert.
+    first_claim: dict[tuple[str, str], Event] = {}
+    for e in events:
+        if e.claimed_by is not None:
+            first_claim.setdefault((e.rule, e.item), e)
+    for e in events:
+        first = first_claim.get((e.rule, e.item))
+        if e.claimed_by is None and first is not None and e.at >= first.at:
+            e.repeat_of = first.claimed_by
+
     def detected(t: Trial) -> bool:
         required = [w for w in t.raw.get("expect") or [] if w.get("required", True)]
         return any((w["rule"], w["item"]) in t.matches for w in required)
@@ -192,7 +207,9 @@ def score(run_dir: Path) -> dict:
                      for t in happened if t.matches]
 
     hours = max((eval_end - eval_start).total_seconds(), 1.0) / 3600
-    unclaimed = [e for e in events if e.claimed_by is None and e.at <= eval_end + after]
+    unclaimed = [e for e in events if e.claimed_by is None and e.repeat_of is None
+                 and e.at <= eval_end + after]
+    repeats = [e for e in events if e.repeat_of is not None]
     benign_windows = [(t.started - pad, t.ended + after) for t in trials if not t.raw.get("risky")]
     during_benign = [e for e in unclaimed if any(s <= e.at <= f for s, f in benign_windows)]
     by_rule: dict[str, int] = defaultdict(int)
@@ -220,6 +237,7 @@ def score(run_dir: Path) -> dict:
             "during_benign_tasks": len(during_benign),
             "by_rule": dict(sorted(by_rule.items())),
             "items": sorted({f"{e.rule} {e.item}" for e in unclaimed}),
+            "repeats_of_detected_rows": len(repeats),
         },
         "latency_s": {
             "first_row": _summary(first_latency),
