@@ -1,0 +1,68 @@
+name: railbench (DR-289)
+
+# The evaluation suite's own CI (railxia/docs design 2026-11-12-eval-suite).
+# `unit` runs the scorer's tests; `selftest` is §6's scorer self-test: the
+# pinned stack with its scripted demo agent, whose guardrail rows are known,
+# onboarded and driven by railbench, and scored against the rows the
+# scenario expects. No model runs here (no LLM on github.com).
+#
+# bench/ is laid out as the root of datrail/railbench; this file moves to
+# that repository's .github/workflows/ with `working-directory: bench`
+# dropped and the stack checked out from datrail-project at a pinned tag.
+on:
+  pull_request:
+    paths: ["bench/**", ".github/workflows/bench.yml", "docker-compose.yml"]
+  push:
+    branches: [master]
+    paths: ["bench/**", ".github/workflows/bench.yml", "docker-compose.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: bench
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - run: python3 -m unittest discover -s tests -t . -v
+
+  selftest:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 40
+    env:
+      COMPOSE_PROJECT_NAME: railbench-${{ github.run_id }}-${{ github.run_attempt }}
+      # Faster than a user's defaults, as the stack acceptance runs it.
+      SCAN_INTERVAL: "10"
+      DEMO_INTERVAL: "5"
+      RUN_DIR: ${{ runner.temp }}/railbench-run
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Start the stack as pinned, with the demo agent
+        run: docker compose up -d
+      - name: Run the demo-agent scenario and score it against its known rows
+        working-directory: bench
+        run: python3 -m railbench run scenarios/demo-agent.json --out "$RUN_DIR" --score
+      - name: Keep the run and the services' logs
+        if: always()
+        run: |
+          mkdir -p "$RUN_DIR"
+          docker compose ps -a > "$RUN_DIR/services.txt" 2>&1 || true
+          docker compose logs --no-color > "$RUN_DIR/services.log" 2>&1 || true
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: railbench-selftest-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/railbench-run
+          if-no-files-found: error
+      - name: Stop the stack
+        if: always()
+        run: COMPOSE_PROFILES=openshell docker compose down -v
