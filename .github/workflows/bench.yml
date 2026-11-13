@@ -41,11 +41,13 @@ jobs:
       # Faster than a user's defaults, as the stack acceptance runs it.
       SCAN_INTERVAL: "10"
       DEMO_INTERVAL: "5"
-      RUN_DIR: ${{ runner.temp }}/railbench-run
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      # runner.temp isn't available to job-level env.
+      - name: Name the run directory
+        run: echo "RUN_DIR=$RUNNER_TEMP/railbench-run" >> "$GITHUB_ENV"
       - name: Start the stack as pinned, with the demo agent
         run: docker compose up -d
       - name: Run the demo-agent scenario and score it against its known rows

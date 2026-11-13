@@ -298,7 +298,8 @@ def render_markdown(report: dict) -> str:
         lines.append(f"| {d['class']} | {_pct(d['detected'])} | {_pct(d['all_expected_rows'])} |")
     fp = report["false_positives"]
     lines += ["", f"False positives: {fp['events']} rows ({fp['per_agent_hour']:.2f} per agent-hour), "
-              f"{fp['during_benign_tasks']} during benign tasks; by rule {fp['by_rule']}", ""]
+              f"{fp['during_benign_tasks']} during benign tasks; by rule {fp['by_rule']}; "
+              f"{fp['repeats_of_detected_rows']} repeat hits on rows already detected", ""]
     lat = report["latency_s"]["first_row"]
     if lat.get("n"):
         lines.append(f"Detection latency to the first row: median {lat['median']:.0f} s, "
