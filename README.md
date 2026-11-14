@@ -202,11 +202,10 @@ flowchart LR
 | [RailMon](https://github.com/datrail/railmon#readme) | Collects evidence: captures the agent's TLS traffic, records the sockets and files it opens, and scans its environment into evidence bundles on an interval. |
 | [RailDash](https://github.com/datrail/raildash#readme) | Local dashboard. Stores interactions and ASPs, locks baselines, shows drift, and runs the Data Guardrail. |
 | [eBPF TLS Tap](https://github.com/datrail/ebpf-tls-tap#readme) | Standalone Linux eBPF probes: `sslsniff` (TLS plaintext), `listensnoop` (listening sockets) and `filesnoop` (file opens). RailMon itself records all of these with AgentSight. |
-| [DatRail Proxy](https://github.com/datrail/proxy#readme) | Sits between an agent and its MCP servers and attaches an `x-rail` identity ticket to each call. |
-| [DatRail Gateway](https://github.com/datrail/gateway#readme) | Sits in front of an MCP server, checks the `x-rail` ticket against policy, and forwards or refuses the call. |
+| [RailGuard](https://github.com/datrail/railguard#readme) | Enforces Rail Center's rules on MCP calls: a proxy beside the agents attaches each agent's `x-rail` ticket, and a gateway in front of the MCP servers judges each call against the rules (Envoy and Apigee). It replaces the earlier DatRail Proxy and Gateway repositories. |
 
-The stack in this repository runs RailMon and RailDash. The proxy and gateway
-are deployed separately; their READMEs explain how.
+The stack in this repository runs RailMon and RailDash. RailGuard works with
+Rail Center and is deployed on its own; its README explains how.
 
 ## Documentation
 
