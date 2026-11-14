@@ -35,20 +35,26 @@ does breaks an install silently.
 
 ```bash
 make up        # start the stack from the pinned images
-make test      # run tests/stack-acceptance.sh, CI's check, against a live stack
 make down
+make test      # CI's acceptance run: tests/stack-acceptance.sh
 ```
 
-Both need Docker with Compose v2 and a kernel with BTF, as the quick start
-does.
+`make test` does not test the stack `make up` started. It brings up a stack
+of its own (Compose project `datrail-test`), building RailMon and RailDash
+from each component's default branch, and checks what it shows. Its
+collectors run privileged in the host's PID namespace, so **run it only on a
+disposable host** (a VM), not your workstation. Every target needs Docker
+with Compose v2 and a kernel with BTF, as the quick start does.
 
 ## Sending a change
 
 - One coherent change per pull request; the message says *why*.
 - Branch from `master`, **sign off your commits** (`git commit -s`,
   [DCO](https://developercertificate.org/)), no CLA.
-- CI runs the stack jobs above, plus `openshell`, `arm64` and
-  `install-script`. All but `published` are required checks.
+- The required checks are `install`, `own-agent`, `existing-agent`,
+  `openshell`, `arm64`, `install-script` and `rail-review`. The other jobs
+  (`published`, `openclaw`, the demo, install and macOS walks, and others)
+  run too and are advisory: a red one is worth a look, but does not block.
 - A maintainer reviews the pull request's head commit and records the result
   as the `rail-review` status on that commit. It is a required check: a pull
   request merges only once it passes, and every new push needs a new review.

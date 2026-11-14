@@ -46,9 +46,10 @@ probes, and that is assumed.
 
 ## What the stack does and does not protect
 
-- **RailDash listens on `127.0.0.1` only.** An install step or guide that
-  exposes it, or RailMon's webhook, to another host by default is a
-  vulnerability — report it.
+- **RailDash listens on `127.0.0.1` only**, and it is the only port the
+  stack publishes (RailMon delivers to RailDash's webhook inside the
+  stack). An install step or guide that exposes either to another host by
+  default is a vulnerability — report it.
 - **Captured data is not sanitised.** Credential headers are stripped before
   anything leaves RailMon, but request and response bodies are kept as
   captured. Treat the stack's volumes and anything exported from RailDash
