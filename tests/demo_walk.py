@@ -596,8 +596,8 @@ def walk_c() -> int:
         ["docker", "compose", "ps", "--status", "running", "--format", "{{.Service}}"], cwd=CHECKOUT,
         env={**SHELL_ENV, "COMPOSE_PROFILES": "openshell"}, text=True, stdout=subprocess.PIPE).stdout.split()
     note(f"      running services: {sorted(services)}")
-    if len(services) != 6 or "openshell-collector" not in services or "demo-agent" in services:
-        fail("the runbook says six services Up, openshell-collector among them, no demo-agent")
+    if len(services) != 7 or "openshell-collector" not in services or "demo-agent" in services:
+        fail("the runbook says seven services Up, openshell-collector among them, no demo-agent")
     wait_for("RailDash is up", lambda: api("/webhook/health"), 300)
     TOKEN = page_token()
     if not TOKEN:

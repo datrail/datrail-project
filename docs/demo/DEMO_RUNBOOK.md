@@ -51,7 +51,7 @@ cd ~/datrail-project && docker compose down -v && docker compose up -d
 docker compose ps
 ```
 
-Six services Up, raildash `(healthy)`. Open http://127.0.0.1:8000 .
+Seven services Up, raildash `(healthy)`. Open http://127.0.0.1:8000 .
 
 ### A1. What you see (2 minutes)
 
@@ -277,7 +277,7 @@ Name the sandbox, not its container (INSTALL, "An agent in an OpenShell sandbox"
 COMPOSE_PROFILES=openshell AGENT_CONTAINER=openshell:my-agent docker compose up -d --scale demo-agent=0
 ```
 
-`docker compose ps`: six services Up (the five plus `openshell-collector`), no demo-agent. The steps below `docker exec` into the agent, whose container name carries a random id, so look it up by label:
+`docker compose ps`: seven services Up (the six plus `openshell-collector`), no demo-agent. The steps below `docker exec` into the agent, whose container name carries a random id, so look it up by label:
 
 ```bash
 A=$(docker ps --format '{{.Names}}' --filter label=openshell.ai/sandbox-name=my-agent --filter label=openshell.ai/isolation-role=sandbox); echo $A

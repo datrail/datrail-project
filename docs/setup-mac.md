@@ -250,7 +250,7 @@ Removing it deletes DatRail's data and its downloads. It never touches your agen
 | `command not found: docker` | Docker Desktop isn't installed (Step 1). If you just installed it, close Terminal and open it again. |
 | `install.sh: Docker isn't installed` | The same: install Docker Desktop (Step 1), then run the install command again. |
 | `install.sh: Docker is installed but not running` | Open Docker Desktop, wait until it says **Engine running**, then run the install command again. |
-| `install.sh: Docker can't run a privileged container with BTF` | Update Docker Desktop to its latest version (Docker menu in the menu bar, **Check for updates**), keep its default settings, and run the install command again. [INSTALL.md, Prerequisites](../INSTALL.md#prerequisites) lists the setups that work. |
+| `install.sh: Docker can't run RailMon's probes here` | Update Docker Desktop to its latest version (Docker menu in the menu bar, **Check for updates**), keep its default settings, and run the install command again. [INSTALL.md, Prerequisites](../INSTALL.md#prerequisites) lists the setups that work. |
 | `install.sh: DatRail is already running from ...` | Another copy of DatRail is running. In the folder the message names, run `docker compose down` (its data is kept), then run the install command again. |
 | `Your choice:` comes back with `Type one of the numbers or letters above.` | Type exactly one of the choices shown, such as `1` or `d`, and press **Return**. |
 | Your agent isn't in the list | It has to run in a Docker container, and the container has to be running now. Check Step 3. If it isn't started yet, pick `c` and type its name. |

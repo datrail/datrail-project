@@ -24,7 +24,7 @@ case "$*" in
   "info --format {{.Architecture}}") echo x86_64 ;;
   "info --format {{.OperatingSystem}}") echo "${FAKE_OS:-Ubuntu 26.04 LTS}" ;;
   "compose version") echo "Docker Compose version v2.40.0" ;;
-  run\ --rm\ --privileged\ alpine*) exit 0 ;;
+  run\ --rm\ --cap-add\ BPF\ --cap-add\ PERFMON\ --cap-add\ SYS_ADMIN\ alpine*) exit 0 ;;
   "compose config") echo "name: $(basename "$PWD")" ;;
   ps\ --format*) printf '%s' "${FAKE_PS:-}" ;;
   ps\ --filter\ label=com.docker.compose.service=raildash*) printf '%s' "${FAKE_STACKS:-}" ;;

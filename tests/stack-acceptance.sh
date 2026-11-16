@@ -25,7 +25,8 @@
 # driver running (tests/openshell/install.sh on a CI host).
 #
 # Run only on a disposable host: RailMon's collector, listen probe and files
-# probe are privileged and share the host's PID namespace. On a Mac that host
+# probe run with BPF, PERFMON and SYS_ADMIN in the host's PID namespace,
+# which is root-equivalent, and railmon-scan mounts the Docker socket. On a Mac that host
 # is Docker Desktop's Linux VM (DR-254): the script itself runs under macOS's
 # own bash 3.2 and Python 3, so an empty array is expanded only through
 # ${a[@]+"${a[@]}"}, which bash 3.2's `set -u` accepts.
@@ -362,6 +363,49 @@ for _ in $(seq 120); do
   sleep 1
 done
 [[ -n "$token" ]] || { echo "RailDash never wrote its token file" >&2; exit 1; }
+
+# What each container is allowed, as docker-compose.yml says (DR-288): no
+# container of the stack runs privileged, only docker-proxy and railmon-scan
+# mount the Docker socket, and the sensors' docker-proxy answers a lookup of
+# the agent's container but refuses an exec into it, and a lookup of any
+# other container (except for an OpenShell sandbox, whose container name
+# OpenShell generates). Nor can a sensor reach a socket through
+# /proc/<pid>/root of a process that holds one, though it sees every process
+# on the host.
+for id in $("${compose[@]}" ps -q); do
+  docker inspect --format '{{index .Config.Labels "com.docker.compose.service"}} {{.HostConfig.Privileged}} {{range .Mounts}}{{if eq .Source "/var/run/docker.sock"}}socket{{end}}{{end}}' "$id"
+done | sort > "$EVIDENCE_DIR/privileges.txt"
+cat "$EVIDENCE_DIR/privileges.txt"
+! grep -q ' true' "$EVIDENCE_DIR/privileges.txt" \
+  || { echo "a container of the stack runs privileged" >&2; exit 1; }
+[[ "$(awk '$3 == "socket" {print $1}' "$EVIDENCE_DIR/privileges.txt" | tr '\n' ' ')" == "docker-proxy railmon-scan " ]] \
+  || { echo "only docker-proxy and railmon-scan may mount the Docker socket" >&2; exit 1; }
+sensor_docker=("${compose[@]}" exec -T -e DOCKER_CONFIG=/tmp/.docker railmon-listen docker)
+"${sensor_docker[@]}" inspect --format '{{.State.Running}}' "$agent" | grep -qx true \
+  || { echo "railmon-listen can't look up $agent through docker-proxy" >&2; exit 1; }
+if refused=$("${sensor_docker[@]}" exec "$agent" true 2>&1); then
+  echo "docker-proxy let railmon-listen exec into $agent" >&2; exit 1
+fi
+grep -q 'refused by DatRail docker-proxy' <<<"$refused" \
+  || { echo "an exec through docker-proxy failed, but not by its refusal: $refused" >&2; exit 1; }
+if [[ $mode != openshell ]]; then
+  scan_id=$("${compose[@]}" ps -q railmon-scan)
+  for other in "$scan_id" "$(docker inspect --format '{{.Name}}' "$scan_id" | cut -c2-)"; do
+    if "${sensor_docker[@]}" inspect "$other" >/dev/null 2>&1 < /dev/null; then
+      echo "docker-proxy let railmon-listen inspect railmon-scan ($other)" >&2; exit 1
+    fi
+  done
+fi
+for sensor in railmon-collect railmon-listen railmon-files; do
+  # shellcheck disable=SC2016 # expands in the sensor, not here
+  reached=$("${compose[@]}" exec -T "$sensor" sh -c \
+    'for p in /proc/[0-9]*; do [ -S "$p/root/var/run/docker.sock" ] && echo "${p#/proc/} $(cat "$p/comm" 2>/dev/null)"; done; true' \
+    < /dev/null 2>/dev/null)
+  [[ -z $reached ]] \
+    || { echo "$sensor can reach the Docker socket through /proc/<pid>/root of: $reached" >&2; exit 1; }
+done
+echo "ok    nothing runs privileged; the Docker socket is docker-proxy's and railmon-scan's only, and no sensor reaches it through /proc; the sensors can look up $agent but not exec into it, or look up railmon-scan" \
+  | tee -a "$EVIDENCE_DIR/privileges.txt"
 
 openshell_policy=()
 if [[ $mode == openshell ]]; then

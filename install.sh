@@ -117,10 +117,13 @@ case $engine_arch in
   x86_64 | aarch64) ;;
   *) die "Docker's engine runs on $engine_arch; DatRail's images are built for x86_64 and arm64." ;;
 esac
-# The probes are privileged and read BTF from the kernel Docker runs on: the
-# host's own on Linux, Docker Desktop's VM on a Mac or Windows.
-docker run --rm --privileged alpine test -r /sys/kernel/btf/vmlinux > /dev/null 2>&1 \
-  || die "Docker can't run a privileged container with BTF (/sys/kernel/btf/vmlinux) here. RailMon's probes need both; INSTALL.md#prerequisites says which setups have them."
+# The probes run with BPF, PERFMON and SYS_ADMIN (not privileged) and read
+# BTF from the kernel Docker runs on: the host's own on Linux, Docker
+# Desktop's VM on a Mac or Windows. A Docker too old to know BPF and PERFMON
+# fails here too.
+docker run --rm --cap-add BPF --cap-add PERFMON --cap-add SYS_ADMIN alpine \
+  test -r /sys/kernel/btf/vmlinux > /dev/null 2>&1 \
+  || die "Docker can't run RailMon's probes here: a container with the capabilities BPF, PERFMON and SYS_ADMIN that can read BTF (/sys/kernel/btf/vmlinux). INSTALL.md#prerequisites says which setups have them."
 desktop=0
 case "$(uname -s) $engine_os" in
   Darwin* | *"Docker Desktop"*) desktop=1 ;;

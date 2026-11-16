@@ -23,9 +23,27 @@
 #   openshell-collector  opt-in (--profile openshell): an OpenShell sandbox's
 #                   policy and the denials its supervisor logged, read from
 #                   OpenShell's gateway (INSTALL.md)
+#   docker-proxy    lets the three sensors look up the agent's container in
+#                   Docker, and nothing else (below)
 #
 # Nothing needs a manual restart or import: every service keeps running and
 # delivers on its own.
+#
+# What each service is allowed (DR-288). Nothing runs privileged. The three
+# sensors (railmon-collect, -listen and -files) get the capabilities their
+# eBPF probes need, BPF, PERFMON and SYS_ADMIN, and the host's PID
+# namespace to see the agent's processes. That is still root-equivalent on
+# the host, so run DatRail where you would run any root service. They reach
+# Docker only through docker-proxy, which answers the few read-only calls
+# they make and refuses everything else, so none of them can start, change
+# or exec into a container. docker-proxy runs under a group of its own, so
+# seeing every process on the host doesn't give a sensor its socket through
+# /proc/<pid>/root either. railmon-scan still mounts the Docker socket: the
+# pinned RailMon runs commands in the agent's container to read its setup.
+# From rule pack 16 (DR-300) it reads the agent's files through the host PID
+# namespace with SYS_PTRACE instead, and can then move behind docker-proxy.
+# The sensors, railmon-scan and docker-proxy have read-only
+# filesystems and can't gain privileges.
 #
 # Each component runs a fixed published tag, pinned below: RailMon and
 # RailDash each carry their own. Set RAILMON_IMAGE / RAILDASH_IMAGE to run
@@ -43,6 +61,18 @@
 x-railmon: &railmon
   image: ${RAILMON_IMAGE:-ghcr.io/datrail/railmon:0.1.0-m17}
   restart: unless-stopped
+
+# The three sensors: the capabilities their eBPF probes need instead of
+# --privileged, the host's PID namespace to see the agent's processes, and
+# Docker through docker-proxy only. A read-only filesystem, with /tmp for
+# what the probes unpack at start.
+x-sensor: &sensor
+  cap_add: [BPF, PERFMON, SYS_ADMIN]
+  pid: host
+  security_opt: ["no-new-privileges:true"]
+  read_only: true
+  tmpfs: ["/tmp:exec,mode=1777"]
+  networks: [default, docker-api]
 
 services:
   raildash:
@@ -81,20 +111,19 @@ services:
       start_period: 10s
 
   railmon-collect:
-    <<: *railmon
+    <<: [*railmon, *sensor]
     build:
       context: ${RAILMON_SRC:-https://github.com/datrail/railmon.git}
-    # The eBPF TLS probe needs privilege and the host's PID namespace to see
-    # the agent's processes. This container runs root-equivalent on the host.
-    # The Docker socket is how it finds the agent's container, and finds it
-    # again after a restart.
-    privileged: true
-    pid: host
+    # The eBPF TLS probe needs BPF, PERFMON and SYS_ADMIN (SYS_ADMIN also to
+    # read the agent's memory maps) and the host's PID namespace to see the
+    # agent's processes, so this container is still root-equivalent on the
+    # host. Docker, through docker-proxy, is how it finds the agent's
+    # container, and finds it again after a restart.
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
       # Read-only, for RailDash's token file only.
       - raildash-data:/raildash:ro
     environment:
+      DOCKER_HOST: tcp://docker-proxy:2375
       # Sent with every capture, which marks it as this collector's rather
       # than anyone's who can reach the webhook, and with a heartbeat while
       # a tap is attached, so RailDash can tell a quiet agent from a stopped
@@ -119,38 +148,46 @@ services:
     depends_on:
       raildash:
         condition: service_healthy
+      docker-proxy:
+        condition: service_started
 
   railmon-listen:
-    <<: *railmon
-    # Privileged and in the host PID namespace so it can run AgentSight's
-    # process probe scoped to the agent's PID namespace, out of the agent's
-    # reach; the Docker socket is how it finds the agent's container, and
-    # finds it again after a restart.
-    privileged: true
-    pid: host
+    <<: [*railmon, *sensor]
+    # BPF, PERFMON and SYS_ADMIN and the host PID namespace so it can run
+    # AgentSight's process probe scoped to the agent's PID namespace, out of
+    # the agent's reach. The probe reads the kernel's tracing folder, mounted
+    # read-only since an unprivileged container doesn't see it. Docker,
+    # through docker-proxy, is how it finds the agent's container, and finds
+    # it again after a restart.
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
       - listen-data:/listen
+      - /sys/kernel/tracing:/sys/kernel/tracing:ro
     environment:
+      DOCKER_HOST: tcp://docker-proxy:2375
       RAIL_LISTEN_CONTAINER: ${AGENT_CONTAINER:-datrail-demo-agent}
       RAIL_LISTEN_FILE: /listen/listen.jsonl
     command: ["listen"]
+    depends_on:
+      docker-proxy:
+        condition: service_started
 
   railmon-files:
-    <<: *railmon
+    <<: [*railmon, *sensor]
     # The same as railmon-listen, recording file opens from the same probe: it
     # follows the agent's container through restarts and appends one line
     # the first time each of its processes opens a file for reading, writing
     # or running. Paths and access only, never file contents.
-    privileged: true
-    pid: host
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
       - files-data:/files
+      - /sys/kernel/tracing:/sys/kernel/tracing:ro
     environment:
+      DOCKER_HOST: tcp://docker-proxy:2375
       RAIL_FILES_CONTAINER: ${AGENT_CONTAINER:-datrail-demo-agent}
       RAIL_FILES_FILE: /files/files.jsonl
     command: ["files"]
+    depends_on:
+      docker-proxy:
+        condition: service_started
 
   railmon-scan:
     <<: *railmon
@@ -160,6 +197,15 @@ services:
     # root. Not privileged. Docker is then asked only to inspect.
     pid: host
     cap_add: [SYS_PTRACE]
+    # It still mounts the Docker socket itself rather than docker-proxy: the
+    # pinned RailMon (rule pack 14) still runs `docker exec` in the agent's
+    # container, which docker-proxy refuses. Until the scan moves behind the
+    # proxy, this socket is root-equivalent on the host too. /.rail, where it
+    # writes each bundle, is in memory: it starts empty after a restart, as it
+    # already did after a recreate.
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs: ["/tmp", "/.rail"]
     volumes:
       # `scan --mode docker` inspects the agent's container through Docker.
       - /var/run/docker.sock:/var/run/docker.sock
@@ -255,6 +301,85 @@ services:
       raildash:
         condition: service_healthy
 
+  # The sensors' only way to Docker: a read-only allow-list in front of the
+  # socket. It answers ping and version, listing containers (how an
+  # OpenShell sandbox's container is found by its label) and inspecting the
+  # agent's container, named by AGENT_CONTAINER, which is all the sensors
+  # ask. For an OpenShell sandbox, whose container name OpenShell generates,
+  # it inspects any container. Any other read gets 404, and anything else (an
+  # exec, a start, any write) 403. It sits on a network of its own that only
+  # the sensors join, and publishes no port. The nginx configuration is
+  # inline, so this file is still the whole install.
+  #
+  # nginx runs as root, which owns the socket, but in the nginx group. Linux
+  # lets a process read another's /proc/<pid>/root only when their user and
+  # group match, or with SYS_PTRACE; the sensors see every process on the
+  # host but have neither, so they can't reach the socket that way.
+  docker-proxy:
+    image: nginx:1.30-alpine
+    restart: unless-stopped
+    user: "root:nginx"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks: [docker-api]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs: ["/var/cache/nginx", "/var/run", "/tmp"]
+    environment:
+      AGENT_CONTAINER: ${AGENT_CONTAINER:-datrail-demo-agent}
+      PROXY_CONF: |
+        user root nginx;
+        pid /tmp/nginx.pid;
+        error_log /dev/stderr warn;
+        events {}
+        http {
+          log_format api '$$request_method $$uri $$status';
+          access_log /dev/stdout api;
+          server {
+            listen 2375;
+            # Docker gets the path as matched here, not as sent.
+            location ~ ^/(v[0-9.]+/)?(_ping|version|containers/json)$$ {
+              limit_except GET { deny all; }
+              proxy_pass http://unix:/var/run/docker.sock:$$uri$$is_args$$args;
+              proxy_http_version 1.1;
+              proxy_set_header Connection "";
+            }
+            location ~ ^/(v[0-9.]+/)?containers/(?<dr_container>[A-Za-z0-9_.-]+)/json$$ {
+              limit_except GET { deny all; }
+              if ($$dr_container != "@AGENT@") { return 404 '{"message":"not found: DatRail docker-proxy shows the sensors only the agent container"}'; }
+              proxy_pass http://unix:/var/run/docker.sock:$$uri$$is_args$$args;
+              proxy_http_version 1.1;
+              proxy_set_header Connection "";
+            }
+            # Any other read is "not found", so `docker inspect` of a name
+            # that isn't a container still ends in Docker's own "No such
+            # object" (which the sensors' start-up check names); anything
+            # else is refused.
+            location / {
+              default_type application/json;
+              if ($$request_method ~ ^(GET|HEAD)$$) {
+                return 404 '{"message":"not found: DatRail docker-proxy shows the sensors containers only"}';
+              }
+              return 403 '{"message":"refused by DatRail docker-proxy: the sensors may only look up containers"}';
+            }
+          }
+        }
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        # The agent's container by name; any container for an OpenShell
+        # sandbox. install.sh accepts only a container name or openshell:<name>.
+        case "$$AGENT_CONTAINER" in
+          openshell:*) only='/@AGENT@/d' ;;
+          "" | *[!A-Za-z0-9_.-]*)
+            echo "docker-proxy: AGENT_CONTAINER isn't a container name: $$AGENT_CONTAINER" >&2
+            exit 1 ;;
+          *) only="s/@AGENT@/$$AGENT_CONTAINER/" ;;
+        esac
+        printf '%s\n' "$$PROXY_CONF" | sed "$$only" > /tmp/nginx.conf
+        exec nginx -c /tmp/nginx.conf -g 'daemon off;'
+
   demo-agent:
     <<: *railmon
     # Fixed so railmon-listen, railmon-files and railmon-scan can find it by
@@ -298,3 +423,8 @@ volumes:
   listen-data:
   files-data:
   openshell-data:
+
+networks:
+  # docker-proxy and the three sensors only; no route out.
+  docker-api:
+    internal: true
