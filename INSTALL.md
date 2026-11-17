@@ -24,8 +24,10 @@ RailDash listens on `127.0.0.1` only.
   RailMon pinned here still runs `docker exec` there, through the Docker
   socket it mounts. That is still root-equivalent on
   the host, and so is the Docker socket `railmon-scan` mounts: run DatRail
-  where you would run any root service. The probes reach Docker only through
-  `docker-proxy`, which lets them look up containers and nothing else; the
+  where you would run any root service. The probes also get `SYS_PTRACE`, to
+  follow an agent that runs as another user. They ask Docker only through
+  `docker-proxy`, which lets them look up the agent's container and nothing
+  else; that limits what they ask, not what a compromised probe could do. The
   comments at the top of [docker-compose.yml](docker-compose.yml) say what
   each container is allowed.
 - **On Windows, a WSL2 distro with Docker in it.** Either install Docker
@@ -547,14 +549,12 @@ running, or WSL integration is off for this distro (see [Prerequisites](#prerequ
 Right after Desktop starts, give the integration a moment to attach.
 
 **No interactions appear.** Check `docker compose logs railmon-collect`. The
-collector needs the capabilities `BPF`, `PERFMON` and `SYS_ADMIN`, the host
+collector needs the capabilities `BPF`, `PERFMON`, `SYS_ADMIN` and `SYS_PTRACE`, the host
 PID namespace, and an x86_64 or arm64 kernel with BTF; a `start-up check:`
 line names any of them it is missing. On macOS, only processes inside Docker Desktop's VM
 are visible. For your own agent, `docker compose logs railmon-collect` says
 which process and TLS file it attached to, or that none in the container
-uses TLS yet. If it says it `can't list the agent's memory maps`, your agent
-holds capabilities the collector lacks: add `SYS_PTRACE` to
-`railmon-collect`'s `cap_add`. With `COLLECT_TARGET` set, check that it matches the agent's
+uses TLS yet. With `COLLECT_TARGET` set, check that it matches the agent's
 processes.
 
 **A sensor's log says `refused by DatRail docker-proxy`.** The sensors reach

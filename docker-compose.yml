@@ -31,14 +31,15 @@
 #
 # What each service is allowed (DR-288). Nothing runs privileged. The three
 # sensors (railmon-collect, -listen and -files) get the capabilities their
-# eBPF probes need, BPF, PERFMON and SYS_ADMIN, and the host's PID
-# namespace to see the agent's processes. That is still root-equivalent on
-# the host, so run DatRail where you would run any root service. They reach
-# Docker only through docker-proxy, which answers the few read-only calls
-# they make and refuses everything else, so none of them can start, change
-# or exec into a container. docker-proxy runs under a group of its own, so
-# seeing every process on the host doesn't give a sensor its socket through
-# /proc/<pid>/root either. railmon-scan still mounts the Docker socket: the
+# eBPF probes need, BPF, PERFMON and SYS_ADMIN, SYS_PTRACE to follow an
+# agent that runs as another user, and the host's PID namespace to see the
+# agent's processes. That is still root-equivalent on the host, so run
+# DatRail where you would run any root service. They ask Docker only
+# through docker-proxy, which answers the few read-only calls they make and
+# refuses everything else, so they never start, change or exec into a
+# container. That limits what they ask Docker; it is no wall against a
+# sensor that is itself compromised, which with these capabilities could
+# reach Docker another way. railmon-scan still mounts the Docker socket: the
 # pinned RailMon runs commands in the agent's container to read its setup.
 # From rule pack 16 (DR-300) it reads the agent's files through the host PID
 # namespace with SYS_PTRACE instead, and can then move behind docker-proxy.
@@ -63,11 +64,12 @@ x-railmon: &railmon
   restart: unless-stopped
 
 # The three sensors: the capabilities their eBPF probes need instead of
-# --privileged, the host's PID namespace to see the agent's processes, and
-# Docker through docker-proxy only. A read-only filesystem, with /tmp for
+# --privileged (SYS_PTRACE for an agent that runs as another user, such as
+# an OpenShell sandbox's), the host's PID namespace to see the agent's
+# processes, and Docker through docker-proxy only. A read-only filesystem, with /tmp for
 # what the probes unpack at start.
 x-sensor: &sensor
-  cap_add: [BPF, PERFMON, SYS_ADMIN]
+  cap_add: [BPF, PERFMON, SYS_ADMIN, SYS_PTRACE]
   pid: host
   security_opt: ["no-new-privileges:true"]
   read_only: true
@@ -115,7 +117,8 @@ services:
     build:
       context: ${RAILMON_SRC:-https://github.com/datrail/railmon.git}
     # The eBPF TLS probe needs BPF, PERFMON and SYS_ADMIN (SYS_ADMIN also to
-    # read the agent's memory maps) and the host's PID namespace to see the
+    # read the agent's memory maps, and SYS_PTRACE when the agent runs as
+    # another user) and the host's PID namespace to see the
     # agent's processes, so this container is still root-equivalent on the
     # host. Docker, through docker-proxy, is how it finds the agent's
     # container, and finds it again after a restart.
@@ -153,7 +156,8 @@ services:
 
   railmon-listen:
     <<: [*railmon, *sensor]
-    # BPF, PERFMON and SYS_ADMIN and the host PID namespace so it can run
+    # BPF, PERFMON and SYS_ADMIN (SYS_PTRACE for an agent that runs as
+    # another user) and the host PID namespace so it can run
     # AgentSight's process probe scoped to the agent's PID namespace, out of
     # the agent's reach. The probe reads the kernel's tracing folder, mounted
     # read-only since an unprivileged container doesn't see it. Docker,
@@ -310,15 +314,9 @@ services:
   # exec, a start, any write) 403. It sits on a network of its own that only
   # the sensors join, and publishes no port. The nginx configuration is
   # inline, so this file is still the whole install.
-  #
-  # nginx runs as root, which owns the socket, but in the nginx group. Linux
-  # lets a process read another's /proc/<pid>/root only when their user and
-  # group match, or with SYS_PTRACE; the sensors see every process on the
-  # host but have neither, so they can't reach the socket that way.
   docker-proxy:
     image: nginx:1.30-alpine
     restart: unless-stopped
-    user: "root:nginx"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     networks: [docker-api]
@@ -328,7 +326,7 @@ services:
     environment:
       AGENT_CONTAINER: ${AGENT_CONTAINER:-datrail-demo-agent}
       PROXY_CONF: |
-        user root nginx;
+        user root;
         pid /tmp/nginx.pid;
         error_log /dev/stderr warn;
         events {}

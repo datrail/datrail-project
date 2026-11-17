@@ -20,8 +20,8 @@ normal and is shown anything new. Nothing leaves the computer.
 - **Ask the person before step 1.** DatRail runs containers with full
   control of this computer: three of its containers hold root-equivalent
   capabilities for its eBPF probes, its scanner can read any process and
-  reaches Docker itself, and a small proxy holds Docker's socket so the probes
-  can only look up containers. Step 1's check already starts one. Say so in one sentence and wait for a yes.
+  reaches Docker itself, and a small proxy holds Docker's socket and answers
+  the probes' lookups. Step 1's check already starts one. Say so in one sentence and wait for a yes.
 - **Never use `sudo`, and never change Docker's settings** without the person
   saying yes to that exact command.
 - **Don't stop, restart or change the person's agent.** DatRail doesn't need

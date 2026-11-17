@@ -25,7 +25,7 @@
 # driver running (tests/openshell/install.sh on a CI host).
 #
 # Run only on a disposable host: RailMon's collector, listen probe and files
-# probe run with BPF, PERFMON and SYS_ADMIN in the host's PID namespace,
+# probe run with BPF, PERFMON, SYS_ADMIN and SYS_PTRACE in the host's PID namespace,
 # which is root-equivalent, and railmon-scan mounts the Docker socket. On a Mac that host
 # is Docker Desktop's Linux VM (DR-254): the script itself runs under macOS's
 # own bash 3.2 and Python 3, so an empty array is expanded only through
@@ -369,9 +369,8 @@ done
 # mount the Docker socket, and the sensors' docker-proxy answers a lookup of
 # the agent's container but refuses an exec into it, and a lookup of any
 # other container (except for an OpenShell sandbox, whose container name
-# OpenShell generates). Nor can a sensor reach a socket through
-# /proc/<pid>/root of a process that holds one, though it sees every process
-# on the host.
+# OpenShell generates). The openshell job's agent runs as another user, so
+# its captures below show the sensors can follow one (SYS_PTRACE).
 for id in $("${compose[@]}" ps -q); do
   docker inspect --format '{{index .Config.Labels "com.docker.compose.service"}} {{.HostConfig.Privileged}} {{range .Mounts}}{{if eq .Source "/var/run/docker.sock"}}socket{{end}}{{end}}' "$id"
 done | sort > "$EVIDENCE_DIR/privileges.txt"
@@ -396,15 +395,7 @@ if [[ $mode != openshell ]]; then
     fi
   done
 fi
-for sensor in railmon-collect railmon-listen railmon-files; do
-  # shellcheck disable=SC2016 # expands in the sensor, not here
-  reached=$("${compose[@]}" exec -T "$sensor" sh -c \
-    'for p in /proc/[0-9]*; do [ -S "$p/root/var/run/docker.sock" ] && echo "${p#/proc/} $(cat "$p/comm" 2>/dev/null)"; done; true' \
-    < /dev/null 2>/dev/null)
-  [[ -z $reached ]] \
-    || { echo "$sensor can reach the Docker socket through /proc/<pid>/root of: $reached" >&2; exit 1; }
-done
-echo "ok    nothing runs privileged; the Docker socket is docker-proxy's and railmon-scan's only, and no sensor reaches it through /proc; the sensors can look up $agent but not exec into it, or look up railmon-scan" \
+echo "ok    nothing runs privileged; the Docker socket is docker-proxy's and railmon-scan's only; the sensors can look up $agent but not exec into it, or look up railmon-scan" \
   | tee -a "$EVIDENCE_DIR/privileges.txt"
 
 openshell_policy=()
