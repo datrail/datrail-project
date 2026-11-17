@@ -54,5 +54,13 @@ probes, and that is assumed.
   anything leaves RailMon, but request and response bodies are kept as
   captured. Treat the stack's volumes and anything exported from RailDash
   as being as sensitive as the agent's own traffic.
+- **RailDash's write token keeps out other hosts, not local users.** The
+  dashboard page carries it, so any user or process that can reach
+  RailDash (its port on the host, or `raildash:8000` on DatRail's own
+  network) or use Docker on the host can deliver bundles and change
+  baselines. That includes an agent outside a container, or in one on
+  DatRail's network ([INSTALL.md, The RailDash
+  token](INSTALL.md#the-raildash-token)). A way to get it from another host
+  is a vulnerability.
 - **The images are pinned to fixed published tags.** A guide that installs
   an unpinned or unverified image is a defect worth reporting.

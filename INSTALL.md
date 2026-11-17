@@ -492,6 +492,27 @@ capture, which marks the capture as its own rather than anyone's who can
 reach the webhook, and with a heartbeat every 60 seconds while it is attached
 to the agent. A capture without the token is still shown.
 
+The token keeps out other hosts, not other users of this one. Anything that
+can open the dashboard can read it from the page, and RailDash listens on
+`127.0.0.1`, so that is any user or process on this machine: another local
+user, and an agent that runs directly on the host or in a container on the
+host's network. On Linux, an agent in a container of its own on Docker's
+default network can't reach it (`127.0.0.1` there is the container's own).
+A container on DatRail's own network can: it reaches RailDash at
+`raildash:8000`, as `railmon-scan` does, so the demo agent can, and so can an
+agent you attach to that network. With Docker Desktop, containers can reach
+this computer's ports through `host.docker.internal`, so assume they can.
+Anyone who can use Docker on this machine (root, the `docker` group, the
+owner of a rootless or Docker Desktop engine) can also read
+`raildash.db.token` from RailDash's volume. With the token, they can deliver
+evidence bundles and lock, switch or accept baselines.
+
+On a machine only you use, with the agent in a container of its own (not on
+DatRail's network), that's fine. On a
+shared machine, or to watch an agent that runs outside a container and that
+you don't trust with its own baseline, run DatRail on a machine of its own,
+such as a VM ([docs/setup-gcp-vm.md](docs/setup-gcp-vm.md)).
+
 RailDash keeps the token in that file across restarts, so `railmon-scan`
 keeps delivering after either side restarts. Set `RAILDASH_TOKEN` to choose
 the token yourself. A RailDash image built before stable-token support (an
