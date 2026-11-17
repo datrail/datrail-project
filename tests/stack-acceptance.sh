@@ -211,7 +211,9 @@ for repo in railmon raildash; do
     *://*) url=${src%%#*}; [[ $src != *#* ]] || { ref=${src#*#}; ref=${ref%%:*}; } ;;
     *) printf '%s %s\n' "$repo" "local $src"; continue ;;
   esac
-  printf '%s %s\n' "$repo" "$(git ls-remote "$url" "$ref" | head -1 | cut -f1)${src:+ ($src)}"
+  # ls-remote matches ref names only; a ref that is a commit is printed as given.
+  commit=$(git ls-remote "$url" "$ref" | head -1 | cut -f1) || commit=
+  printf '%s %s\n' "$repo" "${commit:-$ref}${src:+ ($src)}"
 done | tee "$EVIDENCE_DIR/component-commits.txt"
 
 "${compose[@]}" config --quiet
