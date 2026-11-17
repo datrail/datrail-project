@@ -17,7 +17,9 @@ RailDash listens on `127.0.0.1` only.
 
 - **Docker Engine with Compose v2.** Three RailMon containers run privileged
   in the host PID namespace (the eBPF probes need it), so your Docker daemon
-  must allow privileged containers.
+  must allow privileged containers. `railmon-scan` runs in the host PID
+  namespace too, unprivileged with `SYS_PTRACE`, so it can read the agent's
+  files without running anything in its container.
 - **On Windows, a WSL2 distro with Docker in it.** Either install Docker
   Engine inside the distro, or use Docker Desktop with WSL integration on for
   that distro (Settings → Resources → WSL integration); the
