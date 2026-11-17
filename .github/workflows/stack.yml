@@ -24,6 +24,14 @@ on:
         description: "Published RailDash image to pull instead of building"
         required: false
         default: ""
+      railmon_src:
+        description: "Build RailMon from this git context instead of master, e.g. https://github.com/datrail/railmon.git#<branch> (a PR's branch, before it merges)"
+        required: false
+        default: ""
+      raildash_src:
+        description: "Build RailDash from this git context instead of master"
+        required: false
+        default: ""
       openshell_version:
         description: "The openshell job only: an OpenShell release to try instead of the pinned one, e.g. 0.1.5 (with its .deb's sha256)"
         required: false
@@ -36,10 +44,13 @@ on:
 permissions:
   contents: read
 
-# Empty unless a manual run names them; empty means build from source.
+# Empty unless a manual run names them; empty means build from source,
+# and an empty *_SRC means each component's default branch.
 env:
   RAILMON_IMAGE: ${{ inputs.railmon_image }}
   RAILDASH_IMAGE: ${{ inputs.raildash_image }}
+  RAILMON_SRC: ${{ inputs.railmon_src }}
+  RAILDASH_SRC: ${{ inputs.raildash_src }}
 
 jobs:
   # The job id is the required status check on master; keep it.
