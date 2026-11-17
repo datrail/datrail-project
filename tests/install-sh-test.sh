@@ -14,13 +14,15 @@ trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/bin"
 cat > "$work/bin/docker" <<'EOF'
 #!/usr/bin/env bash
-# The stand-in: FAKE_PS is `docker ps --format`'s output, FAKE_RUNNING the
+# The stand-in: FAKE_INFO_ERR makes `docker info` fail with that error,
+# FAKE_PS is `docker ps --format`'s output, FAKE_RUNNING the
 # running containers' names, FAKE_EXISTING the stopped ones', FAKE_STACKS
 # the running RailDash containers' "project|directory".
 echo "docker $*" >> "$FAKE_LOG"
 last=${!#}
 case "$*" in
-  "info") exit 0 ;;
+  "info") [ -z "${FAKE_INFO_ERR:-}" ] || { printf '%s
+' "$FAKE_INFO_ERR" >&2; exit 1; } ;;
   "info --format {{.Architecture}}") echo x86_64 ;;
   "info --format {{.OperatingSystem}}") echo "${FAKE_OS:-Ubuntu 26.04 LTS}" ;;
   "compose version") echo "Docker Compose version v2.40.0" ;;
@@ -40,7 +42,13 @@ case "$*" in
   *) echo "fake docker: unexpected: $*" >&2; exit 99 ;;
 esac
 EOF
-chmod +x "$work/bin/docker"
+# `uname -s` is FAKE_UNAME (Linux unless set), so the cases read the same on a
+# Mac; anything else is the real uname.
+cat > "$work/bin/uname" <<'EOF'
+#!/usr/bin/env bash
+if [ "$*" = -s ]; then echo "${FAKE_UNAME:-Linux}"; else PATH=/usr/bin:/bin exec uname "$@"; fi
+EOF
+chmod +x "$work/bin/docker" "$work/bin/uname"
 export PATH="$work/bin:$PATH" FAKE_LOG="$work/docker.log"
 fails=0
 
@@ -173,6 +181,43 @@ else bad "piped, no terminal, no --yes"; fi
 if setsid -w bash -s -- --dir "$d" --demo < "$here/install.sh" > "$work/out" 2>&1; then
   ok "piped, no terminal, --demo"
 else bad "piped, no terminal, --demo"; fi
+
+# 10. Docker unreachable: each cause gets its own message, in either of
+# Docker's wordings, with the socket checked rather than the words.
+d=$work/six
+sock_dir=$(mktemp -d "$work/sock.XXXXXX")
+python3 -I -c 'import socket, sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "$sock_dir/dead.sock"
+unreachable() { # unreachable NAME ERROR EXPECTED...
+  local name=$1 err=$2; shift 2
+  if FAKE_INFO_ERR=$err run "$d" --yes --demo < /dev/null; then bad "$name"; return; fi
+  for want in "$@"; do grep -qF -- "$want" "$work/out" || { bad "$name"; return; }; done
+  ! has "$FAKE_LOG" "docker compose up -d --remove-orphans" || { bad "$name"; return; }
+  # Desktop's message only where the case expects it.
+  [[ " $* " == *"Docker Desktop isn't running"* ]] || ! grep -qF "Docker Desktop isn't running" "$work/out" \
+    || { bad "$name"; return; }
+  ok "$name"
+}
+unreachable "docker: no daemon socket yet" \
+  "failed to connect to the docker API at unix://$sock_dir/none.sock; check if the path is correct and if the daemon is running: dial unix $sock_dir/none.sock: connect: no such file or directory" \
+  "no daemon socket at $sock_dir/none.sock" "still being installed" "sudo systemctl start docker"
+unreachable "docker: a socket but no daemon" \
+  "Cannot connect to the Docker daemon at unix://$sock_dir/dead.sock. Is the docker daemon running?" \
+  "Docker's socket ($sock_dir/dead.sock) is there, but the daemon doesn't answer" "sudo systemctl start docker"
+unreachable "docker: permission denied" \
+  "permission denied while trying to connect to the docker API at unix:///var/run/docker.sock" \
+  "permission denied on /var/run/docker.sock)" "sudo usermod -aG docker" "equivalent to root"
+unreachable "docker: permission denied, older wording" \
+  "Got permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock: Get \"http://%2Fvar%2Frun%2Fdocker.sock/v1.24/info\": dial unix /var/run/docker.sock: connect: permission denied" \
+  "permission denied on /var/run/docker.sock)"
+unreachable "docker: anything else, in Docker's words" \
+  "error during connect: this error is new" \
+  "Docker says: error during connect: this error is new"
+unreachable "docker: Docker Desktop's socket" \
+  "Cannot connect to the Docker daemon at unix:///home/ana/.docker/desktop/docker.sock. Is the docker daemon running?" \
+  "Docker Desktop isn't running"
+FAKE_UNAME=Darwin unreachable "docker: a Mac without Docker Desktop" \
+  "Cannot connect to the Docker daemon at unix://$sock_dir/colima.sock. Is the docker daemon running?" \
+  "no daemon socket at $sock_dir/colima.sock" "colima start"
 
 [[ $fails == 0 ]] || { echo "$fails case(s) failed"; exit 1; }
 echo "all cases passed"

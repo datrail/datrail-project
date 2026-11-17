@@ -82,8 +82,17 @@ curl -fsSL https://raw.githubusercontent.com/datrail/datrail-project/master/inst
   closed) or its WSL integration is off for this distro: ask the person to
   start it, or turn the integration on (Docker Desktop, Settings, Resources,
   WSL integration), then run the check again.
-- `not running`: ask them to start Docker Desktop, wait until it says it's
-  running, then run the check again.
+- `Docker Desktop isn't running`: ask them to start Docker Desktop, wait
+  until it says Engine running (in WSL, also check its WSL integration, as
+  above), then run the check again.
+- `no daemon socket` or `the daemon doesn't answer`: Docker is installed but
+  not running. On a new VM it may still be installing: wait two minutes and
+  run the check again. Otherwise ask the person to start it with the command
+  the message gives, then run the check again.
+- `permission denied`: their user may not use Docker. The fix the message
+  gives, the `docker` group, is equivalent to root on the machine, so it's
+  theirs to decide and run: tell them, and continue once they have logged out
+  and back in.
 - Anything else: tell them the message as it is, and point them to
   https://github.com/datrail/datrail-project/blob/master/INSTALL.md#prerequisites.
 

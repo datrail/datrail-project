@@ -109,7 +109,35 @@ ask() { # ask PROMPT DEFAULT -> $answer
 step "Checking that this machine can run DatRail"
 command -v docker > /dev/null 2>&1 || die "Docker isn't installed. Install Docker (Docker Desktop on a Mac or Windows, Docker Engine on Linux), then run this again. INSTALL.md#prerequisites says more."
 command -v curl > /dev/null 2>&1 || [ -n "$compose_file" ] || die "curl isn't installed; install it, then run this again."
-docker info > /dev/null 2>&1 || die "Docker is installed but not running, or this user can't reach it. Start Docker (Docker Desktop: open it and wait until it says it's running), or on Linux add yourself to the docker group, then run this again."
+# When `docker info` fails, say why, from Docker's own error and its socket.
+# Docker Desktop (its CLI, on a Mac or in WSL with Desktop's integration, or
+# its socket) gets Desktop's advice. Otherwise: a socket this user may not
+# open, no daemon yet (a new VM may still be installing it), a daemon that
+# doesn't answer, or, with no socket in the error, Docker's own first line.
+# A Mac without Desktop (Colima, OrbStack) gets their start commands.
+docker_unreachable() { # docker_unreachable ERROR
+  local sock start="sudo systemctl start docker"
+  sock=$(printf '%s\n' "$1" | sed -n 's|.*unix://\([^ ;:"]*\).*|\1|p' | head -n 1)
+  sock=${sock%.}
+  case "$(readlink -f "$(command -v docker)" 2> /dev/null) $sock" in
+    */docker-desktop/* | *Docker.app* | */.docker/run/docker.sock | */.docker/desktop/docker.sock)
+      die "Docker Desktop isn't running, or this terminal can't reach it. Open Docker Desktop and wait until it says Engine running; in WSL, also check that Settings, Resources, WSL integration is on for this distro. Then run this again." ;;
+  esac
+  case $sock in /run/user/* | "${XDG_RUNTIME_DIR:-/nonexistent}"/*) start="systemctl --user start docker" ;; esac
+  [ "$(uname -s)" != Darwin ] || start="open Docker Desktop, or start your engine: colima start, or open OrbStack"
+  case $1 in
+    *"ermission denied"*)
+      die "Docker is running, but this user may not use it (permission denied on ${sock:-its socket}). Add yourself to the docker group, which is equivalent to root on this machine: sudo usermod -aG docker \"\$USER\", then log out and back in, and run this again." ;;
+  esac
+  if [ -z "$sock" ]; then
+    die "Docker is installed but install.sh can't reach it. Docker says: $(printf '%s\n' "$1" | head -n 1)"
+  elif [ -S "$sock" ]; then
+    die "Docker's socket ($sock) is there, but the daemon doesn't answer. Start it ($start), then run this again."
+  else
+    die "Docker isn't running here: there's no daemon socket at $sock. If Docker is still being installed (on a new VM from gcp-vm.sh, about 2 minutes), wait and run this again. Otherwise start it: $start."
+  fi
+}
+docker_error=$(docker info 2>&1 > /dev/null) || docker_unreachable "$docker_error"
 docker compose version > /dev/null 2>&1 || die "Docker Compose v2 (\`docker compose\`) is missing. Docker Desktop includes it; on Linux install the docker-compose-plugin package."
 engine_arch=$(docker info --format '{{.Architecture}}')
 engine_os=$(docker info --format '{{.OperatingSystem}}')
