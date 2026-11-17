@@ -200,9 +200,18 @@ sandbox_containers() {
 }
 trap cleanup EXIT
 
-# Which commits this run built: the default branch of each component.
+# Which commits this run built: each component's default branch, or the
+# git context RAILMON_SRC / RAILDASH_SRC names (a manual run's railmon_src),
+# whose ref is resolved the same way. A local folder is named as it is.
 for repo in railmon raildash; do
-  printf '%s %s\n' "$repo" "$(git ls-remote "https://github.com/datrail/$repo.git" HEAD | cut -f1)"
+  case $repo in railmon) src=${RAILMON_SRC:-} ;; raildash) src=${RAILDASH_SRC:-} ;; esac
+  url="https://github.com/datrail/$repo.git" ref=HEAD
+  case $src in
+    "") ;;
+    *://*) url=${src%%#*}; [[ $src != *#* ]] || { ref=${src#*#}; ref=${ref%%:*}; } ;;
+    *) printf '%s %s\n' "$repo" "local $src"; continue ;;
+  esac
+  printf '%s %s\n' "$repo" "$(git ls-remote "$url" "$ref" | head -1 | cut -f1)${src:+ ($src)}"
 done | tee "$EVIDENCE_DIR/component-commits.txt"
 
 "${compose[@]}" config --quiet
