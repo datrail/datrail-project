@@ -154,6 +154,12 @@ services:
 
   railmon-scan:
     <<: *railmon
+    # From RailMon's rule pack 16 (DR-300) the scan runs nothing in the agent's
+    # container: it reads the agent's own files through /proc/<pid>/root, which
+    # takes the host PID namespace, and SYS_PTRACE for an agent that isn't
+    # root. Not privileged. Docker is then asked only to inspect.
+    pid: host
+    cap_add: [SYS_PTRACE]
     volumes:
       # `scan --mode docker` inspects the agent's container through Docker.
       - /var/run/docker.sock:/var/run/docker.sock
