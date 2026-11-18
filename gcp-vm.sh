@@ -183,11 +183,24 @@ case "$cmd" in
 $session_script"
     fi
     # A terminal for the shell at the end of session_script, when there is one here.
-    ssh_args=(-L "$port:127.0.0.1:$port")
+    # ssh's LogLevel=ERROR drops "Permanently added ... to the list of known hosts" on
+    # a VM's first connection, and keeps its errors (a local port already in use, a
+    # changed host key).
+    ssh_args=(-o LogLevel=ERROR -L "$port:127.0.0.1:$port")
     if [ -t 0 ]; then ssh_args=(-t "${ssh_args[@]}"); fi
+    # gcloud's warnings only once its SSH key exists: the one every connection gets
+    # is that IAP's tunnel would be faster with NumPy (docs/setup-gcp-vm.md, Step 3,
+    # says how). Before the key exists they explain the passphrase prompt that
+    # follows, so they stay. Errors always show, and a verbosity you set yourself
+    # stands. Through the environment, so the tunnel gcloud starts for ssh gets it too.
+    quiet=()
+    if [ -f "$HOME/.ssh/google_compute_engine" ] && [ -z "${CLOUDSDK_CORE_VERBOSITY:-}" ]; then
+      quiet=(CLOUDSDK_CORE_VERBOSITY=error)
+    fi
     for try in 1 2 3 4 5 6; do
       rc=0
-      gcloud compute ssh "$name" "${g[@]}" --tunnel-through-iap --command "$session" -- "${ssh_args[@]}" || rc=$?
+      env ${quiet[@]+"${quiet[@]}"} \
+        gcloud compute ssh "$name" "${g[@]}" --tunnel-through-iap --command "$session" -- "${ssh_args[@]}" || rc=$?
       [ "$rc" -ne 0 ] || exit 0
       [ "$rc" -eq 255 ] || exit "$rc"
       echo "The VM isn't answering SSH yet (it may still be booting). Trying again in 15 seconds ($try of 6)."
