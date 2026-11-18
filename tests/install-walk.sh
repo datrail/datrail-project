@@ -16,7 +16,7 @@
 # passing as the other one's proof. EVIDENCE_DIR receives the transcript, the
 # host's facts, the pulled digests, timings and dashboard screenshots.
 #
-# Run only on a disposable host: it starts the privileged stack under its
+# Run only on a disposable host: it starts the root-equivalent stack under its
 # default project names and deletes every image and volume the page's reset
 # commands delete.
 set -euo pipefail
@@ -199,7 +199,7 @@ note "at $(git log -1 --format='%h %s')"
 doc "docker compose up -d"
 
 say "Verify"
-services_up 6
+services_up 7
 # What `up` pulled: each pinned tag, by the registry digest it came as.
 for pair in "railmon railmon-collect" "raildash raildash"; do
   read -r component service <<<"$pair"
@@ -241,7 +241,7 @@ while true; do
 done'
 aside "docker run -d --name my-agent python:3.12-slim sh -c $(printf %q "$agent_sh")"
 doc "AGENT_CONTAINER=my-agent docker compose up -d --scale demo-agent=0"
-services_up 5
+services_up 6
 [[ -z $(docker ps -aq --filter name=^datrail-demo-agent$) ]] || fail "--scale demo-agent=0 left the demo agent running"
 docker compose logs railmon-collect 2>&1 | grep -iE 'attach' | tail -3 | tee -a "$transcript" || true
 wait_for "my-agent's GET https://api.github.com/zen arrives as an interaction" 300 "$py_api"'
@@ -281,7 +281,7 @@ asps_before=$(curl -fsS "$base/api/asps?limit=500" | jq '.items | length')
 doc "docker compose down"
 [[ -n $(project_volumes datrail-project) ]] || fail "docker compose down deleted the volumes"
 aside "docker compose up -d"
-services_up 6
+services_up 7
 [[ $(docker compose exec -T raildash cat /data/raildash.db.token) == "$token_before" ]] \
   || fail "the token changed across down and up"
 asps_after=$(curl -fsS "$base/api/asps?limit=500" | jq '.items | length')
@@ -308,7 +308,7 @@ else
 fi
 [[ $(ls -A) == docker-compose.yml ]] || fail "the directory holds more than docker-compose.yml: $(ls -A)"
 doc "docker compose up -d"
-services_up 6
+services_up 7
 wait_for "the demo agent's POSTs arrive, from the one downloaded file" 300 "$py_api"'
 rows = [r for r in get("/api/interactions?limit=500")["items"]
         if r.get("method") == "POST" and r.get("status_code") == 200 and r.get("path") == "/v1/demo"]

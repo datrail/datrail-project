@@ -42,7 +42,8 @@ make test      # CI's acceptance run: tests/stack-acceptance.sh
 `make test` does not test the stack `make up` started. It brings up a stack
 of its own (Compose project `datrail-test`), building RailMon and RailDash
 from each component's default branch, and checks what it shows. Its
-collectors run privileged in the host's PID namespace, so **run it only on a
+collectors run with root-equivalent capabilities in the host's PID
+namespace, so **run it only on a
 disposable host** (a VM), not your workstation. Every target needs Docker
 with Compose v2 and a kernel with BTF, as the quick start does.
 

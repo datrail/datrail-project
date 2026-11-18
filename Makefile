@@ -38,7 +38,7 @@ clean:
 config:
 	docker compose config --quiet
 
-# The CI acceptance run. Privileged; use a disposable host.
+# The CI acceptance run. Root-equivalent probes; use a disposable host.
 test:
 	COMPOSE_PROJECT_NAME=$${COMPOSE_PROJECT_NAME:-datrail-test} \
 	EVIDENCE_DIR=$${EVIDENCE_DIR:-$$(mktemp -d)} \
