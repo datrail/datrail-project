@@ -19,6 +19,8 @@ Usage: gcp-vm.sh COMMAND [options]
 Commands:
   create      create the VM, with Docker installed (about 2 minutes)
   ssh         open a session on it, with RailDash's port forwarded to this machine
+              (waits for Docker if it's still installing, and adds you to the docker
+              group unless someone else made the VM)
   start       start a stopped VM
   stop        stop it (its disk is kept, and still bills, about $2 a month)
   delete      delete it and its disk (it asks you to type the VM's name first)
@@ -76,7 +78,8 @@ region="${zone%-*}"
 g=(--project "$project" --zone "$zone")
 
 # What the VM runs once at its first boot: Docker Engine and Compose from Docker's apt
-# repository, then a marker file the ssh command checks for.
+# repository, then a marker file the ssh session waits for (session_script, below).
+# shellcheck disable=SC2016 # expands on the VM, not here
 startup_script='#!/bin/bash
 set -e
 [ -f /var/lib/datrail-vm/ready ] && exit 0
@@ -90,6 +93,46 @@ echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.
 apt-get update -qq
 apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 mkdir -p /var/lib/datrail-vm && touch /var/lib/datrail-vm/ready'
+
+# What the ssh command runs on the VM in place of a plain login shell. It waits up to 5
+# minutes for the startup script to install Docker (Docker's socket counts as ready too,
+# for a VM this script didn't create). If you aren't in the docker group, it adds you, so
+# docker works without sudo; not on a VM someone else made, where ssh sets join_group=no.
+# Then it opens your shell: a fresh login through sudo when the group is new to this
+# session, so it applies without connecting again, otherwise your login shell. After 5
+# minutes without Docker it leaves the group alone and opens the shell anyway. The docker
+# group is equivalent to root on the VM, which is fine on a test VM of your own.
+# shellcheck disable=SC2016 # expands on the VM, not here
+session_script='ready=/var/lib/datrail-vm/ready
+docker_ready() { [ -e "$ready" ] || [ -S /var/run/docker.sock ]; }
+in_docker_group() { id -nG "$@" 2>/dev/null | tr " " "\n" | grep -qx docker; }
+if ! docker_ready; then
+  echo "Docker is still installing on the VM (usually about 2 minutes after create). Waiting..."
+  waited=0
+  while ! docker_ready && [ "$waited" -lt 300 ]; do
+    sleep 5
+    waited=$((waited + 5))
+    if [ $((waited % 60)) -eq 0 ] && ! docker_ready; then echo "Still installing, $((waited / 60)) min so far..."; fi
+  done
+  if docker_ready; then
+    echo "Docker is ready."
+  else
+    echo "Docker has still not finished installing after 5 minutes. To see why, run on the VM:"
+    echo "  sudo journalctl -u google-startup-scripts -n 50"
+    echo "Opening a shell anyway."
+  fi
+fi
+if [ "${join_group:-yes}" = yes ] && docker_ready && ! in_docker_group "$USER"; then
+  if sudo -n usermod -aG docker "$USER"; then
+    echo "Added $USER to the docker group, so docker works without sudo."
+  else
+    echo "Could not add $USER to the docker group. Your account needs the Compute OS Admin Login role (docs/setup-gcp-vm.md, Before you start)."
+  fi
+fi
+if in_docker_group "$USER" && ! in_docker_group && sudo -n true 2>/dev/null; then
+  exec sudo -n -i -u "$USER"
+fi
+exec "${SHELL:-/bin/bash}" -l'
 
 # gcloud says TERMINATED for a stopped VM.
 pretty() { case "$1" in TERMINATED) echo stopped ;; *) echo "$1" | tr '[:upper:]' '[:lower:]' ;; esac; }
@@ -132,9 +175,19 @@ case "$cmd" in
     [ -n "$status" ] || die "$name doesn't exist in $project ($zone). Create it: gcp-vm.sh create"
     [ "$status" = "RUNNING" ] || die "$name is $(pretty "$status"). Start it: gcp-vm.sh start"
     echo "Connecting to $name. RailDash will be at http://127.0.0.1:$port on this machine while this session is open."
+    # On a VM someone else made, a session only: its docker group is the owner's to change.
+    session="$session_script"
+    if not_mine; then
+      echo "Someone else made $name ($theirs), so this won't add you to its docker group."
+      session="join_group=no
+$session_script"
+    fi
+    # A terminal for the shell at the end of session_script, when there is one here.
+    ssh_args=(-L "$port:127.0.0.1:$port")
+    if [ -t 0 ]; then ssh_args=(-t "${ssh_args[@]}"); fi
     for try in 1 2 3 4 5 6; do
       rc=0
-      gcloud compute ssh "$name" "${g[@]}" --tunnel-through-iap -- -L "$port:127.0.0.1:$port" || rc=$?
+      gcloud compute ssh "$name" "${g[@]}" --tunnel-through-iap --command "$session" -- "${ssh_args[@]}" || rc=$?
       [ "$rc" -ne 0 ] || exit 0
       [ "$rc" -eq 255 ] || exit "$rc"
       echo "The VM isn't answering SSH yet (it may still be booting). Trying again in 15 seconds ($try of 6)."

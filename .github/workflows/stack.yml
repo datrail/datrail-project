@@ -164,8 +164,8 @@ jobs:
           path: ${{ runner.temp }}/stack
           if-no-files-found: error
 
-  # install.sh's questions and choices with a stand-in docker, and
-  # shellcheck over it: seconds, no stack.
+  # install.sh's questions and choices with a stand-in docker, gcp-vm.sh ssh
+  # with a stand-in gcloud, and shellcheck over both: seconds, no stack.
   install-script:
     runs-on: ubuntu-26.04
     timeout-minutes: 5
@@ -174,9 +174,11 @@ jobs:
         with:
           persist-credentials: false
       - name: shellcheck
-        run: shellcheck install.sh tests/install-sh-test.sh
+        run: shellcheck install.sh tests/install-sh-test.sh gcp-vm.sh tests/gcp-vm-test.sh
       - name: install.sh's choices
         run: bash tests/install-sh-test.sh
+      - name: gcp-vm.sh ssh
+        run: bash tests/gcp-vm-test.sh
 
   # The components' own acceptance against the same pinned images, nothing
   # built (DR-233, DR-235): RailDash's ASP v1 oracle inside its image (replay,
