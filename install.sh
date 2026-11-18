@@ -9,9 +9,11 @@
 #   curl -fsSL https://raw.githubusercontent.com/datrail/datrail-project/master/install.sh \
 #     | bash -s -- --agent my-agent --yes
 #
-# It checks that Docker can run the stack, downloads docker-compose.yml into
-# a directory of its own (~/datrail by default), writes the choices into a
-# .env file beside it, starts the stack, and waits until RailDash answers.
+# It checks Docker, downloads docker-compose.yml into a directory of its own
+# (~/datrail by default), checks in RailMon's image that the probes can run
+# (a host that can't is told before .env is written or anything starts),
+# writes the choices into a .env file beside it, starts the stack, and waits
+# until RailDash answers.
 # Afterwards, plain `docker compose` commands in that directory work as
 # INSTALL.md describes. Running it again changes the choices in place; it
 # never deletes RailDash's data.
@@ -168,8 +170,9 @@ esac
 # directory holding docker-compose.yml.
 check_probes() {
   local proxy image
-  # Every RailMon service runs the one image and depends on docker-proxy, so
-  # it is railmon-listen's images less docker-proxy's.
+  # Every RailMon service runs the one image (x-railmon). railmon-listen's
+  # images are that one and its dependency docker-proxy's, so it is those
+  # less docker-proxy's.
   proxy=$(docker compose config --images docker-proxy 2> /dev/null) || proxy=
   image=$(docker compose config --images railmon-listen 2> /dev/null | grep -vxF -e "$proxy" | sort -u) || image=
   case $image in
@@ -195,9 +198,12 @@ fi
 compose_url="https://raw.githubusercontent.com/datrail/datrail-project/$ref/docker-compose.yml"
 if [ "$check_only" = 1 ]; then
   # The install directory is left alone: docker-compose.yml goes to a
-  # directory of its own, only to say which RailMon image to check with.
+  # directory of its own, only to say which RailMon image to check with,
+  # with a copy of the install's .env, if there is one, so a RAILMON_IMAGE
+  # there is the image checked, as it is the one the install runs.
   check_dir=$(mktemp -d)
   trap 'rm -rf "$check_dir"' EXIT
+  [ ! -f "$dir/.env" ] || cp "$dir/.env" "$check_dir/.env"
   if [ -n "$compose_file" ]; then
     cp "$compose_file" "$check_dir/docker-compose.yml" 2> /dev/null || die "can't read $compose_file"
   else
@@ -410,7 +416,7 @@ port=$(sed -n 's/^RAILDASH_PORT=//p' .env | tail -n 1)
 port=${port:-8000}
 
 # ---------------------------------------------------------------- start it
-step "Starting DatRail (the first run downloads two images, about 540 MB)"
+step "Starting DatRail (the first run downloads the rest of its images)"
 # An OpenShell collector an earlier install started goes when it is no
 # longer wanted: left behind, it holds RailDash's volume, so a later
 # `docker compose down -v` couldn't delete it.

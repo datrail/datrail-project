@@ -18,9 +18,9 @@ cat > "$work/bin/docker" <<'EOF'
 # FAKE_PS is `docker ps --format`'s output, FAKE_RUNNING the
 # running containers' names, FAKE_EXISTING the stopped ones', FAKE_STACKS
 # the running RailDash containers' "project|directory". RailMon's image is
-# ghcr.io/datrail/railmon:test; FAKE_NOT_PULLED says it isn't on the host
-# yet, FAKE_PULL_FAILS that pulling it fails, FAKE_NO_BTF that the kernel
-# check fails in it.
+# ghcr.io/datrail/railmon:test, or the RAILMON_IMAGE in .env in the current
+# directory; FAKE_NOT_PULLED says it isn't on the host yet, FAKE_PULL_FAILS
+# that pulling it fails, FAKE_NO_BTF that the kernel check fails in it.
 echo "docker $*" >> "$FAKE_LOG"
 last=${!#}
 case "$*" in
@@ -30,10 +30,12 @@ case "$*" in
   "info --format {{.OperatingSystem}}") echo "${FAKE_OS:-Ubuntu 26.04 LTS}" ;;
   "compose version") echo "Docker Compose version v2.40.0" ;;
   "compose config --images docker-proxy") echo nginx:1.30-alpine ;;
-  "compose config --images railmon-listen") printf 'nginx:1.30-alpine\nghcr.io/datrail/railmon:test\n' ;;
-  "image inspect ghcr.io/datrail/railmon:test") [ -z "${FAKE_NOT_PULLED:-}" ] ;;
-  "pull -q ghcr.io/datrail/railmon:test") [ -z "${FAKE_PULL_FAILS:-}" ] && echo sha256:0123 ;;
-  "run --rm --cap-add BPF --cap-add PERFMON --cap-add SYS_ADMIN --entrypoint test ghcr.io/datrail/railmon:test -r /sys/kernel/btf/vmlinux")
+  "compose config --images railmon-listen")
+    image=$(sed -n 's/^RAILMON_IMAGE=//p' .env 2> /dev/null | tail -n 1)
+    printf 'nginx:1.30-alpine\n%s\n' "${image:-ghcr.io/datrail/railmon:test}" ;;
+  "image inspect "*) [ -z "${FAKE_NOT_PULLED:-}" ] ;;
+  "pull -q "*) [ -z "${FAKE_PULL_FAILS:-}" ] && echo sha256:0123 ;;
+  "run --rm --cap-add BPF --cap-add PERFMON --cap-add SYS_ADMIN --entrypoint test "*" -r /sys/kernel/btf/vmlinux")
     [ -z "${FAKE_NO_BTF:-}" ] ;;
   "compose config") echo "name: $(basename "$PWD")" ;;
   ps\ --format*) printf '%s' "${FAKE_PS:-}" ;;
@@ -277,6 +279,14 @@ else bad "--check, without touching the install directory"; fi
 if FAKE_NO_BTF=1 run "$d" --check < /dev/null; then bad "--check, no BTF"
 elif grep -q "Docker can't run RailMon's probes here" "$work/out" && [[ ! -e $d ]]; then ok "--check, no BTF"
 else bad "--check, no BTF"; fi
+# An install's own RAILMON_IMAGE is the image --check checks, and .env is
+# left as it was.
+mkdir -p "$d" && printf 'RAILMON_IMAGE=example.com/railmon:mine\n' > "$d/.env"
+if run "$d" --check < /dev/null \
+  && has "$FAKE_LOG" "docker run --rm --cap-add BPF --cap-add PERFMON --cap-add SYS_ADMIN --entrypoint test example.com/railmon:mine -r /sys/kernel/btf/vmlinux" \
+  && [[ $(cat "$d/.env") == RAILMON_IMAGE=example.com/railmon:mine && ! -e $d/docker-compose.yml ]]; then
+  ok "--check, with the install's own RAILMON_IMAGE"
+else bad "--check, with the install's own RAILMON_IMAGE"; fi
 
 [[ $fails == 0 ]] || { echo "$fails case(s) failed"; exit 1; }
 echo "all cases passed"

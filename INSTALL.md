@@ -175,10 +175,11 @@ reads nothing from its checkout.
 ## Watch your own agent
 
 For an agent you already run, [`install.sh`](install.sh) does all of this
-section in one command: it checks that Docker can run the stack, lists the
-running containers to pick your agent from, downloads `docker-compose.yml`
-into `~/datrail`, writes your choice into a `.env` file there, starts the
-stack and waits until RailDash answers:
+section in one command: it checks Docker, downloads `docker-compose.yml`
+into `~/datrail`, checks that RailMon's probes can run (in RailMon's own
+image), lists the running containers to pick your agent from, writes your
+choice into a `.env` file there, starts the stack and waits until RailDash
+answers:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/datrail/datrail-project/master/install.sh | bash
