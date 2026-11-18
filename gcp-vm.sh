@@ -182,15 +182,15 @@ case "$cmd" in
       session="join_group=no
 $session_script"
     fi
-    # A terminal for the shell at the end of session_script, when there is one here.
     # ssh's LogLevel=ERROR drops "Permanently added ... to the list of known hosts" on
     # a VM's first connection, and keeps its errors (a local port already in use, a
     # changed host key).
     ssh_args=(-o LogLevel=ERROR -L "$port:127.0.0.1:$port")
+    # A terminal for the shell at the end of session_script, when there is one here.
     if [ -t 0 ]; then ssh_args=(-t "${ssh_args[@]}"); fi
     # gcloud's warnings only once its SSH key exists: the one every connection gets
     # is that IAP's tunnel would be faster with NumPy (docs/setup-gcp-vm.md, Step 3,
-    # says how). Before the key exists they explain the passphrase prompt that
+    # points to Google's page on adding it). Before the key exists they explain the passphrase prompt that
     # follows, so they stay. Errors always show, and a verbosity you set yourself
     # stands. Through the environment, so the tunnel gcloud starts for ssh gets it too.
     quiet=()
