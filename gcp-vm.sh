@@ -70,7 +70,7 @@ if [ -n "$machine_type" ] && [ "$cmd" != create ]; then
 fi
 machine_type="${machine_type:-e2-medium}"
 case "$machine_type" in
-  *[!a-z0-9-]*) die "--machine-type takes a machine type such as e2-medium or e2-standard-4, not $machine_type" ;;
+  -* | *[!a-z0-9-]*) die "--machine-type takes a machine type such as e2-medium or e2-standard-4, not $machine_type" ;;
 esac
 
 command -v gcloud >/dev/null 2>&1 || die "gcloud isn't installed. Install the Google Cloud CLI first: https://cloud.google.com/sdk/docs/install"

@@ -191,6 +191,13 @@ if bash "$here/gcp-vm.sh" create --machine-type 'e2-medium --no-shielded' < /dev
 elif has "$work/out" "--machine-type takes a machine type" && ! grep -q '^gcloud compute instances create' "$FAKE_LOG"; then
   ok "create: a machine type with a space is refused"
 else bad "create: a machine type with a space is refused"; fi
+# A value that is another option, as a forgotten value leaves it.
+: > "$FAKE_LOG"
+if bash "$here/gcp-vm.sh" create --machine-type --yes < /dev/null > "$work/out" 2>&1; then
+  bad "create: a machine type that starts with - is refused"
+elif has "$work/out" "--machine-type takes a machine type" && ! grep -q '^gcloud compute instances create' "$FAKE_LOG"; then
+  ok "create: a machine type that starts with - is refused"
+else bad "create: a machine type that starts with - is refused"; fi
 if FAKE_STATUS=RUNNING bash "$here/gcp-vm.sh" ssh --machine-type e2-standard-4 < /dev/null > "$work/out" 2>&1; then
   bad "--machine-type with ssh is refused"
 elif has "$work/out" "--machine-type is for create" && has "$work/out" "set-machine-type"; then
