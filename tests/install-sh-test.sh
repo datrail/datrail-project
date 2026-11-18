@@ -212,10 +212,29 @@ unreachable "docker: permission denied, older wording" \
 unreachable "docker: anything else, in Docker's words" \
   "error during connect: this error is new" \
   "Docker says: error during connect: this error is new"
+unreachable "docker: an SSH key refused, for a remote DOCKER_HOST" \
+  "error during connect: Get \"http://docker.example/v1.47/info\": command [ssh -- ana@docker.example docker system dial-stdio] has exited with exit status 255, make sure the URL is valid, and Docker 18.09 or later is installed on the remote host: stderr=ana@docker.example: Permission denied (publickey)." \
+  "Docker says: error during connect"
 unreachable "docker: Docker Desktop's socket" \
   "Cannot connect to the Docker daemon at unix:///home/ana/.docker/desktop/docker.sock. Is the docker daemon running?" \
   "Docker Desktop isn't running"
 FAKE_UNAME=Darwin unreachable "docker: a Mac without Docker Desktop" \
+  "Cannot connect to the Docker daemon at unix://$sock_dir/colima.sock. Is the docker daemon running?" \
+  "no daemon socket at $sock_dir/colima.sock" "colima start"
+
+# Docker Desktop's CLI (in WSL, /usr/bin/docker links into
+# /mnt/wsl/docker-desktop/cli-tools): Desktop's advice only when the error
+# names no socket or /var/run/docker.sock and the user may open it.
+mkdir -p "$work/docker-desktop/cli-tools/usr/bin" "$work/desktop-bin"
+cp "$work/bin/docker" "$work/docker-desktop/cli-tools/usr/bin/docker"
+ln -s "$work/docker-desktop/cli-tools/usr/bin/docker" "$work/desktop-bin/docker"
+PATH="$work/desktop-bin:$PATH" unreachable "docker: permission denied through Desktop's CLI in WSL" \
+  "permission denied while trying to connect to the docker API at unix:///var/run/docker.sock" \
+  "permission denied on /var/run/docker.sock)" "sudo usermod -aG docker"
+PATH="$work/desktop-bin:$PATH" unreachable "docker: Desktop's CLI, Desktop not answering" \
+  "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?" \
+  "Docker Desktop isn't running"
+PATH="$work/desktop-bin:$PATH" FAKE_UNAME=Darwin unreachable "docker: Desktop's CLI with Colima's socket on a Mac" \
   "Cannot connect to the Docker daemon at unix://$sock_dir/colima.sock. Is the docker daemon running?" \
   "no daemon socket at $sock_dir/colima.sock" "colima start"
 
