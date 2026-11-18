@@ -370,7 +370,9 @@ done
 # the agent's container but refuses an exec into it, and a lookup of any
 # other container (except for an OpenShell sandbox, whose container name
 # OpenShell generates). The openshell job's agent runs as another user, so
-# its captures below show the sensors can follow one (SYS_PTRACE).
+# its captures below show the sensors can follow one (SYS_PTRACE). The
+# sensors have no limit on locked memory, which kernels before 5.11 need for
+# their BPF maps and CI's newer kernels wouldn't miss.
 for id in $("${compose[@]}" ps -q); do
   docker inspect --format '{{index .Config.Labels "com.docker.compose.service"}} {{.HostConfig.Privileged}} {{range .Mounts}}{{if eq .Source "/var/run/docker.sock"}}socket{{end}}{{end}}' "$id"
 done | sort > "$EVIDENCE_DIR/privileges.txt"
@@ -379,6 +381,12 @@ cat "$EVIDENCE_DIR/privileges.txt"
   || { echo "a container of the stack runs privileged" >&2; exit 1; }
 [[ "$(awk '$3 == "socket" {print $1}' "$EVIDENCE_DIR/privileges.txt" | tr '\n' ' ')" == "docker-proxy railmon-scan " ]] \
   || { echo "only docker-proxy and railmon-scan may mount the Docker socket" >&2; exit 1; }
+for sensor in railmon-collect railmon-listen railmon-files; do
+  memlock=$(docker inspect --format '{{range .HostConfig.Ulimits}}{{if eq .Name "memlock"}}{{.Soft}} {{.Hard}}{{end}}{{end}}' \
+    "$("${compose[@]}" ps -q "$sensor")")
+  [[ $memlock == "-1 -1" ]] \
+    || { echo "$sensor's locked memory is limited (${memlock:-the default}); kernels before 5.11 need it unlimited" >&2; exit 1; }
+done
 sensor_docker=("${compose[@]}" exec -T -e DOCKER_CONFIG=/tmp/.docker railmon-listen docker)
 "${sensor_docker[@]}" inspect --format '{{.State.Running}}' "$agent" | grep -qx true \
   || { echo "railmon-listen can't look up $agent through docker-proxy" >&2; exit 1; }
@@ -395,7 +403,7 @@ if [[ $mode != openshell ]]; then
     fi
   done
 fi
-echo "ok    nothing runs privileged; the Docker socket is docker-proxy's and railmon-scan's only; the sensors can look up $agent but not exec into it, or look up railmon-scan" \
+echo "ok    nothing runs privileged; the Docker socket is docker-proxy's and railmon-scan's only; the sensors' locked memory is unlimited; they can look up $agent but not exec into it, or look up railmon-scan" \
   | tee -a "$EVIDENCE_DIR/privileges.txt"
 
 openshell_policy=()

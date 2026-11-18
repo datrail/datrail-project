@@ -17,8 +17,9 @@ RailDash listens on `127.0.0.1` only.
 
 - **Docker Engine with Compose v2.** Nothing runs privileged, but three
   RailMon containers (the eBPF probes) run with the capabilities `BPF`,
-  `PERFMON` and `SYS_ADMIN` in the host PID namespace, so your Docker daemon
-  must allow those (Docker 20.10 or later). `railmon-scan` runs in the host
+  `PERFMON` and `SYS_ADMIN` in the host PID namespace, and no limit on locked
+  memory (which kernels before 5.11 count BPF maps against), so your Docker
+  daemon must allow those (Docker 20.10 or later). `railmon-scan` runs in the host
   PID namespace too, with `SYS_PTRACE`, so that from RailMon's rule pack 16
   it reads the agent's files without running anything in its container; the
   RailMon pinned here still runs `docker exec` there, through the Docker
@@ -556,6 +557,15 @@ are visible. For your own agent, `docker compose logs railmon-collect` says
 which process and TLS file it attached to, or that none in the container
 uses TLS yet. With `COLLECT_TARGET` set, check that it matches the agent's
 processes.
+
+**A sensor's log says `Permission denied` on `/proc/<pid>/ns/pid` or
+`map_files`, on Ubuntu or Debian.** The sensors run under Docker's default
+AppArmor profile, which lets them follow only processes under that same
+profile. An agent outside it, such as a container started with
+`--privileged` or `--security-opt apparmor=unconfined`, can't be followed.
+Run the agent under the default profile, or add `apparmor=unconfined` to the sensors' `security_opt`
+in [docker-compose.yml](docker-compose.yml) (the `x-sensor` block); that takes
+away nothing the sensors' capabilities don't already give them.
 
 **A sensor's log says `refused by DatRail docker-proxy`.** The sensors reach
 Docker through `docker-proxy`, which only lets them look up containers, so

@@ -67,9 +67,13 @@ x-railmon: &railmon
 # --privileged (SYS_PTRACE for an agent that runs as another user, such as
 # an OpenShell sandbox's), the host's PID namespace to see the agent's
 # processes, and Docker through docker-proxy only. A read-only filesystem, with /tmp for
-# what the probes unpack at start.
+# what the probes unpack at start. No limit on locked memory: kernels before
+# 5.11 count BPF maps against it, and without privileged mode the probes can't
+# raise it themselves (that takes SYS_RESOURCE), so Docker sets it instead.
 x-sensor: &sensor
   cap_add: [BPF, PERFMON, SYS_ADMIN, SYS_PTRACE]
+  ulimits:
+    memlock: -1
   pid: host
   security_opt: ["no-new-privileges:true"]
   read_only: true
@@ -202,7 +206,7 @@ services:
     pid: host
     cap_add: [SYS_PTRACE]
     # It still mounts the Docker socket itself rather than docker-proxy: the
-    # pinned RailMon (rule pack 14) still runs `docker exec` in the agent's
+    # pinned RailMon (rule pack 15) still runs `docker exec` in the agent's
     # container, which docker-proxy refuses. Until the scan moves behind the
     # proxy, this socket is root-equivalent on the host too. /.rail, where it
     # writes each bundle, is in memory: it starts empty after a restart, as it
