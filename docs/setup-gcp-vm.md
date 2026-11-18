@@ -15,7 +15,7 @@ The VM has no external IP address. You reach it through Google's IAP tunnel, and
 - The **Google Cloud CLI** (`gcloud`) on your computer, signed in: `gcloud auth login`. Install it from https://cloud.google.com/sdk/docs/install . On Windows, install it in WSL (Ubuntu), since the script is a bash script.
 - A **Google Cloud project** with billing, where you have these roles: Compute Instance Admin (v1), IAP-secured Tunnel User, Compute OS Admin Login, and Service Account User. A project admin can grant them.
 - A **Cloud NAT** in the region you use (the default is `us-east1`). Many projects already have one. If not, the script says so and Troubleshooting has the two commands.
-- Cost: about $0.13 an hour while the VM runs (`e2-standard-4`, 4 vCPU, 16 GB), and about $2 a month for its 50 GB disk while it is stopped.
+- Cost: about $0.03 an hour while the VM runs (`e2-medium`, 2 vCPU, 4 GB), and about $2 a month for its 50 GB disk while it is stopped. DatRail and the demo use about 250 MB of memory and a few percent of the CPU, so that is plenty. `--machine-type e2-standard-4` (4 vCPU, 16 GB, about $0.13 an hour) builds from source faster and leaves room for a larger agent.
 
 Time: about 5 minutes. Creating the VM takes under a minute, Docker installs on it in about 2 minutes, and DatRail starts in under a minute.
 
@@ -36,7 +36,7 @@ chmod +x gcp-vm.sh
 ./gcp-vm.sh create --project YOUR-PROJECT
 ```
 
-It creates a VM named after your Google account (for `ana@example.com`, `datrail-ana`) in `us-east1-b` (`--name` and `--zone` change those), with Ubuntu 24.04 and no external IP, and it ends with:
+It creates an `e2-medium` VM (`--machine-type` picks another) named after your Google account (for `ana@example.com`, `datrail-ana`) in `us-east1-b` (`--name` and `--zone` change those), with Ubuntu 24.04 and no external IP, and it ends with:
 
 ```text
 Created. Docker installs in the background over the next 2 minutes or so.
@@ -73,7 +73,7 @@ On the VM:
 curl -fsSL https://raw.githubusercontent.com/datrail/datrail-project/master/install.sh | bash -s -- --demo --yes
 ```
 
-It checks the VM, puts DatRail's files in `~/datrail`, downloads the images (about 540 MB) and ends with `DatRail is running`. On an `e2-standard-4` this takes under a minute.
+It checks the VM, puts DatRail's files in `~/datrail`, downloads the images (about 540 MB) and ends with `DatRail is running`. On the default `e2-medium` this takes under a minute.
 
 ## Step 5: Open the dashboard
 
