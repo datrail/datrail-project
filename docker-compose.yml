@@ -82,7 +82,7 @@ x-sensor: &sensor
 
 services:
   raildash:
-    image: ${RAILDASH_IMAGE:-ghcr.io/datrail/raildash:0.2.0-rc.18}
+    image: ${RAILDASH_IMAGE:-ghcr.io/datrail/raildash:0.2.0-rc.19}
     build:
       context: ${RAILDASH_SRC:-https://github.com/datrail/raildash.git}
     restart: unless-stopped
