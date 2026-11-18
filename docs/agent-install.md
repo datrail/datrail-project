@@ -73,6 +73,9 @@ your shell is already bash inside WSL, run them directly.
 curl -fsSL https://raw.githubusercontent.com/datrail/datrail-project/master/install.sh | bash -s -- --check
 ```
 
+It downloads RailMon's image (about 95 MB) to check the kernel with; step 2
+uses the same image, so it isn't downloaded twice.
+
 - It ends with `This machine can run DatRail.`: go on to step 2.
 - `Docker isn't installed`: tell the person they need Docker. On a Mac or
   Windows that is Docker Desktop (https://www.docker.com/products/docker-desktop/);

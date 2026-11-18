@@ -44,8 +44,10 @@ RailDash listens on `127.0.0.1` only.
   [Makefile](Makefile) only wraps `docker compose` commands.
 - **Linux on x86_64 or arm64 with a BTF-enabled kernel**
   (`/sys/kernel/btf/vmlinux` exists). On a Mac or with Docker Desktop, that
-  is Docker Desktop's own Linux VM: `docker run --rm alpine ls
-  /sys/kernel/btf/vmlinux` checks it. See the platform table below.
+  is Docker Desktop's own Linux VM. `curl -fsSL
+  https://raw.githubusercontent.com/datrail/datrail-project/master/install.sh
+  | bash -s -- --check` checks it as RailMon's probes need it, in RailMon's
+  own image. See the platform table below.
 - **Network access to `ghcr.io`** for the first run, which pulls the
   [published images](#images), or to GitHub if you
   [build from source](#build-from-source).
