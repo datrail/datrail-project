@@ -143,7 +143,7 @@ You can watch one agent at a time. To switch later, run the install command agai
 ==> Writing the settings to /Users/yourname/datrail/.env
 Watching my-agent.
 
-==> Starting DatRail (the first run downloads two images, about 540 MB)
+==> Starting DatRail (the first run downloads the rest of its images)
 ```
 
 The download takes about a minute on a normal connection, and Terminal shows its progress. Then:

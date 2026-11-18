@@ -53,7 +53,7 @@ sudo usermod -aG docker "$USER"
 sudo loginctl enable-linger "$USER"
 ```
 
-Log out and back in so the docker group applies. Check: `ls /sys/kernel/btf/vmlinux`, `docker run --rm --cap-add BPF --cap-add PERFMON --cap-add SYS_ADMIN alpine test -r /sys/kernel/btf/vmlinux` (install.sh's own check).
+Log out and back in so the docker group applies. Check: `ls /sys/kernel/btf/vmlinux`, then `curl -fsSL https://raw.githubusercontent.com/datrail/datrail-project/master/install.sh | bash -s -- --check` (install.sh's own check, in RailMon's image).
 
 `enable-linger` is what lets OpenShell's gateway (a user-level systemd service) survive the SSH session ending; without it, mode C dies when you log out.
 

@@ -9,9 +9,11 @@
 #   curl -fsSL https://raw.githubusercontent.com/datrail/datrail-project/master/install.sh \
 #     | bash -s -- --agent my-agent --yes
 #
-# It checks that Docker can run the stack, downloads docker-compose.yml into
-# a directory of its own (~/datrail by default), writes the choices into a
-# .env file beside it, starts the stack, and waits until RailDash answers.
+# It checks Docker, downloads docker-compose.yml into a directory of its own
+# (~/datrail by default), checks in RailMon's image that the probes can run
+# (a host that can't is told before .env is written or anything starts),
+# writes the choices into a .env file beside it, starts the stack, and waits
+# until RailDash answers.
 # Afterwards, plain `docker compose` commands in that directory work as
 # INSTALL.md describes. Running it again changes the choices in place; it
 # never deletes RailDash's data.
@@ -37,7 +39,8 @@ Options:
   --ref REF               the git branch, tag or commit of datrail-project to
                           download docker-compose.yml from (default master)
   --compose-file FILE     use this docker-compose.yml instead of downloading
-  --check                 only check that this machine can run the stack
+  --check                 only check that this machine can run the stack;
+                          it pulls RailMon's image, which the install uses
   -y, --yes               ask nothing; needs --agent or --demo
   -h, --help              this text
 EOF
@@ -159,11 +162,31 @@ case $engine_arch in
 esac
 # The probes run with BPF, PERFMON and SYS_ADMIN (not privileged) and read
 # BTF from the kernel Docker runs on: the host's own on Linux, Docker
-# Desktop's VM on a Mac or Windows. A Docker too old to know BPF and PERFMON
-# fails here too.
-docker run --rm --cap-add BPF --cap-add PERFMON --cap-add SYS_ADMIN alpine \
-  test -r /sys/kernel/btf/vmlinux > /dev/null 2>&1 \
-  || die "Docker can't run RailMon's probes here: a container with the capabilities BPF, PERFMON and SYS_ADMIN that can read BTF (/sys/kernel/btf/vmlinux). INSTALL.md#prerequisites says which setups have them."
+# Desktop's VM on a Mac or Windows. So a container with those capabilities
+# is asked, in RailMon's own image as docker-compose.yml pins it (or as a
+# RAILMON_IMAGE in .env or the environment names it), which the stack pulls
+# anyway: no other image is pulled for the check or left behind by it. A
+# Docker too old to know BPF and PERFMON fails here too. Run in the
+# directory holding docker-compose.yml.
+check_probes() {
+  local proxy image
+  # Every RailMon service runs the one image (x-railmon). railmon-listen's
+  # images are that one and its dependency docker-proxy's, so it is those
+  # less docker-proxy's.
+  proxy=$(docker compose config --images docker-proxy 2> /dev/null) || proxy=
+  image=$(docker compose config --images railmon-listen 2> /dev/null | grep -vxF -e "$proxy" | sort -u) || image=
+  case $image in
+    "" | *[[:space:]]*) die "can't tell RailMon's image from docker-compose.yml; \`docker compose config --images\` in $PWD lists the images it names." ;;
+  esac
+  if ! docker image inspect "$image" > /dev/null 2>&1; then
+    say "Pulling RailMon's image ($image) to check the kernel with; the stack runs it anyway."
+    docker pull -q "$image" > /dev/null || die "couldn't pull $image (Docker says why above)."
+  fi
+  docker run --rm --cap-add BPF --cap-add PERFMON --cap-add SYS_ADMIN --entrypoint test "$image" \
+    -r /sys/kernel/btf/vmlinux > /dev/null 2>&1 \
+    || die "Docker can't run RailMon's probes here: a container with the capabilities BPF, PERFMON and SYS_ADMIN that can read BTF (/sys/kernel/btf/vmlinux). INSTALL.md#prerequisites says which setups have them."
+  say "RailMon's probes can run here: OK"
+}
 desktop=0
 case "$(uname -s) $engine_os" in
   Darwin* | *"Docker Desktop"*) desktop=1 ;;
@@ -172,7 +195,24 @@ say "Docker $engine_arch, $engine_os: OK"
 if [ "$desktop" = 1 ]; then
   say "Note: with Docker Desktop, DatRail sees only agents running in Docker containers, not one running directly on this computer."
 fi
-[ "$check_only" = 1 ] && { say "This machine can run DatRail."; exit 0; }
+compose_url="https://raw.githubusercontent.com/datrail/datrail-project/$ref/docker-compose.yml"
+if [ "$check_only" = 1 ]; then
+  # The install directory is left alone: docker-compose.yml goes to a
+  # directory of its own, only to say which RailMon image to check with,
+  # with a copy of the install's .env, if there is one, so a RAILMON_IMAGE
+  # there is the image checked, as it is the one the install runs.
+  check_dir=$(mktemp -d)
+  trap 'rm -rf "$check_dir"' EXIT
+  [ ! -f "$dir/.env" ] || cp "$dir/.env" "$check_dir/.env"
+  if [ -n "$compose_file" ]; then
+    cp "$compose_file" "$check_dir/docker-compose.yml" 2> /dev/null || die "can't read $compose_file"
+  else
+    curl -fsSL "$compose_url" -o "$check_dir/docker-compose.yml" || die "couldn't download $compose_url"
+  fi
+  (cd "$check_dir" && check_probes)
+  say "This machine can run DatRail."
+  exit 0
+fi
 
 # ----------------------------------------------------------- the stack's files
 step "Getting docker-compose.yml into $dir"
@@ -184,8 +224,7 @@ if [ -n "$compose_file" ]; then
   src=$(cd "$(dirname "$compose_file")" && pwd)/$(basename "$compose_file")
   [ "$src" = "$target" ] || cp "$src" "$target"
 else
-  url="https://raw.githubusercontent.com/datrail/datrail-project/$ref/docker-compose.yml"
-  curl -fsSL "$url" -o "$target.new" || die "couldn't download $url"
+  curl -fsSL "$compose_url" -o "$target.new" || die "couldn't download $compose_url"
   if [ -f "$target" ] && ! cmp -s "$target" "$target.new"; then
     say "Updating the docker-compose.yml already there (the old one is kept as docker-compose.yml.old)."
     mv "$target" "$target.old"
@@ -203,6 +242,9 @@ other=$(docker ps --filter label=com.docker.compose.service=raildash \
   --format '{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.project.working_dir"}}' \
   | grep -v "^$project|" | head -n 1 || true)
 [ -z "$other" ] || die "DatRail is already running from ${other#*|} (Compose project ${other%%|*}). Stop it there first (docker compose down keeps its data), then run this again."
+
+step "Checking that RailMon's probes can run here"
+check_probes
 
 # ------------------------------------------------------------- which agent
 # Running containers that could be the agent: one line each,
@@ -374,7 +416,7 @@ port=$(sed -n 's/^RAILDASH_PORT=//p' .env | tail -n 1)
 port=${port:-8000}
 
 # ---------------------------------------------------------------- start it
-step "Starting DatRail (the first run downloads two images, about 540 MB)"
+step "Starting DatRail (the first run downloads the rest of its images)"
 # An OpenShell collector an earlier install started goes when it is no
 # longer wanted: left behind, it holds RailDash's volume, so a later
 # `docker compose down -v` couldn't delete it.
