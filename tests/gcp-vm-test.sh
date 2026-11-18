@@ -12,19 +12,25 @@ trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/bin" "$work/vm"
 export FAKE_LOG="$work/log" FAKE_SESSION="$work/session" FAKE_TRIES="$work/tries" \
   FAKE_GROUPS_DB="$work/groups" FAKE_VM="$work/vm"
+# A home without gcloud's SSH key unless a case makes one, and no verbosity of
+# the caller's own.
+export HOME="$work/home"
+unset CLOUDSDK_CORE_VERBOSITY
+mkdir -p "$HOME/.ssh"
 
 cat > "$work/bin/gcloud" <<'EOF'
 #!/usr/bin/env bash
 # The stand-in: FAKE_STATUS is the VM's status, FAKE_SSH_FAILS how many
 # connections fail with 255 before one works. The session script is kept in
-# FAKE_SESSION and logged as <session>. FAKE_OWNER is the VM's owner label
-# (ana's own by default; empty for a VM without one).
+# FAKE_SESSION and logged as <session>, and gcloud's verbosity, when set, as
+# [verbosity=...]. FAKE_OWNER is the VM's owner label (ana's own by default;
+# empty for a VM without one).
 args=() session=
 while [ $# -gt 0 ]; do
   if [ "$1" = --command ]; then session=$2; args+=(--command "<session>"); shift 2
   else args+=("$1"); shift; fi
 done
-echo "gcloud ${args[*]}" >> "$FAKE_LOG"
+echo "gcloud ${args[*]}${CLOUDSDK_CORE_VERBOSITY:+ [verbosity=$CLOUDSDK_CORE_VERBOSITY]}" >> "$FAKE_LOG"
 case "${args[*]}" in
   "config get-value project") echo my-project ;;
   "config get-value account") echo ana@example.com ;;
@@ -87,7 +93,7 @@ reset_vm() { rm -f "$FAKE_VM"/*; echo "${1:-ana adm}" > "$FAKE_GROUPS_DB"; unset
 # forwarded, the session script as its command.
 : > "$FAKE_LOG"; rm -f "$FAKE_TRIES"
 if FAKE_STATUS=RUNNING bash "$here/gcp-vm.sh" ssh < /dev/null > "$work/out" 2>&1 \
-  && has "$FAKE_LOG" "gcloud compute ssh datrail-ana --project my-project --zone us-east1-b --tunnel-through-iap --command <session> -- -L 8000:127.0.0.1:8000" \
+  && grep -qx -- "gcloud compute ssh datrail-ana --project my-project --zone us-east1-b --tunnel-through-iap --command <session> -- -o LogLevel=ERROR -L 8000:127.0.0.1:8000" "$FAKE_LOG" \
   && [[ $(grep -c '^gcloud compute ssh' "$FAKE_LOG") == 1 ]] && has "$FAKE_SESSION" /var/lib/datrail-vm/ready; then
   ok "ssh: one connection with the session script"
 else bad "ssh: one connection with the session script"; fi
@@ -203,6 +209,21 @@ if FAKE_STATUS=RUNNING bash "$here/gcp-vm.sh" ssh --machine-type e2-standard-4 <
 elif has "$work/out" "--machine-type is for create" && has "$work/out" "set-machine-type"; then
   ok "--machine-type with ssh is refused"
 else bad "--machine-type with ssh is refused"; fi
+
+# 13. Once gcloud's SSH key exists, its warnings are left out (the NumPy one
+# on every connection); before that they stay, to explain the key prompt.
+: > "$FAKE_LOG"; rm -f "$FAKE_TRIES"
+touch "$HOME/.ssh/google_compute_engine"
+if FAKE_STATUS=RUNNING bash "$here/gcp-vm.sh" ssh < /dev/null > "$work/out" 2>&1 \
+  && grep -q '^gcloud compute ssh .* -- -o LogLevel=ERROR -L 8000:127.0.0.1:8000 \[verbosity=error\]$' "$FAKE_LOG"; then
+  ok "ssh: gcloud's warnings left out once its key exists"
+else bad "ssh: gcloud's warnings left out once its key exists"; fi
+: > "$FAKE_LOG"; rm -f "$FAKE_TRIES"
+if FAKE_STATUS=RUNNING CLOUDSDK_CORE_VERBOSITY=debug bash "$here/gcp-vm.sh" ssh < /dev/null > "$work/out" 2>&1 \
+  && grep -q '^gcloud compute ssh .* \[verbosity=debug\]$' "$FAKE_LOG"; then
+  ok "ssh: a verbosity you set yourself stands"
+else bad "ssh: a verbosity you set yourself stands"; fi
+rm -f "$HOME/.ssh/google_compute_engine"
 
 [[ $fails == 0 ]] || { echo "$fails case(s) failed"; exit 1; }
 echo "all cases passed"
