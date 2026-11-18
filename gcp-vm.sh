@@ -31,6 +31,9 @@ Options:
   --zone ZONE         the zone (default: us-east1-b)
   --name NAME         the VM's name (default: datrail-<your Google account name>)
   --port PORT         RailDash's port, on the VM and on this machine (default: 8000)
+  --machine-type TYPE for create, the VM's machine type (default: e2-medium, 2 vCPU and
+                      4 GB, enough for DatRail and a small agent; e2-standard-4 builds
+                      from source faster and leaves room for a larger agent)
   -y, --yes           delete without asking
   -h, --help          this text
 USAGE
@@ -45,6 +48,7 @@ project=""
 zone="us-east1-b"
 name=""
 port=8000
+machine_type=""
 yes=0
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -52,12 +56,22 @@ while [ $# -gt 0 ]; do
     --zone) zone="${2:?--zone needs a value}"; shift 2 ;;
     --name) name="${2:?--name needs a value}"; shift 2 ;;
     --port) port="${2:?--port needs a value}"; shift 2 ;;
+    --machine-type) machine_type="${2:?--machine-type needs a value}"; shift 2 ;;
     -y|--yes) yes=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) die "unknown option: $1 (see --help)" ;;
   esac
 done
 case "$cmd" in -h|--help) usage; exit 0 ;; esac
+# The machine type is set when the VM is made; changing an existing one is
+# gcloud's: stop it, then `gcloud compute instances set-machine-type`.
+if [ -n "$machine_type" ] && [ "$cmd" != create ]; then
+  die "--machine-type is for create; to change an existing VM's, stop it and run: gcloud compute instances set-machine-type NAME --machine-type TYPE --zone ZONE"
+fi
+machine_type="${machine_type:-e2-medium}"
+case "$machine_type" in
+  -* | *[!a-z0-9-]*) die "--machine-type takes a machine type such as e2-medium or e2-standard-4, not $machine_type" ;;
+esac
 
 command -v gcloud >/dev/null 2>&1 || die "gcloud isn't installed. Install the Google Cloud CLI first: https://cloud.google.com/sdk/docs/install"
 if [ -z "$project" ]; then
@@ -156,9 +170,9 @@ case "$cmd" in
     fi
     tmp="$(mktemp)"; trap 'rm -f "$tmp"' EXIT
     printf '%s\n' "$startup_script" > "$tmp"
-    echo "Creating $name in $project ($zone): e2-standard-4, Ubuntu 24.04, no external IP"
+    echo "Creating $name in $project ($zone): $machine_type, Ubuntu 24.04, no external IP"
     gcloud compute instances create "$name" "${g[@]}" \
-      --machine-type e2-standard-4 \
+      --machine-type "$machine_type" \
       --image-family ubuntu-2404-lts-amd64 --image-project ubuntu-os-cloud \
       --boot-disk-size 50GB --boot-disk-type pd-balanced \
       --no-address \

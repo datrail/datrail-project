@@ -21,7 +21,9 @@ normal and is shown anything new. Nothing leaves the computer.
   control of this computer: three of its containers hold root-equivalent
   capabilities for its eBPF probes, its scanner can read any process and
   reaches Docker itself, and a small proxy holds Docker's socket and answers
-  the probes' lookups. Step 1's check already starts one. Say so in one sentence and wait for a yes.
+  the probes' lookups. Step 1's check already starts one, in RailMon's
+  image, which it downloads first (about 95 MB). Say so in one sentence and
+  wait for a yes.
 - **Never use `sudo`, and never change Docker's settings** without the person
   saying yes to that exact command.
 - **Don't stop, restart or change the person's agent.** DatRail doesn't need
@@ -72,6 +74,9 @@ your shell is already bash inside WSL, run them directly.
 ```bash
 curl -fsSL https://raw.githubusercontent.com/datrail/datrail-project/master/install.sh | bash -s -- --check
 ```
+
+It downloads RailMon's image (about 95 MB) to check the kernel with; step 2
+uses the same image, so it isn't downloaded twice.
 
 - It ends with `This machine can run DatRail.`: go on to step 2.
 - `Docker isn't installed`: tell the person they need Docker. On a Mac or
@@ -128,7 +133,8 @@ For an agent in an OpenShell sandbox, `--agent openshell:SANDBOX` with the
 sandbox's name. To try the demo instead: `--demo --yes` in place of
 `--agent NAME --yes`.
 
-It downloads about 540 MB the first time and takes a few minutes. It puts
+It downloads the rest of DatRail the first time (RailMon's image came with
+step 1) and takes a few minutes. It puts
 its files in `~/datrail`, starts everything, and waits until the dashboard
 answers. It ends with `DatRail is running`. If it stops with a message
 instead, tell the person the message as it is.

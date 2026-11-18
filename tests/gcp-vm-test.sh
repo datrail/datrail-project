@@ -3,7 +3,8 @@
 # gcp-vm.sh asks and keeps the script it would run on the VM. That script is then
 # run here against stand-in `id`, `sudo` and `sleep`, with the VM's ready marker
 # and Docker socket moved into a temporary directory: waiting for Docker, the
-# docker group, and the shell at the end. Seconds, on any host.
+# docker group, and the shell at the end. Then create's machine type, from the
+# command the stand-in logs. Seconds, on any host.
 set -euo pipefail
 here=$(cd "$(dirname "$0")/.." && pwd)
 work=$(mktemp -d)
@@ -35,6 +36,8 @@ case "${args[*]}" in
   "config get-value account") echo ana@example.com ;;
   "compute instances describe "*"--format=value(status)") echo "${FAKE_STATUS:-}" ;;
   "compute instances describe "*"--format=value(labels.owner)") echo "${FAKE_OWNER-ana-example-com}" ;;
+  "compute routers list "*) echo nat-router ;;
+  "compute instances create "*) ;;
   "compute ssh "*)
     printf '%s' "$session" > "$FAKE_SESSION"
     n=$(( $(cat "$FAKE_TRIES" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$FAKE_TRIES"
@@ -174,7 +177,40 @@ if FAKE_STATUS=RUNNING FAKE_OWNER='' bash "$here/gcp-vm.sh" ssh < /dev/null > "$
   ok "ssh: a VM without an owner label joins the docker group"
 else bad "ssh: a VM without an owner label joins the docker group"; fi
 
-# 12. Once gcloud's SSH key exists, its warnings are left out (the NumPy one
+# 12. create: an e2-medium unless --machine-type says otherwise; the option is
+# for create only, and takes only a machine type's characters.
+: > "$FAKE_LOG"
+if bash "$here/gcp-vm.sh" create < /dev/null > "$work/out" 2>&1 \
+  && grep -q '^gcloud compute instances create datrail-ana .*--machine-type e2-medium ' "$FAKE_LOG" \
+  && has "$work/out" "Creating datrail-ana in my-project (us-east1-b): e2-medium,"; then
+  ok "create: an e2-medium by default"
+else bad "create: an e2-medium by default"; fi
+: > "$FAKE_LOG"
+if bash "$here/gcp-vm.sh" create --machine-type e2-standard-4 < /dev/null > "$work/out" 2>&1 \
+  && grep -q '^gcloud compute instances create datrail-ana .*--machine-type e2-standard-4 ' "$FAKE_LOG" \
+  && has "$work/out" ": e2-standard-4,"; then
+  ok "create --machine-type e2-standard-4"
+else bad "create --machine-type e2-standard-4"; fi
+: > "$FAKE_LOG"
+if bash "$here/gcp-vm.sh" create --machine-type 'e2-medium --no-shielded' < /dev/null > "$work/out" 2>&1; then
+  bad "create: a machine type with a space is refused"
+elif has "$work/out" "--machine-type takes a machine type" && ! grep -q '^gcloud compute instances create' "$FAKE_LOG"; then
+  ok "create: a machine type with a space is refused"
+else bad "create: a machine type with a space is refused"; fi
+# A value that is another option, as a forgotten value leaves it.
+: > "$FAKE_LOG"
+if bash "$here/gcp-vm.sh" create --machine-type --yes < /dev/null > "$work/out" 2>&1; then
+  bad "create: a machine type that starts with - is refused"
+elif has "$work/out" "--machine-type takes a machine type" && ! grep -q '^gcloud compute instances create' "$FAKE_LOG"; then
+  ok "create: a machine type that starts with - is refused"
+else bad "create: a machine type that starts with - is refused"; fi
+if FAKE_STATUS=RUNNING bash "$here/gcp-vm.sh" ssh --machine-type e2-standard-4 < /dev/null > "$work/out" 2>&1; then
+  bad "--machine-type with ssh is refused"
+elif has "$work/out" "--machine-type is for create" && has "$work/out" "set-machine-type"; then
+  ok "--machine-type with ssh is refused"
+else bad "--machine-type with ssh is refused"; fi
+
+# 13. Once gcloud's SSH key exists, its warnings are left out (the NumPy one
 # on every connection); before that they stay, to explain the key prompt.
 : > "$FAKE_LOG"; rm -f "$FAKE_TRIES"
 touch "$HOME/.ssh/google_compute_engine"
