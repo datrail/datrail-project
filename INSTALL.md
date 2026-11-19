@@ -498,15 +498,55 @@ All are optional.
 
 ### The RailDash token
 
-Every RailDash route that changes ASP or baseline state, including the one
-evidence bundles are delivered to, requires RailDash's local write token in an
-`X-RailDash-Token` header. The dashboard page carries it for your browser.
-RailDash also writes it to `raildash.db.token` beside its database, and
-`railmon-scan` and `railmon-collect` read it from there (a read-only mount),
-so the stack needs no token configuration. The collector sends it with every
+Every RailDash route that changes ASP, baseline or Data Guardrail state, or
+reads raw evidence, including the one evidence bundles are delivered to,
+requires RailDash's local write token in an `X-RailDash-Token` header. The
+dashboard page carries it for your browser. RailDash also writes it to
+`raildash.db.token` beside its database, and `railmon-scan` and
+`railmon-collect` read it from there (a read-only mount), so the stack needs
+no token configuration. The collector sends it with every
 capture, which marks the capture as its own rather than anyone's who can
 reach the webhook, and with a heartbeat every 60 seconds while it is attached
 to the agent. A capture without the token is still shown.
+
+A web page can't get the token from the dashboard either. A page on another
+site can point its own name at `127.0.0.1` (DNS rebinding), so that the
+browser treats RailDash as part of that site, but the browser still sends the
+site's name in the `Host` header. RailDash refuses, with 400, a request whose
+`Host` is anything but `localhost` (or a name under it), `raildash`, an IP
+address, or a name you list in `RAILDASH_ALLOWED_HOSTS` (see
+[Settings](#settings)). If you reach RailDash by another name, such as a name
+on your network, or `host.docker.internal` for a RailMon in a container on
+Docker Desktop, add it there. `*` turns the check off, and lets a web page
+read the token again. The check is for browsers: a program on this machine
+can send any `Host` it likes, so it changes nothing below.
+
+So the token keeps out other hosts (on Linux with Docker Engine 28 or later;
+before that, a host on the same local network could reach a port published on
+`127.0.0.1`) and web pages, not other users of this one. Anything that
+can open the dashboard can read it from the page, and RailDash listens on
+`127.0.0.1`, so that is any user or process on this machine: another local
+user, and an agent that runs directly on the host or in a container on the
+host's network. On Linux, an agent in a container of its own on Docker's
+default network can't reach it (`127.0.0.1` there is the container's own).
+A container on DatRail's own network can: it reaches RailDash at
+`raildash:8000`, as `railmon-scan` does, so the demo agent can, and so can an
+agent you attach to that network. With Docker Desktop, containers can reach
+this computer's ports through `host.docker.internal`, so assume they can.
+Anyone who can use Docker on this machine (root, the `docker` group, the
+owner of a rootless or Docker Desktop engine) can also read
+`raildash.db.token` from RailDash's volume. The token allows everything the
+dashboard does: deliver evidence bundles; lock, switch or accept baselines;
+adopt, edit, switch or turn off a Data Guardrail, and allow or acknowledge its
+rows; prune ASPs and change how long they are kept; and read raw bundles and
+guardrail rows. So an agent that can get it can turn its own guardrail off and
+delete its ASP history.
+
+On a machine only you use, with the agent in a container of its own (not on
+DatRail's network), that's fine. On a
+shared machine, or to watch an agent that runs outside a container and that
+you don't trust with its own baseline, run DatRail on a machine of its own,
+such as a VM ([docs/setup-gcp-vm.md](docs/setup-gcp-vm.md)).
 
 RailDash keeps the token in that file across restarts, so `railmon-scan`
 keeps delivering after either side restarts. Set `RAILDASH_TOKEN` to choose
