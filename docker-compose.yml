@@ -39,10 +39,10 @@
 # refuses everything else, so they never start, change or exec into a
 # container. That limits what they ask Docker; it is no wall against a
 # sensor that is itself compromised, which with these capabilities could
-# reach Docker another way. railmon-scan still mounts the Docker socket: the
-# pinned RailMon runs commands in the agent's container to read its setup.
-# From rule pack 16 (DR-300) it reads the agent's files through the host PID
-# namespace with SYS_PTRACE instead, and can then move behind docker-proxy.
+# reach Docker another way. railmon-scan still mounts the Docker socket,
+# though since rule pack 16 (DR-300) it only inspects, and reads the agent's
+# files through the host PID namespace with SYS_PTRACE: it can move behind
+# docker-proxy next.
 # The sensors, railmon-scan and docker-proxy have read-only
 # filesystems and can't gain privileges.
 #
@@ -210,9 +210,9 @@ services:
     cap_add: [SYS_PTRACE]
     # It still mounts the Docker socket itself rather than docker-proxy,
     # though the pinned RailMon (rule pack 16) only inspects. Until the scan
-    # moves behind the proxy, this socket is root-equivalent on the host too. /.rail, where it
-    # writes each bundle, is in memory: it starts empty after a restart, as it
-    # already did after a recreate.
+    # moves behind the proxy, this socket is root-equivalent on the host too.
+    # /.rail, where it writes each bundle, is in memory: it starts empty
+    # after a restart, as it already did after a recreate.
     security_opt: ["no-new-privileges:true"]
     read_only: true
     tmpfs: ["/tmp", "/.rail"]

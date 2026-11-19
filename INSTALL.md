@@ -662,14 +662,14 @@ they would not fit the file list (OpenClaw's gateway caches ~490 UI files on
 start), reads OpenShell's `openshell:resolve:env:KEY` placeholders as secret
 references, names each MCP tool's server with its input schema and
 annotations, and carries an OpenShell sandbox's allow-list when
-`openshell-collector` runs. Pack 15 (16 November 2026) says whether each MCP server was reached and
-why a tool's schema was left out, and follows `tools/list` pagination. Pack
-16 (19 November 2026) adds `tool_schemas`, each MCP tool's input schema, one
-copy per config file it was read from; reads the agent's files instead of
-running commands in its container (runtime versions come from build stamps,
-and the scan's own `sh`, `id` and `env` leave `observed_file_access`); and
-names a listener or peer for its process rather than the thread that opened
-it. Check the
+`openshell-collector` runs. Pack 15 (16 November 2026) says whether each
+MCP server was reached and why a tool's schema was left out, and follows
+`tools/list` pagination. Pack 16 (19 November 2026) adds `tool_schemas`,
+each MCP tool's input schema, one copy per place its server was declared;
+reads the agent's files instead of running commands in its container
+(runtime versions come from build stamps, and the scan's own `sh`, `id` and
+`env` leave `observed_file_access`); and names a listener or peer for its
+process rather than the thread that opened it. Check the
 newest ASP's evidence and lock it as the new baseline; it happens once per
 upgrade.
 
