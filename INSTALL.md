@@ -493,9 +493,21 @@ capture, which marks the capture as its own rather than anyone's who can
 reach the webhook, and with a heartbeat every 60 seconds while it is attached
 to the agent. A capture without the token is still shown.
 
-The token keeps out other hosts (on Linux with Docker Engine 28 or later;
+A web page can't get the token from the dashboard either. A page on another
+site can point its own name at `127.0.0.1` (DNS rebinding), so that the
+browser treats RailDash as part of that site, but the browser still sends the
+site's name in the `Host` header. RailDash refuses, with 400, a request whose
+`Host` is anything but `localhost` (or a name under it), `raildash`, an IP
+address, or a name you list in `RAILDASH_ALLOWED_HOSTS` (see
+[Settings](#settings)). If you reach RailDash by another name, such as a name
+on your network, or `host.docker.internal` for a RailMon in a container on
+Docker Desktop, add it there. `*` turns the check off, and lets a web page
+read the token again. The check is for browsers: a program on this machine
+can send any `Host` it likes, so it changes nothing below.
+
+So the token keeps out other hosts (on Linux with Docker Engine 28 or later;
 before that, a host on the same local network could reach a port published on
-`127.0.0.1`), not other users of this one. Anything that
+`127.0.0.1`) and web pages, not other users of this one. Anything that
 can open the dashboard can read it from the page, and RailDash listens on
 `127.0.0.1`, so that is any user or process on this machine: another local
 user, and an agent that runs directly on the host or in a container on the
