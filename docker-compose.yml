@@ -104,6 +104,9 @@ services:
       # `off` makes the Data Guardrail read every request body as an upload
       # again (see INSTALL.md, Settings).
       RAILDASH_BODY_KINDS: ${RAILDASH_BODY_KINDS:-}
+      # Names besides localhost, `raildash` and IP addresses that RailDash
+      # answers to, e.g. host.docker.internal (see INSTALL.md, Settings).
+      RAILDASH_ALLOWED_HOSTS: ${RAILDASH_ALLOWED_HOSTS:-}
     healthcheck:
       # The image has no curl, so the check uses Python's standard library.
       test:

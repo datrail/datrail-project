@@ -486,6 +486,7 @@ All are optional.
 | `RAIL_CENTER_URL` | unset | A Rail Center to send every evidence bundle to as well (see [Sending bundles to Rail Center](#sending-bundles-to-rail-center)). Unset, no bundle leaves this machine. |
 | `RAIL_AUTH_MODE`, `RAIL_AUTH_TOKEN`, `RAIL_AUTH_AUDIENCE` | `none` | The credential `railmon-scan` presents to Rail Center. Used only with `RAIL_CENTER_URL`. |
 | `RAILDASH_PORT` | `8000` | The local port RailDash is published on (always on `127.0.0.1`). |
+| `RAILDASH_ALLOWED_HOSTS` | unset | Names RailDash answers to besides `localhost` (and names under it), `raildash` and IP addresses, comma-separated, e.g. `host.docker.internal` for a RailMon in a container on Docker Desktop. A request whose `Host` names anything else gets 400, so a web page can't reach RailDash by pointing its own name at this machine. `*` turns the check off. |
 | `RAILDASH_BODY_KINDS` | on | Whether the Data Guardrail tells a real upload (a file, a large or unknown body) from a POST that only passes a few parameters, such as a search query. `off` reads every request body as an upload. |
 | `RAILDASH_TOKEN` | unset | RailDash's local write token, if you want to choose it (see below): at least 16 characters of `A-Z a-z 0-9 - _ . ~ + / =`, or RailDash does not start. |
 | `RAILMON_IMAGE`, `RAILDASH_IMAGE` | `ghcr.io/datrail/railmon:0.1.0-m17`, `ghcr.io/datrail/raildash:0.2.0-rc.19` | The image each component runs (see [Images](#images)). |
