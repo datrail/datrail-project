@@ -15,11 +15,22 @@ RailDash listens on `127.0.0.1` only.
 
 ## Prerequisites
 
-- **Docker Engine with Compose v2.** Three RailMon containers run privileged
-  in the host PID namespace (the eBPF probes need it), so your Docker daemon
-  must allow privileged containers. `railmon-scan` runs in the host PID
-  namespace too, unprivileged with `SYS_PTRACE`, so it can read the agent's
-  files without running anything in its container.
+- **Docker Engine with Compose v2.** Nothing runs privileged, but three
+  RailMon containers (the eBPF probes) run with the capabilities `BPF`,
+  `PERFMON` and `SYS_ADMIN` in the host PID namespace, and no limit on locked
+  memory (which kernels before 5.11 count BPF maps against), so your Docker
+  daemon must allow those (Docker 20.10 or later). `railmon-scan` runs in the host
+  PID namespace too, with `SYS_PTRACE`, so that from RailMon's rule pack 16
+  it reads the agent's files without running anything in its container; the
+  RailMon pinned here still runs `docker exec` there, through the Docker
+  socket it mounts. That is still root-equivalent on
+  the host, and so is the Docker socket `railmon-scan` mounts: run DatRail
+  where you would run any root service. The probes also get `SYS_PTRACE`, to
+  follow an agent that runs as another user. They ask Docker only through
+  `docker-proxy`, which lets them look up the agent's container and nothing
+  else; that limits what they ask, not what a compromised probe could do. The
+  comments at the top of [docker-compose.yml](docker-compose.yml) say what
+  each container is allowed.
 - **On Windows, a WSL2 distro with Docker in it.** Either install Docker
   Engine inside the distro, or use Docker Desktop with WSL integration on for
   that distro (Settings → Resources → WSL integration); the
@@ -33,8 +44,10 @@ RailDash listens on `127.0.0.1` only.
   [Makefile](Makefile) only wraps `docker compose` commands.
 - **Linux on x86_64 or arm64 with a BTF-enabled kernel**
   (`/sys/kernel/btf/vmlinux` exists). On a Mac or with Docker Desktop, that
-  is Docker Desktop's own Linux VM: `docker run --rm alpine ls
-  /sys/kernel/btf/vmlinux` checks it. See the platform table below.
+  is Docker Desktop's own Linux VM. `curl -fsSL
+  https://raw.githubusercontent.com/datrail/datrail-project/master/install.sh
+  | bash -s -- --check` checks it as RailMon's probes need it, in RailMon's
+  own image. See the platform table below.
 - **Network access to `ghcr.io`** for the first run, which pulls the
   [published images](#images), or to GitHub if you
   [build from source](#build-from-source).
@@ -77,7 +90,7 @@ cd datrail-project
 docker compose up -d
 ```
 
-Open <http://127.0.0.1:8000>. Six services start:
+Open <http://127.0.0.1:8000>. Seven services start:
 
 | Service | What it does |
 | --- | --- |
@@ -86,6 +99,7 @@ Open <http://127.0.0.1:8000>. Six services start:
 | `railmon-listen` | `railmon listen`: records every socket the agent opens to accept traffic, and who connects to it. |
 | `railmon-files` | `railmon files`: records each file the agent's processes open, and whether to read, write or run it. Paths only, never contents. |
 | `railmon-scan` | `railmon scan --interval`: scans the agent every `SCAN_INTERVAL` seconds and posts the evidence bundle to RailDash, where it becomes an ASP. |
+| `docker-proxy` | The probes' only way to Docker: a read-only allow-list in front of the Docker socket that lets them look up the agent's container and refuses everything else. |
 | `demo-agent` | A stand-in agent (`datrail-demo-agent`) that serves HTTPS on `127.0.0.1:8443` and calls itself. |
 
 Every service restarts on its own and delivers continuously. Nothing has to be
@@ -95,7 +109,7 @@ stopped, restarted or imported by hand, before or after you lock a baseline.
 
 A minute or two after `docker compose up -d`:
 
-- `docker compose ps` shows all six services `Up`, and `raildash` `healthy`.
+- `docker compose ps` shows all seven services `Up`, and `raildash` `healthy`.
 - The dashboard lists interactions: `POST` to `127.0.0.1:8443`, paths
   `/v1/demo` and `/v1/demo/other`, status `200`. Each call is captured twice,
   once as the client sent it and once as the server received it, because
@@ -161,10 +175,11 @@ reads nothing from its checkout.
 ## Watch your own agent
 
 For an agent you already run, [`install.sh`](install.sh) does all of this
-section in one command: it checks that Docker can run the stack, lists the
-running containers to pick your agent from, downloads `docker-compose.yml`
-into `~/datrail`, writes your choice into a `.env` file there, starts the
-stack and waits until RailDash answers:
+section in one command: it checks Docker, downloads `docker-compose.yml`
+into `~/datrail`, checks that RailMon's probes can run (in RailMon's own
+image), lists the running containers to pick your agent from, writes your
+choice into a `.env` file there, starts the stack and waits until RailDash
+answers:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/datrail/datrail-project/master/install.sh | bash
@@ -398,8 +413,8 @@ Each component runs a fixed published tag from `ghcr.io/datrail`, pinned in
 
 | Component | Image |
 | --- | --- |
-| RailMon | `ghcr.io/datrail/railmon:0.1.0-m16` |
-| RailDash | `ghcr.io/datrail/raildash:0.2.0-rc.17` |
+| RailMon | `ghcr.io/datrail/railmon:0.1.0-m17` |
+| RailDash | `ghcr.io/datrail/raildash:0.2.0-rc.19` |
 
 `docker compose up -d` pulls them the first time. A newer version of this
 file pins newer tags; `git pull` (or download the file again) and run
@@ -471,9 +486,10 @@ All are optional.
 | `RAIL_CENTER_URL` | unset | A Rail Center to send every evidence bundle to as well (see [Sending bundles to Rail Center](#sending-bundles-to-rail-center)). Unset, no bundle leaves this machine. |
 | `RAIL_AUTH_MODE`, `RAIL_AUTH_TOKEN`, `RAIL_AUTH_AUDIENCE` | `none` | The credential `railmon-scan` presents to Rail Center. Used only with `RAIL_CENTER_URL`. |
 | `RAILDASH_PORT` | `8000` | The local port RailDash is published on (always on `127.0.0.1`). |
+| `RAILDASH_ALLOWED_HOSTS` | unset | Names RailDash answers to besides `localhost` (and names under it), `raildash` and IP addresses, comma-separated, e.g. `host.docker.internal` for a RailMon in a container on Docker Desktop. A request whose `Host` names anything else gets 400, so a web page can't reach RailDash by pointing its own name at this machine. `*` turns the check off. |
 | `RAILDASH_BODY_KINDS` | on | Whether the Data Guardrail tells a real upload (a file, a large or unknown body) from a POST that only passes a few parameters, such as a search query. `off` reads every request body as an upload. |
 | `RAILDASH_TOKEN` | unset | RailDash's local write token, if you want to choose it (see below): at least 16 characters of `A-Z a-z 0-9 - _ . ~ + / =`, or RailDash does not start. |
-| `RAILMON_IMAGE`, `RAILDASH_IMAGE` | `ghcr.io/datrail/railmon:0.1.0-m16`, `ghcr.io/datrail/raildash:0.2.0-rc.17` | The image each component runs (see [Images](#images)). |
+| `RAILMON_IMAGE`, `RAILDASH_IMAGE` | `ghcr.io/datrail/railmon:0.1.0-m17`, `ghcr.io/datrail/raildash:0.2.0-rc.19` | The image each component runs (see [Images](#images)). |
 | `RAILMON_SRC`, `RAILDASH_SRC` | the GitHub repositories | Where to build each image from, when you build (see [Build from source](#build-from-source)). |
 | `DEMO_INTERVAL` | `30` | Seconds between the demo agent's calls. |
 | `OPENSHELL_CONFIG_DIR` | `$HOME/.config/openshell` | The OpenShell CLI's configuration, which the opt-in `openshell-collector` mounts read-only (see [An agent in an OpenShell sandbox](#an-agent-in-an-openshell-sandbox)). |
@@ -578,17 +594,33 @@ running, or WSL integration is off for this distro (see [Prerequisites](#prerequ
 Right after Desktop starts, give the integration a moment to attach.
 
 **No interactions appear.** Check `docker compose logs railmon-collect`. The
-collector needs a privileged container, the host PID namespace, and an
-x86_64 or arm64 kernel with BTF. On macOS, only processes inside Docker Desktop's VM
+collector needs the capabilities `BPF`, `PERFMON`, `SYS_ADMIN` and `SYS_PTRACE`, the host
+PID namespace, and an x86_64 or arm64 kernel with BTF; a `start-up check:`
+line names any of them it is missing. On macOS, only processes inside Docker Desktop's VM
 are visible. For your own agent, `docker compose logs railmon-collect` says
 which process and TLS file it attached to, or that none in the container
 uses TLS yet. With `COLLECT_TARGET` set, check that it matches the agent's
 processes.
 
+**A sensor's log says `Permission denied` on `/proc/<pid>/ns/pid` or
+`map_files`, on Ubuntu or Debian.** The sensors run under Docker's default
+AppArmor profile, which lets them follow only processes under that same
+profile. An agent outside it, such as a container started with
+`--privileged` or `--security-opt apparmor=unconfined`, can't be followed.
+Run the agent under the default profile, or add `apparmor=unconfined` to the sensors' `security_opt`
+in [docker-compose.yml](docker-compose.yml) (the `x-sensor` block); that takes
+away nothing the sensors' capabilities don't already give them.
+
+**A sensor's log says `refused by DatRail docker-proxy`.** The sensors reach
+Docker through `docker-proxy`, which only lets them look up containers, so
+anything else is refused on purpose. It shows them only the agent's
+container, the one `AGENT_CONTAINER` names, so another name gets `not
+found`. If a sensor can't find the agent's container because of it, tell us ([SUPPORT.md](https://github.com/datrail/.github/blob/main/SUPPORT.md)).
+
 **No ASPs appear.** Check `docker compose logs railmon-scan`. `docker
 inspect failed for container: <name>` most often means `AGENT_CONTAINER`
 names a container that does not exist (check `docker ps -a`); otherwise check
-that the Docker socket is mounted and reachable;
+that the Docker socket is mounted into `railmon-scan` and reachable;
 `HTTP 403` means a stale token (see [The RailDash token](#the-raildash-token)).
 
 **`observed_listeners` or `observed_file_access` is `PARTIAL`, or drifts

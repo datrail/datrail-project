@@ -14,17 +14,29 @@ trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/bin"
 cat > "$work/bin/docker" <<'EOF'
 #!/usr/bin/env bash
-# The stand-in: FAKE_PS is `docker ps --format`'s output, FAKE_RUNNING the
+# The stand-in: FAKE_INFO_ERR makes `docker info` fail with that error,
+# FAKE_PS is `docker ps --format`'s output, FAKE_RUNNING the
 # running containers' names, FAKE_EXISTING the stopped ones', FAKE_STACKS
-# the running RailDash containers' "project|directory".
+# the running RailDash containers' "project|directory". RailMon's image is
+# ghcr.io/datrail/railmon:test, or the RAILMON_IMAGE in .env in the current
+# directory; FAKE_NOT_PULLED says it isn't on the host yet, FAKE_PULL_FAILS
+# that pulling it fails, FAKE_NO_BTF that the kernel check fails in it.
 echo "docker $*" >> "$FAKE_LOG"
 last=${!#}
 case "$*" in
-  "info") exit 0 ;;
+  "info") [ -z "${FAKE_INFO_ERR:-}" ] || { printf '%s
+' "$FAKE_INFO_ERR" >&2; exit 1; } ;;
   "info --format {{.Architecture}}") echo x86_64 ;;
   "info --format {{.OperatingSystem}}") echo "${FAKE_OS:-Ubuntu 26.04 LTS}" ;;
   "compose version") echo "Docker Compose version v2.40.0" ;;
-  run\ --rm\ --privileged\ alpine*) exit 0 ;;
+  "compose config --images docker-proxy") echo nginx:1.30-alpine ;;
+  "compose config --images railmon-listen")
+    image=$(sed -n 's/^RAILMON_IMAGE=//p' .env 2> /dev/null | tail -n 1)
+    printf 'nginx:1.30-alpine\n%s\n' "${image:-ghcr.io/datrail/railmon:test}" ;;
+  "image inspect "*) [ -z "${FAKE_NOT_PULLED:-}" ] ;;
+  "pull -q "*) [ -z "${FAKE_PULL_FAILS:-}" ] && echo sha256:0123 ;;
+  "run --rm --cap-add BPF --cap-add PERFMON --cap-add SYS_ADMIN --entrypoint test "*" -r /sys/kernel/btf/vmlinux")
+    [ -z "${FAKE_NO_BTF:-}" ] ;;
   "compose config") echo "name: $(basename "$PWD")" ;;
   ps\ --format*) printf '%s' "${FAKE_PS:-}" ;;
   ps\ --filter\ label=com.docker.compose.service=raildash*) printf '%s' "${FAKE_STACKS:-}" ;;
@@ -40,7 +52,13 @@ case "$*" in
   *) echo "fake docker: unexpected: $*" >&2; exit 99 ;;
 esac
 EOF
-chmod +x "$work/bin/docker"
+# `uname -s` is FAKE_UNAME (Linux unless set), so the cases read the same on a
+# Mac; anything else is the real uname.
+cat > "$work/bin/uname" <<'EOF'
+#!/usr/bin/env bash
+if [ "$*" = -s ]; then echo "${FAKE_UNAME:-Linux}"; else PATH=/usr/bin:/bin exec uname "$@"; fi
+EOF
+chmod +x "$work/bin/docker" "$work/bin/uname"
 export PATH="$work/bin:$PATH" FAKE_LOG="$work/docker.log"
 fails=0
 
@@ -173,6 +191,102 @@ else bad "piped, no terminal, no --yes"; fi
 if setsid -w bash -s -- --dir "$d" --demo < "$here/install.sh" > "$work/out" 2>&1; then
   ok "piped, no terminal, --demo"
 else bad "piped, no terminal, --demo"; fi
+
+# 10. Docker unreachable: each cause gets its own message, in either of
+# Docker's wordings, with the socket checked rather than the words.
+d=$work/six
+sock_dir=$(mktemp -d "$work/sock.XXXXXX")
+python3 -I -c 'import socket, sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "$sock_dir/dead.sock"
+unreachable() { # unreachable NAME ERROR EXPECTED...
+  local name=$1 err=$2; shift 2
+  if FAKE_INFO_ERR=$err run "$d" --yes --demo < /dev/null; then bad "$name"; return; fi
+  for want in "$@"; do grep -qF -- "$want" "$work/out" || { bad "$name"; return; }; done
+  ! has "$FAKE_LOG" "docker compose up -d --remove-orphans" || { bad "$name"; return; }
+  # Desktop's message only where the case expects it.
+  [[ " $* " == *"Docker Desktop isn't running"* ]] || ! grep -qF "Docker Desktop isn't running" "$work/out" \
+    || { bad "$name"; return; }
+  ok "$name"
+}
+unreachable "docker: no daemon socket yet" \
+  "failed to connect to the docker API at unix://$sock_dir/none.sock; check if the path is correct and if the daemon is running: dial unix $sock_dir/none.sock: connect: no such file or directory" \
+  "no daemon socket at $sock_dir/none.sock" "still being installed" "sudo systemctl start docker"
+unreachable "docker: a socket but no daemon" \
+  "Cannot connect to the Docker daemon at unix://$sock_dir/dead.sock. Is the docker daemon running?" \
+  "Docker's socket ($sock_dir/dead.sock) is there, but the daemon doesn't answer" "sudo systemctl start docker"
+unreachable "docker: permission denied" \
+  "permission denied while trying to connect to the docker API at unix:///var/run/docker.sock" \
+  "permission denied on /var/run/docker.sock)" "sudo usermod -aG docker" "equivalent to root"
+unreachable "docker: permission denied, older wording" \
+  "Got permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock: Get \"http://%2Fvar%2Frun%2Fdocker.sock/v1.24/info\": dial unix /var/run/docker.sock: connect: permission denied" \
+  "permission denied on /var/run/docker.sock)"
+unreachable "docker: anything else, in Docker's words" \
+  "error during connect: this error is new" \
+  "Docker says: error during connect: this error is new"
+unreachable "docker: an SSH key refused, for a remote DOCKER_HOST" \
+  "error during connect: Get \"http://docker.example/v1.47/info\": command [ssh -- ana@docker.example docker system dial-stdio] has exited with exit status 255, make sure the URL is valid, and Docker 18.09 or later is installed on the remote host: stderr=ana@docker.example: Permission denied (publickey)." \
+  "Docker says: error during connect"
+unreachable "docker: Docker Desktop's socket" \
+  "Cannot connect to the Docker daemon at unix:///home/ana/.docker/desktop/docker.sock. Is the docker daemon running?" \
+  "Docker Desktop isn't running"
+FAKE_UNAME=Darwin unreachable "docker: a Mac without Docker Desktop" \
+  "Cannot connect to the Docker daemon at unix://$sock_dir/colima.sock. Is the docker daemon running?" \
+  "no daemon socket at $sock_dir/colima.sock" "colima start"
+
+# Docker Desktop's CLI (in WSL, /usr/bin/docker links into
+# /mnt/wsl/docker-desktop/cli-tools): Desktop's advice only when the error
+# names no socket or /var/run/docker.sock and the user may open it.
+mkdir -p "$work/docker-desktop/cli-tools/usr/bin" "$work/desktop-bin"
+cp "$work/bin/docker" "$work/docker-desktop/cli-tools/usr/bin/docker"
+ln -s "$work/docker-desktop/cli-tools/usr/bin/docker" "$work/desktop-bin/docker"
+PATH="$work/desktop-bin:$PATH" unreachable "docker: permission denied through Desktop's CLI in WSL" \
+  "permission denied while trying to connect to the docker API at unix:///var/run/docker.sock" \
+  "permission denied on /var/run/docker.sock)" "sudo usermod -aG docker"
+PATH="$work/desktop-bin:$PATH" unreachable "docker: Desktop's CLI, Desktop not answering" \
+  "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?" \
+  "Docker Desktop isn't running"
+PATH="$work/desktop-bin:$PATH" FAKE_UNAME=Darwin unreachable "docker: Desktop's CLI with Colima's socket on a Mac" \
+  "Cannot connect to the Docker daemon at unix://$sock_dir/colima.sock. Is the docker daemon running?" \
+  "no daemon socket at $sock_dir/colima.sock" "colima start"
+
+# 11. The kernel check runs in RailMon's own image, pulled only when it isn't
+# on the host yet, and in no other image (DR-311). --check leaves the
+# install directory alone.
+d=$work/seven
+export FAKE_RUNNING="" FAKE_PS=""
+probe_check="docker run --rm --cap-add BPF --cap-add PERFMON --cap-add SYS_ADMIN --entrypoint test ghcr.io/datrail/railmon:test -r /sys/kernel/btf/vmlinux"
+if run "$d" --yes --demo < /dev/null && has "$FAKE_LOG" "$probe_check" \
+  && ! grep -q '^docker pull' "$FAKE_LOG" && ! grep -q alpine "$FAKE_LOG" \
+  && grep -q "RailMon's probes can run here: OK" "$work/out"; then
+  ok "the kernel check runs in RailMon's image"
+else bad "the kernel check runs in RailMon's image"; fi
+if FAKE_NOT_PULLED=1 run "$d" --yes --demo < /dev/null \
+  && has "$FAKE_LOG" "docker pull -q ghcr.io/datrail/railmon:test" && grep -q "Pulling RailMon's image" "$work/out"; then
+  ok "RailMon's image pulled for the check when it isn't there"
+else bad "RailMon's image pulled for the check when it isn't there"; fi
+if FAKE_NOT_PULLED=1 FAKE_PULL_FAILS=1 run "$d" --yes --demo < /dev/null; then bad "a pull that fails"
+elif grep -q "couldn't pull ghcr.io/datrail/railmon:test" "$work/out" \
+  && ! has "$FAKE_LOG" "docker compose up -d --remove-orphans"; then ok "a pull that fails"
+else bad "a pull that fails"; fi
+if FAKE_NO_BTF=1 run "$d" --yes --demo < /dev/null; then bad "no BTF, or the capabilities refused"
+elif grep -q "Docker can't run RailMon's probes here" "$work/out" \
+  && ! has "$FAKE_LOG" "docker compose up -d --remove-orphans"; then ok "no BTF, or the capabilities refused"
+else bad "no BTF, or the capabilities refused"; fi
+d=$work/eight
+if run "$d" --check < /dev/null && grep -q "This machine can run DatRail." "$work/out" \
+  && has "$FAKE_LOG" "$probe_check" && [[ ! -e $d ]]; then
+  ok "--check, without touching the install directory"
+else bad "--check, without touching the install directory"; fi
+if FAKE_NO_BTF=1 run "$d" --check < /dev/null; then bad "--check, no BTF"
+elif grep -q "Docker can't run RailMon's probes here" "$work/out" && [[ ! -e $d ]]; then ok "--check, no BTF"
+else bad "--check, no BTF"; fi
+# An install's own RAILMON_IMAGE is the image --check checks, and .env is
+# left as it was.
+mkdir -p "$d" && printf 'RAILMON_IMAGE=example.com/railmon:mine\n' > "$d/.env"
+if run "$d" --check < /dev/null \
+  && has "$FAKE_LOG" "docker run --rm --cap-add BPF --cap-add PERFMON --cap-add SYS_ADMIN --entrypoint test example.com/railmon:mine -r /sys/kernel/btf/vmlinux" \
+  && [[ $(cat "$d/.env") == RAILMON_IMAGE=example.com/railmon:mine && ! -e $d/docker-compose.yml ]]; then
+  ok "--check, with the install's own RAILMON_IMAGE"
+else bad "--check, with the install's own RAILMON_IMAGE"; fi
 
 [[ $fails == 0 ]] || { echo "$fails case(s) failed"; exit 1; }
 echo "all cases passed"

@@ -1,6 +1,6 @@
 # datRail demo runbook: demo agent, your own agent, and an agent in an OpenShell sandbox
 
-Hands-on walk of the datrail-project stack. The install pins published images (on 2026-11-11: railmon `0.1.0-m16`, raildash `0.2.0-rc.17`, rule pack 14); Parts A and C are walked in a browser in CI (`demo-walk.yml`) on every change to this runbook or the pins, at the default intervals; the last walk by hand was on a Mac on 2026-10-23 with `0.1.0-m7` and `0.2.0-rc.4`. Every step says what to run, what RailDash should show, and how long it takes. Everything here was run on a GCP x86_64 VM (Ubuntu 24.04) and, for the own-agent part, on an Apple Silicon Mac with Docker Desktop.
+Hands-on walk of the datrail-project stack. The install pins published images (on 2026-11-18: railmon `0.1.0-m17`, raildash `0.2.0-rc.19`, rule pack 15); Parts A and C are walked in a browser in CI (`demo-walk.yml`) on every change to this runbook or the pins, at the default intervals; the last walk by hand was on a Mac on 2026-10-23 with `0.1.0-m7` and `0.2.0-rc.4`. Every step says what to run, what RailDash should show, and how long it takes. Everything here was run on a GCP x86_64 VM (Ubuntu 24.04) and, for the own-agent part, on an Apple Silicon Mac with Docker Desktop.
 
 Two windows: **T1** is a shell on the host (or an SSH session with `-L 8000:127.0.0.1:8000` if the host is remote), **T2** is a browser on http://127.0.0.1:8000 . If 8000 is taken, start the stack with `RAILDASH_PORT=18000` and use that.
 
@@ -51,7 +51,7 @@ cd ~/datrail-project && docker compose down -v && docker compose up -d
 docker compose ps
 ```
 
-Six services Up, raildash `(healthy)`. Open http://127.0.0.1:8000 .
+Seven services Up, raildash `(healthy)`. Open http://127.0.0.1:8000 .
 
 ### A1. What you see (2 minutes)
 
@@ -277,7 +277,7 @@ Name the sandbox, not its container (INSTALL, "An agent in an OpenShell sandbox"
 COMPOSE_PROFILES=openshell AGENT_CONTAINER=openshell:my-agent docker compose up -d --scale demo-agent=0
 ```
 
-`docker compose ps`: six services Up (the five plus `openshell-collector`), no demo-agent. The steps below `docker exec` into the agent, whose container name carries a random id, so look it up by label:
+`docker compose ps`: seven services Up (the six plus `openshell-collector`), no demo-agent. The steps below `docker exec` into the agent, whose container name carries a random id, so look it up by label:
 
 ```bash
 A=$(docker ps --format '{{.Names}}' --filter label=openshell.ai/sandbox-name=my-agent --filter label=openshell.ai/isolation-role=sandbox); echo $A

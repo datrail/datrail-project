@@ -41,8 +41,13 @@ Report it there, or here if you are unsure; we will route it.
 
 Out of scope, but tell us anyway if it looks serious: Docker, the kernel, an
 agent runtime such as NVIDIA OpenShell, and anything that needs an attacker
-who already has root on the host. RailMon runs privileged to load its eBPF
-probes, and that is assumed.
+who already has root on the host. RailMon's probes run with root-equivalent
+capabilities (BPF, PERFMON, SYS_ADMIN and SYS_PTRACE in the host's PID
+namespace) to load their eBPF probes and follow the agent's processes, and
+railmon-scan mounts the Docker socket; that is assumed. docker-proxy limits
+what the probes ask Docker; with those capabilities it is no wall against a
+probe that is itself compromised. A request that gets past its read-only
+allow-list is in scope.
 
 ## What the stack does and does not protect
 

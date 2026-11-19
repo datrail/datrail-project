@@ -15,7 +15,7 @@ The VM has no external IP address. You reach it through Google's IAP tunnel, and
 - The **Google Cloud CLI** (`gcloud`) on your computer, signed in: `gcloud auth login`. Install it from https://cloud.google.com/sdk/docs/install . On Windows, install it in WSL (Ubuntu), since the script is a bash script.
 - A **Google Cloud project** with billing, where you have these roles: Compute Instance Admin (v1), IAP-secured Tunnel User, Compute OS Admin Login, and Service Account User. A project admin can grant them.
 - A **Cloud NAT** in the region you use (the default is `us-east1`). Many projects already have one. If not, the script says so and Troubleshooting has the two commands.
-- Cost: about $0.13 an hour while the VM runs (`e2-standard-4`, 4 vCPU, 16 GB), and about $2 a month for its 50 GB disk while it is stopped.
+- Cost: about $0.03 an hour while the VM runs (`e2-medium`, 2 vCPU, 4 GB), and about $2 a month for its 50 GB disk while it is stopped. DatRail and the demo use about 250 MB of memory and a few percent of the CPU, so that is plenty. `--machine-type e2-standard-4` (4 vCPU, 16 GB, about $0.13 an hour) builds from source faster and leaves room for a larger agent.
 
 Time: about 5 minutes. Creating the VM takes under a minute, Docker installs on it in about 2 minutes, and DatRail starts in under a minute.
 
@@ -36,7 +36,7 @@ chmod +x gcp-vm.sh
 ./gcp-vm.sh create --project YOUR-PROJECT
 ```
 
-It creates a VM named after your Google account (for `ana@example.com`, `datrail-ana`) in `us-east1-b` (`--name` and `--zone` change those), with Ubuntu 24.04 and no external IP, and it ends with:
+It creates an `e2-medium` VM (`--machine-type` picks another) named after your Google account (for `ana@example.com`, `datrail-ana`) in `us-east1-b` (`--name` and `--zone` change those), with Ubuntu 24.04 and no external IP, and it ends with:
 
 ```text
 Created. Docker installs in the background over the next 2 minutes or so.
@@ -46,34 +46,26 @@ To skip `--project` every time, set it once: `gcloud config set project YOUR-PRO
 
 ## Step 3: Connect
 
-Wait about 2 minutes for Docker to install, then:
+Straight after `create` is fine:
 
 ```bash
 ./gcp-vm.sh ssh
 ```
 
-The first time, `gcloud` may ask to create an SSH key: press Enter. If the VM is still booting, the script retries every 15 seconds. You are then in a shell on the VM. **Keep this window open while you use RailDash:** the tunnel to the dashboard closes when the session ends.
+The first time, `gcloud` may ask to create an SSH key: press Enter. Until that key exists, gcloud may also warn on each connection that the tunnel would be faster with NumPy: harmless, and once the key exists the script leaves gcloud's warnings out (unless you set `CLOUDSDK_CORE_VERBOSITY` yourself). (To make the tunnel faster anyway, the warning's link, Google's *Increasing the TCP upload bandwidth*, has the two commands.) If the VM is still booting, gcloud prints an error for each try, often a long one: `Failed to lookup instance` with a Python traceback while the VM starts, then `Permission denied (publickey)` while your login reaches it. Those are expected then: the script says it will try again, and retries every 15 seconds. If Docker is still installing, it says so and waits (usually about 2 minutes). The first time, it also adds you to the `docker` group, so `docker` works without `sudo`. You are then in a shell on the VM. **Keep this window open while you use RailDash:** the tunnel to the dashboard closes when the session ends.
 
-Check that Docker is ready and the kernel has BTF:
+The `docker` group is equivalent to root on the VM, as on any Docker host. That's fine on a test VM of your own.
 
-```bash
-ls /var/lib/datrail-vm/ready /sys/kernel/btf/vmlinux
-```
-
-Both paths are printed. If `ready` is missing, Docker is still installing: wait a minute and try again.
-
-## Step 4: Let your user run Docker
-
-On the VM, once:
+Check that Docker answers and the kernel has BTF:
 
 ```bash
-sudo usermod -aG docker $USER
-exit
+docker version --format '{{.Server.Version}}'
+ls /sys/kernel/btf/vmlinux
 ```
 
-Then connect again with `./gcp-vm.sh ssh`, so the change applies. `docker version` now answers without `sudo`.
+Docker's version and the path are printed.
 
-## Step 5: Install DatRail
+## Step 4: Install DatRail
 
 On the VM:
 
@@ -81,9 +73,9 @@ On the VM:
 curl -fsSL https://raw.githubusercontent.com/datrail/datrail-project/master/install.sh | bash -s -- --demo --yes
 ```
 
-It checks the VM, puts DatRail's files in `~/datrail`, downloads the images (about 540 MB) and ends with `DatRail is running`. On an `e2-standard-4` this takes under a minute.
+It checks the VM, puts DatRail's files in `~/datrail`, downloads the images (about 540 MB) and ends with `DatRail is running`. On the default `e2-medium` this takes under a minute.
 
-## Step 6: Open the dashboard
+## Step 5: Open the dashboard
 
 In the browser on **your own computer**, open http://127.0.0.1:8000 . The SSH session from Step 3 carries it to the VM.
 
@@ -94,7 +86,7 @@ Within a minute or two you should see:
 
 That is a working install.
 
-## Step 7: Try the demo
+## Step 6: Try the demo
 
 1. **Lock a baseline.** Wait until there are two profiles under "Agent Security Profile alignment" (the second arrives a minute after the first). On the newest one, click **Lock this as your alignment baseline**. The status reads **ALIGNED, v1.0 (active)**.
 2. **Make the demo agent open a new port.** On the VM:
@@ -140,9 +132,9 @@ DatRail starts again by itself when the VM starts, and RailDash keeps its data. 
 | --- | --- |
 | `gcp-vm.sh: the default network has no Cloud NAT in <region>` | The VM couldn't download anything. A project admin creates one, once per region: `gcloud compute routers create datrail-router --region REGION --network default`, then `gcloud compute routers nats create datrail-nat --router datrail-router --region REGION --auto-allocate-nat-external-ips --nat-all-subnet-ip-ranges`. It bills about $1 a day. Or use `--zone` in a region that has one. |
 | `gcp-vm.sh ssh` keeps failing with code 255 | Right after a start this is the VM booting, and the script retries. If it never connects, check your four roles (Before you start) and that the network allows SSH from IAP's range, `35.235.240.0/20`, on TCP port 22. The default network's `default-allow-ssh` rule does. |
-| `permission denied` on `docker` | Step 4 hasn't applied yet: `exit` and connect again. |
+| `permission denied` on `docker` | `gcp-vm.sh ssh` adds you to the `docker` group when you connect. If it said `Could not add ... to the docker group`, your account needs Compute OS Admin Login (Before you start). On a VM someone else made, it says so and leaves the group to the VM's owner. If you connected another way, run `sudo usermod -aG docker $USER`, then `exit` and connect again. |
 | `sudo` asks for a password or is refused | Your account has Compute OS Login but not Compute OS Admin Login. Ask for the admin one (Before you start). |
-| `ls: cannot access '/var/lib/datrail-vm/ready'` | Docker is still installing. Wait a minute. If it is still missing after 5 minutes, `sudo journalctl -u google-startup-scripts -n 50` shows why. |
+| `gcp-vm.sh ssh` says `Docker has still not finished installing after 5 minutes` | The shell still opens: there, `sudo journalctl -u google-startup-scripts -n 50` shows why. |
 | Port 8000 is already in use on your computer | Connect with another port and install on the same one: `./gcp-vm.sh ssh --port 18000`, then on the VM add `--port 18000` to the install command and open http://127.0.0.1:18000 . |
 | The dashboard stopped answering | The SSH session from Step 3 ended. Connect again with `./gcp-vm.sh ssh`. |
 | A second `gcp-vm.sh ssh` window says `bind [127.0.0.1]:8000: Address already in use` | Harmless: the first window already carries the dashboard, and the second still gives you a shell on the VM. |

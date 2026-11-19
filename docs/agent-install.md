@@ -18,9 +18,12 @@ normal and is shown anything new. Nothing leaves the computer.
 ## Rules while you do this
 
 - **Ask the person before step 1.** DatRail runs containers with full
-  control of this computer: four of its containers are privileged or reach
-  Docker itself, because its eBPF probes and scanner need that, and step 1's
-  check already starts one. Say so in one sentence and wait for a yes.
+  control of this computer: three of its containers hold root-equivalent
+  capabilities for its eBPF probes, its scanner can read any process and
+  reaches Docker itself, and a small proxy holds Docker's socket and answers
+  the probes' lookups. Step 1's check already starts one, in RailMon's
+  image, which it downloads first (about 95 MB). Say so in one sentence and
+  wait for a yes.
 - **Never use `sudo`, and never change Docker's settings** without the person
   saying yes to that exact command.
 - **Don't stop, restart or change the person's agent.** DatRail doesn't need
@@ -72,6 +75,9 @@ your shell is already bash inside WSL, run them directly.
 curl -fsSL https://raw.githubusercontent.com/datrail/datrail-project/master/install.sh | bash -s -- --check
 ```
 
+It downloads RailMon's image (about 95 MB) to check the kernel with; step 2
+uses the same image, so it isn't downloaded twice.
+
 - It ends with `This machine can run DatRail.`: go on to step 2.
 - `Docker isn't installed`: tell the person they need Docker. On a Mac or
   Windows that is Docker Desktop (https://www.docker.com/products/docker-desktop/);
@@ -82,8 +88,17 @@ curl -fsSL https://raw.githubusercontent.com/datrail/datrail-project/master/inst
   closed) or its WSL integration is off for this distro: ask the person to
   start it, or turn the integration on (Docker Desktop, Settings, Resources,
   WSL integration), then run the check again.
-- `not running`: ask them to start Docker Desktop, wait until it says it's
-  running, then run the check again.
+- `Docker Desktop isn't running`: ask them to start Docker Desktop, wait
+  until it says Engine running (in WSL, also check its WSL integration, as
+  above), then run the check again.
+- `no daemon socket` or `the daemon doesn't answer`: Docker is installed but
+  not running. On a new VM it may still be installing: wait two minutes and
+  run the check again. Otherwise ask the person to start it with the command
+  the message gives, then run the check again.
+- `permission denied`: their user may not use Docker. The fix the message
+  gives, the `docker` group, is equivalent to root on the machine, so it's
+  theirs to decide and run: tell them, and continue once they have logged out
+  and back in.
 - Anything else: tell them the message as it is, and point them to
   https://github.com/datrail/datrail-project/blob/master/INSTALL.md#prerequisites.
 
@@ -118,7 +133,8 @@ For an agent in an OpenShell sandbox, `--agent openshell:SANDBOX` with the
 sandbox's name. To try the demo instead: `--demo --yes` in place of
 `--agent NAME --yes`.
 
-It downloads about 540 MB the first time and takes a few minutes. It puts
+It downloads the rest of DatRail the first time (RailMon's image came with
+step 1) and takes a few minutes. It puts
 its files in `~/datrail`, starts everything, and waits until the dashboard
 answers. It ends with `DatRail is running`. If it stops with a message
 instead, tell the person the message as it is.

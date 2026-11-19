@@ -1,6 +1,6 @@
 # A throwaway GCP VM for datRail
 
-Why a VM: RailMon's probes need a Linux kernel with BTF and privileged containers in the host PID namespace. A Mac only watches agents inside Docker Desktop's VM; OpenShell only ships a Linux .deb. A small GCP VM gives both and costs about $0.13 an hour while it runs.
+Why a VM: RailMon's probes need a Linux kernel with BTF and containers with the BPF, PERFMON and SYS_ADMIN capabilities in the host PID namespace. A Mac only watches agents inside Docker Desktop's VM; OpenShell only ships a Linux .deb. A small GCP VM gives both and costs about $0.13 an hour while it runs.
 
 ## What I built
 
@@ -53,7 +53,7 @@ sudo usermod -aG docker "$USER"
 sudo loginctl enable-linger "$USER"
 ```
 
-Log out and back in so the docker group applies. Check: `ls /sys/kernel/btf/vmlinux`, `docker run --rm --privileged hello-world`.
+Log out and back in so the docker group applies. Check: `ls /sys/kernel/btf/vmlinux`, then `curl -fsSL https://raw.githubusercontent.com/datrail/datrail-project/master/install.sh | bash -s -- --check` (install.sh's own check, in RailMon's image).
 
 `enable-linger` is what lets OpenShell's gateway (a user-level systemd service) survive the SSH session ending; without it, mode C dies when you log out.
 

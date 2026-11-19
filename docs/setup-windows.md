@@ -182,7 +182,7 @@ You can watch one agent at a time. To switch later, run the install command agai
 ==> Writing the settings to /home/alex/datrail/.env
 Watching my-agent.
 
-==> Starting DatRail (the first run downloads two images, about 540 MB)
+==> Starting DatRail (the first run downloads the rest of its images)
 ```
 
 The download takes about a minute on a normal connection, and the window shows its progress. Then:
@@ -290,8 +290,8 @@ Removing it deletes DatRail's data and its downloads. It never touches your agen
 | `wsl -l -v` shows `1` next to Ubuntu | In PowerShell as administrator, run `wsl --set-version Ubuntu 2`, then check again. |
 | The command `docker` could not be found in this WSL 2 distro | Docker Desktop isn't running, or its WSL integration is off for Ubuntu (Step 2, step 6). Right after Docker Desktop starts, wait a few seconds and try again. |
 | `install.sh: Docker isn't installed` | On Windows this usually means Docker Desktop is closed, or its WSL integration is off for Ubuntu: closing Docker Desktop removes the `docker` command from Ubuntu. Open Docker Desktop, wait until it says **Engine running**, check its WSL integration (Step 2, step 6), then run the install command again. If Docker Desktop isn't installed yet, install it first (Step 2). |
-| `install.sh: Docker is installed but not running` | Open Docker Desktop, wait until it says **Engine running**, then run the install command again. |
-| `install.sh: Docker can't run a privileged container with BTF` | Update Docker Desktop to its latest version (whale icon in the taskbar, **Check for updates**), check the settings in Step 2, and run the install command again. [INSTALL.md, Prerequisites](../INSTALL.md#prerequisites) lists the setups that work. |
+| `install.sh: Docker Desktop isn't running` | Open Docker Desktop, wait until it says **Engine running**, then run the install command again. |
+| `install.sh: Docker can't run RailMon's probes here` | Update Docker Desktop to its latest version (whale icon in the taskbar, **Check for updates**), check the settings in Step 2, and run the install command again. [INSTALL.md, Prerequisites](../INSTALL.md#prerequisites) lists the setups that work. |
 | `install.sh: DatRail is already running from ...` | Another copy of DatRail is running. In the folder the message names, run `docker compose down` (its data is kept), then run the install command again. |
 | `Your choice:` comes back with `Type one of the numbers or letters above.` | Type exactly one of the choices shown, such as `1` or `d`, and press **Enter**. |
 | Your agent isn't in the list | It has to run in a Docker container, and the container has to be running now. Check Step 4. If it isn't started yet, pick `c` and type its name. |

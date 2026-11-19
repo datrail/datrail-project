@@ -19,6 +19,8 @@ Usage: gcp-vm.sh COMMAND [options]
 Commands:
   create      create the VM, with Docker installed (about 2 minutes)
   ssh         open a session on it, with RailDash's port forwarded to this machine
+              (waits for Docker if it's still installing, and adds you to the docker
+              group unless someone else made the VM)
   start       start a stopped VM
   stop        stop it (its disk is kept, and still bills, about $2 a month)
   delete      delete it and its disk (it asks you to type the VM's name first)
@@ -29,6 +31,9 @@ Options:
   --zone ZONE         the zone (default: us-east1-b)
   --name NAME         the VM's name (default: datrail-<your Google account name>)
   --port PORT         RailDash's port, on the VM and on this machine (default: 8000)
+  --machine-type TYPE for create, the VM's machine type (default: e2-medium, 2 vCPU and
+                      4 GB, enough for DatRail and a small agent; e2-standard-4 builds
+                      from source faster and leaves room for a larger agent)
   -y, --yes           delete without asking
   -h, --help          this text
 USAGE
@@ -43,6 +48,7 @@ project=""
 zone="us-east1-b"
 name=""
 port=8000
+machine_type=""
 yes=0
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -50,12 +56,22 @@ while [ $# -gt 0 ]; do
     --zone) zone="${2:?--zone needs a value}"; shift 2 ;;
     --name) name="${2:?--name needs a value}"; shift 2 ;;
     --port) port="${2:?--port needs a value}"; shift 2 ;;
+    --machine-type) machine_type="${2:?--machine-type needs a value}"; shift 2 ;;
     -y|--yes) yes=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) die "unknown option: $1 (see --help)" ;;
   esac
 done
 case "$cmd" in -h|--help) usage; exit 0 ;; esac
+# The machine type is set when the VM is made; changing an existing one is
+# gcloud's: stop it, then `gcloud compute instances set-machine-type`.
+if [ -n "$machine_type" ] && [ "$cmd" != create ]; then
+  die "--machine-type is for create; to change an existing VM's, stop it and run: gcloud compute instances set-machine-type NAME --machine-type TYPE --zone ZONE"
+fi
+machine_type="${machine_type:-e2-medium}"
+case "$machine_type" in
+  -* | *[!a-z0-9-]*) die "--machine-type takes a machine type such as e2-medium or e2-standard-4, not $machine_type" ;;
+esac
 
 command -v gcloud >/dev/null 2>&1 || die "gcloud isn't installed. Install the Google Cloud CLI first: https://cloud.google.com/sdk/docs/install"
 if [ -z "$project" ]; then
@@ -76,7 +92,8 @@ region="${zone%-*}"
 g=(--project "$project" --zone "$zone")
 
 # What the VM runs once at its first boot: Docker Engine and Compose from Docker's apt
-# repository, then a marker file the ssh command checks for.
+# repository, then a marker file the ssh session waits for (session_script, below).
+# shellcheck disable=SC2016 # expands on the VM, not here
 startup_script='#!/bin/bash
 set -e
 [ -f /var/lib/datrail-vm/ready ] && exit 0
@@ -90,6 +107,46 @@ echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.
 apt-get update -qq
 apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 mkdir -p /var/lib/datrail-vm && touch /var/lib/datrail-vm/ready'
+
+# What the ssh command runs on the VM in place of a plain login shell. It waits up to 5
+# minutes for the startup script to install Docker (Docker's socket counts as ready too,
+# for a VM this script didn't create). If you aren't in the docker group, it adds you, so
+# docker works without sudo; not on a VM someone else made, where ssh sets join_group=no.
+# Then it opens your shell: a fresh login through sudo when the group is new to this
+# session, so it applies without connecting again, otherwise your login shell. After 5
+# minutes without Docker it leaves the group alone and opens the shell anyway. The docker
+# group is equivalent to root on the VM, which is fine on a test VM of your own.
+# shellcheck disable=SC2016 # expands on the VM, not here
+session_script='ready=/var/lib/datrail-vm/ready
+docker_ready() { [ -e "$ready" ] || [ -S /var/run/docker.sock ]; }
+in_docker_group() { id -nG "$@" 2>/dev/null | tr " " "\n" | grep -qx docker; }
+if ! docker_ready; then
+  echo "Docker is still installing on the VM (usually about 2 minutes after create). Waiting..."
+  waited=0
+  while ! docker_ready && [ "$waited" -lt 300 ]; do
+    sleep 5
+    waited=$((waited + 5))
+    if [ $((waited % 60)) -eq 0 ] && ! docker_ready; then echo "Still installing, $((waited / 60)) min so far..."; fi
+  done
+  if docker_ready; then
+    echo "Docker is ready."
+  else
+    echo "Docker has still not finished installing after 5 minutes. To see why, run on the VM:"
+    echo "  sudo journalctl -u google-startup-scripts -n 50"
+    echo "Opening a shell anyway."
+  fi
+fi
+if [ "${join_group:-yes}" = yes ] && docker_ready && ! in_docker_group "$USER"; then
+  if sudo -n usermod -aG docker "$USER"; then
+    echo "Added $USER to the docker group, so docker works without sudo."
+  else
+    echo "Could not add $USER to the docker group. Your account needs the Compute OS Admin Login role (docs/setup-gcp-vm.md, Before you start)."
+  fi
+fi
+if in_docker_group "$USER" && ! in_docker_group && sudo -n true 2>/dev/null; then
+  exec sudo -n -i -u "$USER"
+fi
+exec "${SHELL:-/bin/bash}" -l'
 
 # gcloud says TERMINATED for a stopped VM.
 pretty() { case "$1" in TERMINATED) echo stopped ;; *) echo "$1" | tr '[:upper:]' '[:lower:]' ;; esac; }
@@ -113,9 +170,9 @@ case "$cmd" in
     fi
     tmp="$(mktemp)"; trap 'rm -f "$tmp"' EXIT
     printf '%s\n' "$startup_script" > "$tmp"
-    echo "Creating $name in $project ($zone): e2-standard-4, Ubuntu 24.04, no external IP"
+    echo "Creating $name in $project ($zone): $machine_type, Ubuntu 24.04, no external IP"
     gcloud compute instances create "$name" "${g[@]}" \
-      --machine-type e2-standard-4 \
+      --machine-type "$machine_type" \
       --image-family ubuntu-2404-lts-amd64 --image-project ubuntu-os-cloud \
       --boot-disk-size 50GB --boot-disk-type pd-balanced \
       --no-address \
@@ -132,9 +189,32 @@ case "$cmd" in
     [ -n "$status" ] || die "$name doesn't exist in $project ($zone). Create it: gcp-vm.sh create"
     [ "$status" = "RUNNING" ] || die "$name is $(pretty "$status"). Start it: gcp-vm.sh start"
     echo "Connecting to $name. RailDash will be at http://127.0.0.1:$port on this machine while this session is open."
+    # On a VM someone else made, a session only: its docker group is the owner's to change.
+    session="$session_script"
+    if not_mine; then
+      echo "Someone else made $name ($theirs), so this won't add you to its docker group."
+      session="join_group=no
+$session_script"
+    fi
+    # ssh's LogLevel=ERROR drops "Permanently added ... to the list of known hosts" on
+    # a VM's first connection, and keeps its errors (a local port already in use, a
+    # changed host key).
+    ssh_args=(-o LogLevel=ERROR -L "$port:127.0.0.1:$port")
+    # A terminal for the shell at the end of session_script, when there is one here.
+    if [ -t 0 ]; then ssh_args=(-t "${ssh_args[@]}"); fi
+    # gcloud's warnings only once its SSH key exists: the one every connection gets
+    # is that IAP's tunnel would be faster with NumPy (docs/setup-gcp-vm.md, Step 3,
+    # points to Google's page on adding it). Before the key exists they explain the passphrase prompt that
+    # follows, so they stay. Errors always show, and a verbosity you set yourself
+    # stands. Through the environment, so the tunnel gcloud starts for ssh gets it too.
+    quiet=()
+    if [ -f "$HOME/.ssh/google_compute_engine" ] && [ -z "${CLOUDSDK_CORE_VERBOSITY:-}" ]; then
+      quiet=(CLOUDSDK_CORE_VERBOSITY=error)
+    fi
     for try in 1 2 3 4 5 6; do
       rc=0
-      gcloud compute ssh "$name" "${g[@]}" --tunnel-through-iap -- -L "$port:127.0.0.1:$port" || rc=$?
+      env ${quiet[@]+"${quiet[@]}"} \
+        gcloud compute ssh "$name" "${g[@]}" --tunnel-through-iap --command "$session" -- "${ssh_args[@]}" || rc=$?
       [ "$rc" -ne 0 ] || exit 0
       [ "$rc" -eq 255 ] || exit "$rc"
       echo "The VM isn't answering SSH yet (it may still be booting). Trying again in 15 seconds ($try of 6)."
