@@ -60,7 +60,7 @@
 # Compose builds services in parallel, and on Docker Desktop's containerd
 # image store a second build of the same image name fails.
 x-railmon: &railmon
-  image: ${RAILMON_IMAGE:-ghcr.io/datrail/railmon:0.1.0-m17}
+  image: ${RAILMON_IMAGE:-ghcr.io/datrail/railmon:0.1.0-m18}
   restart: unless-stopped
 
 # The three sensors: the capabilities their eBPF probes need instead of
@@ -208,10 +208,9 @@ services:
     # root. Not privileged. Docker is then asked only to inspect.
     pid: host
     cap_add: [SYS_PTRACE]
-    # It still mounts the Docker socket itself rather than docker-proxy: the
-    # pinned RailMon (rule pack 15) still runs `docker exec` in the agent's
-    # container, which docker-proxy refuses. Until the scan moves behind the
-    # proxy, this socket is root-equivalent on the host too. /.rail, where it
+    # It still mounts the Docker socket itself rather than docker-proxy,
+    # though the pinned RailMon (rule pack 16) only inspects. Until the scan
+    # moves behind the proxy, this socket is root-equivalent on the host too. /.rail, where it
     # writes each bundle, is in memory: it starts empty after a restart, as it
     # already did after a recreate.
     security_opt: ["no-new-privileges:true"]

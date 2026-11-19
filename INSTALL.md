@@ -20,10 +20,9 @@ RailDash listens on `127.0.0.1` only.
   `PERFMON` and `SYS_ADMIN` in the host PID namespace, and no limit on locked
   memory (which kernels before 5.11 count BPF maps against), so your Docker
   daemon must allow those (Docker 20.10 or later). `railmon-scan` runs in the host
-  PID namespace too, with `SYS_PTRACE`, so that from RailMon's rule pack 16
-  it reads the agent's files without running anything in its container; the
-  RailMon pinned here still runs `docker exec` there, through the Docker
-  socket it mounts. That is still root-equivalent on
+  PID namespace too, with `SYS_PTRACE`, so that it reads the agent's files
+  without running anything in its container (RailMon's rule pack 16). That is
+  still root-equivalent on
   the host, and so is the Docker socket `railmon-scan` mounts: run DatRail
   where you would run any root service. The probes also get `SYS_PTRACE`, to
   follow an agent that runs as another user. They ask Docker only through
@@ -413,7 +412,7 @@ Each component runs a fixed published tag from `ghcr.io/datrail`, pinned in
 
 | Component | Image |
 | --- | --- |
-| RailMon | `ghcr.io/datrail/railmon:0.1.0-m17` |
+| RailMon | `ghcr.io/datrail/railmon:0.1.0-m18` |
 | RailDash | `ghcr.io/datrail/raildash:0.2.0-rc.19` |
 
 `docker compose up -d` pulls them the first time. A newer version of this
@@ -489,7 +488,7 @@ All are optional.
 | `RAILDASH_ALLOWED_HOSTS` | unset | Names RailDash answers to besides `localhost` (and names under it), `raildash` and IP addresses, comma-separated, e.g. `host.docker.internal` for a RailMon in a container on Docker Desktop. A request whose `Host` names anything else gets 400, so a web page can't reach RailDash by pointing its own name at this machine. `*` turns the check off. |
 | `RAILDASH_BODY_KINDS` | on | Whether the Data Guardrail tells a real upload (a file, a large or unknown body) from a POST that only passes a few parameters, such as a search query. `off` reads every request body as an upload. |
 | `RAILDASH_TOKEN` | unset | RailDash's local write token, if you want to choose it (see below): at least 16 characters of `A-Z a-z 0-9 - _ . ~ + / =`, or RailDash does not start. |
-| `RAILMON_IMAGE`, `RAILDASH_IMAGE` | `ghcr.io/datrail/railmon:0.1.0-m17`, `ghcr.io/datrail/raildash:0.2.0-rc.19` | The image each component runs (see [Images](#images)). |
+| `RAILMON_IMAGE`, `RAILDASH_IMAGE` | `ghcr.io/datrail/railmon:0.1.0-m18`, `ghcr.io/datrail/raildash:0.2.0-rc.19` | The image each component runs (see [Images](#images)). |
 | `RAILMON_SRC`, `RAILDASH_SRC` | the GitHub repositories | Where to build each image from, when you build (see [Build from source](#build-from-source)). |
 | `DEMO_INTERVAL` | `30` | Seconds between the demo agent's calls. |
 | `OPENSHELL_CONFIG_DIR` | `$HOME/.config/openshell` | The OpenShell CLI's configuration, which the opt-in `openshell-collector` mounts read-only (see [An agent in an OpenShell sandbox](#an-agent-in-an-openshell-sandbox)). |
@@ -663,7 +662,14 @@ they would not fit the file list (OpenClaw's gateway caches ~490 UI files on
 start), reads OpenShell's `openshell:resolve:env:KEY` placeholders as secret
 references, names each MCP tool's server with its input schema and
 annotations, and carries an OpenShell sandbox's allow-list when
-`openshell-collector` runs. Check the
+`openshell-collector` runs. Pack 15 (16 November 2026) says whether each MCP server was reached and
+why a tool's schema was left out, and follows `tools/list` pagination. Pack
+16 (19 November 2026) adds `tool_schemas`, each MCP tool's input schema, one
+copy per config file it was read from; reads the agent's files instead of
+running commands in its container (runtime versions come from build stamps,
+and the scan's own `sh`, `id` and `env` leave `observed_file_access`); and
+names a listener or peer for its process rather than the thread that opened
+it. Check the
 newest ASP's evidence and lock it as the new baseline; it happens once per
 upgrade.
 
