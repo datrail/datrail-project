@@ -451,6 +451,29 @@ while True:
     time.sleep(5)
 PY
 
+# DR-300: railmon-scan runs nothing in the agent's container. It reads the
+# agent's own files through /proc/<pid>/root, and with no root it reports an
+# empty os_release rather than its own. So the newest bundle's os_release
+# must be the agent's, as `docker exec` reads it here: for an OpenShell
+# sandbox too, whose supervisor and policy sit between the two.
+agent_os_release=$(docker exec "$agent" cat /etc/os-release)
+"${compose[@]}" exec -T railmon-scan python3 - "$agent_os_release" <<'PY' \
+  | tee -a "$EVIDENCE_DIR/acceptance.txt"
+import json, sys
+expected = {}
+for line in sys.argv[1].splitlines():
+    if "=" in line:
+        key, value = line.split("=", 1)
+        expected[key.lower()] = value.strip().strip('"')
+info = json.load(open("/.rail/railmon/evidence-bundle.json"))["attributes"]["system_info"]
+got = (info.get("value") or {}).get("os_release") or {}
+if info.get("status") != "ANSWERED" or not got or got != expected:
+    sys.exit(f"FAIL  the scan didn't read the agent's /etc/os-release: system_info "
+             f"{info.get('status')}, os_release {got!r}, the agent's {expected!r}")
+print(f"ok    the scan read the agent's own files without exec: os_release "
+      f"{got.get('id')} {got.get('version_id', '')}".rstrip())
+PY
+
 # STACK_REBOOT=1 (DR-316): a reboot starts every service at once, since
 # `depends_on` orders only `docker compose up`, and railmon-scan's first
 # delivery used to meet a RailDash still starting and log "Connection
