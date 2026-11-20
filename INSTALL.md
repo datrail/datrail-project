@@ -430,6 +430,13 @@ route, so they can't run this stack. RailMon's images can from `0.1.0-m4`
 on, RailDash's from `0.2.0-rc.1`. Name a version tag rather than `latest`,
 which can be older than this file.
 
+Run again, `install.sh` does the update for you, and once RailDash is
+healthy it removes the `ghcr.io/datrail` images only the old file named,
+unless a container still uses one. Any other image the old file named (an
+older `nginx` tag, say), and the `alpine:latest` that installs before 18
+November 2026 pulled for the kernel check, may be used outside DatRail, so
+for those it prints the `docker image rm` line instead.
+
 ### Build from source
 
 To run each repository's default branch instead, build under local names:

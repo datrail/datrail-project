@@ -219,6 +219,7 @@ step "Getting docker-compose.yml into $dir"
 mkdir -p "$dir"
 dir=$(cd "$dir" && pwd)
 target="$dir/docker-compose.yml"
+replaced=0
 if [ -n "$compose_file" ]; then
   [ -r "$compose_file" ] || die "can't read $compose_file"
   src=$(cd "$(dirname "$compose_file")" && pwd)/$(basename "$compose_file")
@@ -228,6 +229,7 @@ else
   if [ -f "$target" ] && ! cmp -s "$target" "$target.new"; then
     say "Updating the docker-compose.yml already there (the old one is kept as docker-compose.yml.old)."
     mv "$target" "$target.old"
+    replaced=1
   fi
   mv "$target.new" "$target"
 fi
@@ -437,6 +439,37 @@ while [ "$waited" -lt 180 ]; do
 done
 [ "$health" = healthy ] || die "RailDash didn't become healthy in 3 minutes; \`docker compose logs raildash\` in $dir says why."
 docker compose ps
+
+# ------------------------------------------------- the old release's images
+# An upgrade that replaced docker-compose.yml leaves behind the images only
+# the old file named. Those under ghcr.io/datrail are DatRail's own and go,
+# unless a container still uses one; any other image may be the user's too,
+# so its removal is printed, not done. An old install's kernel check left
+# alpine:latest (before the check ran in RailMon's image), named by neither
+# file: printed too. A RAILMON_IMAGE or RAILDASH_IMAGE in .env names the same
+# image in both files, so it stays.
+if [ "$replaced" = 1 ]; then
+  new_images=$(docker compose config --images 2> /dev/null | sort -u) || new_images=
+  old_images=$(docker compose -f "$target.old" config --images 2> /dev/null | sort -u) || old_images=
+  if [ -z "$new_images" ] || [ -z "$old_images" ]; then
+    say "Couldn't list the images the old docker-compose.yml named, so none are removed."
+  else
+    removed="" left=""
+    for image in $(comm -23 <(echo "$old_images") <(echo "$new_images")) alpine:latest; do
+      docker image inspect "$image" > /dev/null 2>&1 || continue
+      if [ -n "$(docker ps -aq --filter "ancestor=$image")" ]; then
+        [ "$image" = alpine:latest ] || say "Keeping $image: a container still uses it."
+        continue
+      fi
+      case $image in
+        ghcr.io/datrail/*) if docker image rm "$image" > /dev/null 2>&1; then removed="$removed $image"; else left="$left $image"; fi ;;
+        *) left="$left $image" ;;
+      esac
+    done
+    [ -z "$removed" ] || say "Removed the previous release's images:$removed"
+    [ -z "$left" ] || say "Left on disk, since they may be used outside DatRail; to free the space: docker image rm$left"
+  fi
+fi
 
 # ----------------------------------------------------------- the agent itself
 # Nothing to restart: RailMon attaches to the agent as it runs, and again
