@@ -454,24 +454,35 @@ PY
 # DR-300: railmon-scan runs nothing in the agent's container. It reads the
 # agent's own files through /proc/<pid>/root, and with no root it reports an
 # empty os_release rather than its own. So the newest bundle's os_release
-# must be the agent's, as `docker exec` reads it here: for an OpenShell
-# sandbox too, whose supervisor and policy sit between the two.
+# must be the agent's, as `docker exec` reads it here. The other jobs' agents
+# run railmon-scan's own image, so there an equal file shows only that the
+# read wasn't empty; the OpenShell sandbox's image adds a line of its own
+# (tests/openshell/Dockerfile), which shows the scan read the sandbox's file
+# through its supervisor and policy, and not its own.
 agent_os_release=$(docker exec "$agent" cat /etc/os-release)
-"${compose[@]}" exec -T railmon-scan python3 - "$agent_os_release" <<'PY' \
+"${compose[@]}" exec -T railmon-scan python3 - "$agent_os_release" "$mode" <<'PY' \
   | tee -a "$EVIDENCE_DIR/acceptance.txt"
 import json, sys
-expected = {}
-for line in sys.argv[1].splitlines():
-    if "=" in line:
-        key, value = line.split("=", 1)
-        expected[key.lower()] = value.strip().strip('"')
+def parse(text):
+    # As RailMon's parse_os_release reads it.
+    fields = {}
+    for line in text.splitlines():
+        if "=" in line:
+            key, value = line.split("=", 1)
+            fields[key.lower()] = value.strip().strip('"')
+    return fields
+expected, mode = parse(sys.argv[1]), sys.argv[2]
+own = parse(open("/etc/os-release").read())
 info = json.load(open("/.rail/railmon/evidence-bundle.json"))["attributes"]["system_info"]
 got = (info.get("value") or {}).get("os_release") or {}
 if info.get("status") != "ANSWERED" or not got or got != expected:
     sys.exit(f"FAIL  the scan didn't read the agent's /etc/os-release: system_info "
              f"{info.get('status')}, os_release {got!r}, the agent's {expected!r}")
-print(f"ok    the scan read the agent's own files without exec: os_release "
-      f"{got.get('id')} {got.get('version_id', '')}".rstrip())
+if mode == "openshell" and expected == own:
+    sys.exit("FAIL  the sandbox's /etc/os-release is railmon-scan's own, so this check "
+             "can't tell them apart (tests/openshell/Dockerfile adds a line to it)")
+print(f"ok    the scan read the agent's /etc/os-release without exec ({got.get('id')} "
+      f"{got.get('version_id', '')}{', the sandbox' + chr(39) + 's own' if expected != own else ''})")
 PY
 
 # STACK_REBOOT=1 (DR-316): a reboot starts every service at once, since

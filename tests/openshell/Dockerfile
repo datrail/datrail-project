@@ -5,10 +5,13 @@
 ARG BASE=datrail-railmon:local
 FROM ${BASE}
 # The agent's own process name, as the own-agent job gives it. /data is
-# where the walk's saved_files step writes.
+# where the walk's saved_files step writes. The os-release line sets the
+# sandbox's file apart from railmon-scan's, which runs the same base image,
+# so the stack acceptance can tell the scan read the agent's (DR-300).
 RUN cp /usr/local/bin/python3 /usr/local/bin/my-agent-bin \
     && groupadd --gid 1500 agent && useradd --uid 1500 --gid agent --create-home agent \
-    && install -d -o agent -g agent /sandbox /data
+    && install -d -o agent -g agent /sandbox /data \
+    && echo 'DATRAIL_TEST_IMAGE=openshell-agent' >> /etc/os-release
 # Compose labelled the RailMon image with its project and service, and a
 # container inherits its image's labels, so RailDash would know the agent as
 # that service. A user's own image has none; blanked as the own-agent job does.
