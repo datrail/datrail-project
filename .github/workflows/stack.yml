@@ -127,6 +127,9 @@ jobs:
         env:
           EVIDENCE_DIR: ${{ runner.temp }}/stack
           STACK_IMAGES: pinned
+          # Then restart Docker, as a reboot would, and read railmon-scan's
+          # log (DR-316).
+          STACK_REBOOT: '1'
         run: bash tests/stack-acceptance.sh
       - name: Preserve service logs and results
         if: always()

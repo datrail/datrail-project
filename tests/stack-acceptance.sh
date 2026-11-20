@@ -451,6 +451,40 @@ while True:
     time.sleep(5)
 PY
 
+# STACK_REBOOT=1 (DR-316): a reboot starts every service at once, since
+# `depends_on` orders only `docker compose up`, and railmon-scan's first
+# delivery used to meet a RailDash still starting and log "Connection
+# refused". Restarting the Docker daemon brings the stack back the way a
+# reboot does: each container by its restart policy, together. From then on
+# railmon-scan's log must show a delivery to RailDash and no failed one.
+if [[ ${STACK_REBOOT:-} == 1 ]]; then
+  scan_id=$("${compose[@]}" ps -q railmon-scan)
+  before=$(docker inspect --format '{{.State.StartedAt}}' "$scan_id")
+  sudo systemctl restart docker
+  started=$before
+  for _ in $(seq 60); do
+    started=$(docker inspect --format '{{.State.StartedAt}}' "$scan_id" 2>/dev/null) || started=$before
+    [[ $started != "$before" ]] && break
+    sleep 2
+  done
+  [[ $started != "$before" ]] \
+    || { echo "railmon-scan didn't start again within 120 s of the Docker restart" >&2; exit 1; }
+  reboot_log="$EVIDENCE_DIR/reboot-railmon-scan.log"
+  for _ in $(seq 48); do
+    docker logs --since "$started" "$scan_id" > "$reboot_log" 2>&1
+    grep -q 'delivered evidence bundle' "$reboot_log" && break
+    sleep 5
+  done
+  "${compose[@]}" ps -a > "$EVIDENCE_DIR/reboot-services.txt" 2>&1 || true
+  if grep 'delivery failed' "$reboot_log" >&2; then
+    echo "railmon-scan logged a failed delivery after the Docker restart" >&2; exit 1
+  fi
+  grep -q 'delivered evidence bundle' "$reboot_log" \
+    || { echo "railmon-scan delivered nothing within 240 s of starting again" >&2; exit 1; }
+  echo "ok    after a Docker restart, which starts the stack as a reboot does, railmon-scan delivers with no failed delivery$(grep -q "isn't up yet" "$reboot_log" && echo ' (it waited for RailDash)')" \
+    | tee -a "$EVIDENCE_DIR/acceptance.txt"
+fi
+
 if [[ $mode == own-agent || $mode == existing-agent ]]; then
   # INSTALL says the collector follows the agent's container: after a
   # restart, with a new PID nobody looked up, the calls must keep arriving
