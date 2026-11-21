@@ -149,7 +149,7 @@ Note: with Docker Desktop, DatRail sees only agents running in Docker containers
 
 If you see a message starting with `install.sh:` instead, the check found a problem: see [If something goes wrong](#if-something-goes-wrong).
 
-When you run the install command again later, to switch agents or update DatRail, it may also print `Updating the docker-compose.yml already there (the old one is kept as docker-compose.yml.old).` That's expected: your data is kept.
+When you run the install command again later, to switch agents or update DatRail, it may also print `Updating the docker-compose.yml already there (the old one is kept as docker-compose.yml.old).` That's expected: your data is kept. It then removes the old version's DatRail images, unless a container still uses one, and prints a `docker image rm` line for any other image it left behind.
 
 ### 5.2 It asks which agent to watch
 
