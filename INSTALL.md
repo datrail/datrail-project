@@ -435,7 +435,9 @@ healthy it removes the `ghcr.io/datrail` images only the old file named,
 unless a container still uses one. Any other image the old file named (an
 older `nginx` tag, say), and the `alpine:latest` that installs before 18
 November 2026 pulled for the kernel check, may be used outside DatRail, so
-for those it prints the `docker image rm` line instead.
+for those it prints the `docker image rm` line instead. Images from older
+releases stay, if you skipped one: an upgrade removes only what the previous
+`docker-compose.yml` named, so remove those with `docker image rm` yourself.
 
 ### Build from source
 
