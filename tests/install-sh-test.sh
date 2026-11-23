@@ -98,6 +98,7 @@ if run "$d" --yes --agent my-agent < /dev/null \
   && has "$FAKE_LOG" "docker compose rm -sf demo-agent" \
   && has "$FAKE_LOG" "docker compose up -d --remove-orphans" \
   && ! grep -q '^docker restart' "$FAKE_LOG" && grep -q 'No need to restart my-agent' "$work/out" \
+  && grep -qF "cd '$d' && COMPOSE_PROFILES=openshell docker compose down -v --remove-orphans --rmi all && cd ~ && rm -rf '$d'" "$work/out" \
   && cmp -s "$d/docker-compose.yml" "$here/docker-compose.yml"; then
   ok "--yes --agent my-agent"
 else bad "--yes --agent my-agent"; fi
@@ -194,6 +195,31 @@ if printf 'c\nevil RAILMON_IMAGE=x\n' | run "$d"; [[ $? == 2 ]] && ! grep -q RAI
   ok "a typed name with a space"
 else bad "a typed name with a space"; fi
 if run "$d" --yes --demo --port 70000 < /dev/null; [[ $? == 2 ]]; then ok "--port 70000"; else bad "--port 70000"; fi
+
+# 8b. The closing removal line is for pasting: the path quoted for the shell
+# whatever it holds, and no rm -rf for a directory that isn't the stack's own.
+d="$work/it's a dir"
+if run "$d" --yes --demo < /dev/null \
+  && grep -qF "cd '$work/it'\\''s a dir' && COMPOSE_PROFILES=openshell docker compose down -v --remove-orphans --rmi all && cd ~ && rm -rf '$work/it'\\''s a dir'" "$work/out"; then
+  ok "the removal line quotes a path with a space and a quote"
+else bad "the removal line quotes a path with a space and a quote"; fi
+cp "$d/docker-compose.yml" "$d/docker-compose.yml.old"
+if run "$d" --yes --demo < /dev/null && grep -q "rm -rf '" "$work/out"; then
+  ok "a docker-compose.yml.old beside the compose file is the stack's own file"
+else bad "a docker-compose.yml.old beside the compose file is the stack's own file"; fi
+d=$work/mixed
+mkdir -p "$d" && echo notes > "$d/notes.txt"
+if run "$d" --yes --demo < /dev/null && ! grep -q 'rm -rf' "$work/out" \
+  && grep -q "&& rm -f docker-compose.yml .env" "$work/out" && grep -q "holds other files too" "$work/out" \
+  && [[ -e $d/notes.txt ]]; then
+  ok "no rm -rf for a directory with other files, only its own files removed"
+else bad "no rm -rf for a directory with other files, only its own files removed"; fi
+d=$work/dotdot
+mkdir -p "$d" && ln -s nowhere "$d/..link"
+if run "$d" --yes --demo < /dev/null && ! grep -q 'rm -rf' "$work/out"; then
+  ok "a dangling symlink named with two dots counts as another's file"
+else bad "a dangling symlink named with two dots counts as another's file"; fi
+d=$work/five # case 9 continues in five
 
 # 9. `curl | bash` with no terminal and no --yes: refused at once, not by
 # reading the rest of the script as answers.

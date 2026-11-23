@@ -234,7 +234,7 @@ Then:
 | Start it again | `docker compose up -d` |
 | Watch a different agent | Run the install command from Step 4 again |
 | Update to the latest version | Run the install command from Step 4 again. It keeps your data. |
-| Remove it completely | `docker compose down -v --rmi all`, then `cd ~ && rm -rf ~/datrail` |
+| Remove it completely | The command under [Uninstall in INSTALL.md](../INSTALL.md#uninstall) |
 
 Removing it deletes DatRail's data and its downloads. It never touches your agent or its container. Docker Desktop stays installed. Remove it like any other app if you no longer need it.
 

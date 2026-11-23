@@ -148,7 +148,8 @@ if you built them. Without `make`, run the commands in the [Makefile](Makefile)'
 clean` leaves them: the published `ghcr.io/datrail/railmon` and
 `ghcr.io/datrail/raildash` it ran, unless this stack runs them too, or
 `railmon:local` and `raildash:local` if you built with `make stack-local`. Remove those with `docker image rm` if nothing
-else uses them.
+else uses them. To take the stack off the machine altogether, see
+[Uninstall](#uninstall).
 
 ### Without the repository
 
@@ -170,6 +171,55 @@ downloaded file. There is no Makefile there: `make clean` is
 project after the directory, so a stack started here doesn't share
 RailDash's database with one started from a clone. CI checks that the file
 reads nothing from its checkout.
+
+### Uninstall
+
+One command takes a stack off the machine, for a stack that
+[`install.sh`](install.sh) set up or one started from a downloaded
+`docker-compose.yml`. `~/datrail` stands for the stack's directory: the one
+`install.sh` made (`~/datrail` unless `--dir` said otherwise), or the one you
+made for the downloaded file. The command ends by deleting that directory,
+so first check that it holds only the stack's files: `docker-compose.yml`,
+a `docker-compose.yml.old` an update keeps, and the `.env` and
+`docker-compose.override.yml` that `install.sh` writes. If it holds
+anything else, run the command without its last part, `&& cd ~ && rm -rf
+~/datrail`, and delete those four files by hand.
+
+```bash
+cd ~/datrail && COMPOSE_PROFILES=openshell docker compose down -v --remove-orphans --rmi all && cd ~ && rm -rf ~/datrail
+```
+
+It stops and removes the containers the current `docker-compose.yml`
+declares, the OpenShell collector among them if it ran (that is what the
+profile is for) and any container only an older `docker-compose.yml`
+declared; the four volumes the current file declares (RailDash's database
+and token, the two sensors' state and the collector's); the images it ran;
+and then the whole directory. The `&&` stops the command at the first
+failure, so the directory stays if the stack could not be removed. For a clone, run `make clean` ([Stop and
+reset](#stop-and-reset)) and delete the clone. `install.sh`'s closing
+message prints this command for the directory it used, and leaves off the
+`rm -rf` itself when that directory holds other files.
+
+What is left afterwards, and how to remove it:
+
+- **Your agent.** Its container, image and data are not the stack's, and
+  nothing above touches them.
+- **Volumes of a version before 3 October 2026**, `captures` and
+  `raildash-db`, if the stack was upgraded in place from one ([Stop and
+  reset](#stop-and-reset)): `docker volume ls --filter
+  label=com.docker.compose.project=datrail` lists them (the project is named
+  after the directory, so put yours there if it isn't `datrail`), and
+  `docker volume rm` removes each whose name ends in `_captures` or
+  `_raildash-db`.
+- **Images of an older version of this stack**, if this machine ran one
+  from a different directory: the case [Stop and reset](#stop-and-reset)
+  describes, removed with `docker image rm`.
+- **Docker.** On a Mac or Windows, Docker Desktop or WSL stay installed;
+  remove them like any other app if nothing else needs them.
+- **On a VM made with [`gcp-vm.sh`](gcp-vm.sh)**, your membership of the
+  `docker` group, which `gcp-vm.sh ssh` added: `sudo gpasswd -d $USER
+  docker`, then connect again. Deleting the VM (`gcp-vm.sh delete`) removes
+  all of it at once.
 
 ## Watch your own agent
 
@@ -476,8 +526,10 @@ containerd image store, the one Docker Desktop uses. A third runs the
 quick start on a native arm64 runner. Before a release, and on any change
 to this page, [`tests/install-walk.sh`](tests/install-walk.sh) walks this
 page itself on fresh x86_64 and arm64 VMs at the default settings: the
-clone, Run it and Verify, Watch your own agent, Stop and reset, and Without
-the repository, each command as this page gives it.
+clone, Run it and Verify, Watch your own agent, Stop and reset, Without
+the repository, and Uninstall, each command as this page gives it, and
+checks that [`docs/agent-install.md`](docs/agent-install.md) gives the same
+Uninstall command.
 
 ## Settings
 

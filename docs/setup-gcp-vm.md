@@ -124,7 +124,7 @@ On your computer:
 
 `delete` asks you to type the VM's name first (`--yes` skips that). The VM carries an `owner` label with your Google account, and `delete` won't delete a VM someone else made.
 
-DatRail starts again by itself when the VM starts, and RailDash keeps its data. On the VM, `cd ~/datrail` and `docker compose down -v` stops it and deletes the data.
+DatRail starts again by itself when the VM starts, and RailDash keeps its data. On the VM, `cd ~/datrail` and `COMPOSE_PROFILES=openshell docker compose down -v` stops it and deletes the data, the OpenShell collector's included; [Uninstall in INSTALL.md](../INSTALL.md#uninstall) removes it completely, images included, and says what the VM keeps (your `docker` group membership). `delete` removes the whole VM.
 
 ## Troubleshooting
 

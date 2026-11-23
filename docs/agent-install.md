@@ -167,7 +167,19 @@ running, and starts again with Docker.
 | Is it running? | `cd ~/datrail && docker compose ps` |
 | Watch another agent | the step 3 command with the other `NAME` |
 | Stop it (keep the data) | `cd ~/datrail && docker compose down` |
-| Remove it and its data | `cd ~/datrail && docker compose down -v` |
+| Remove it completely, images included | the steps under [Uninstall](#uninstall) |
+
+## Uninstall
+
+This stops the stack, deletes its data and its images, and deletes
+`~/datrail`, so ask the person first.
+
+1. `ls -A ~/datrail`. If it lists anything but `docker-compose.yml`, `.env`,
+   `docker-compose.yml.old` and `docker-compose.override.yml`, tell the
+   person what else is in the directory, and do step 3 instead of step 2.
+2. `cd ~/datrail && COMPOSE_PROFILES=openshell docker compose down -v --remove-orphans --rmi all && cd ~ && rm -rf ~/datrail`
+3. `cd ~/datrail && COMPOSE_PROFILES=openshell docker compose down -v --remove-orphans --rmi all && rm -f docker-compose.yml docker-compose.yml.old .env docker-compose.override.yml`.
+   The directory stays, with the other files in it.
 
 [INSTALL.md](../INSTALL.md) has every setting and what to do when something
 looks wrong.
