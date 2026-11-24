@@ -182,6 +182,9 @@ docker compose down -v     # stop and delete the data
 make clean                 # also delete the built images and an older stack version's leftovers
 ```
 
+To take it off the machine altogether, images and directory included, see
+[INSTALL.md](INSTALL.md#uninstall).
+
 ## How it fits together
 
 ```mermaid
@@ -210,7 +213,8 @@ Rail Center and is deployed on its own; its README explains how.
 ## Documentation
 
 - [INSTALL.md](INSTALL.md): prerequisites, platform support, settings,
-  watching your own agent, building from local checkouts, troubleshooting.
+  watching your own agent, building from local checkouts, troubleshooting,
+  uninstall.
 - [docs/setup-windows.md](docs/setup-windows.md) and
   [docs/setup-mac.md](docs/setup-mac.md): a first install on Windows (WSL2)
   or on a Mac, step by step, from installing Docker to seeing drift.

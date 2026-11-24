@@ -500,4 +500,27 @@ say "The stack keeps running and restarts with Docker. In $dir:"
 say "  docker compose logs -f     what it is doing"
 say "  docker compose down        stop it (RailDash keeps its data)"
 say "  docker compose down -v     stop it and delete the data"
+# The removal line is for pasting, so the path is quoted for the shell. It
+# ends in rm -rf only when the directory holds nothing but the stack's own
+# files (the compose file, the backup an update keeps, .env and the
+# override): --dir accepts any directory, and another's files are not the
+# stack's to delete. Otherwise it removes just those of the stack's files
+# the directory holds.
+qdir=$(printf '%s' "$dir" | sed "s/'/'\\\\''/g")
+removal="cd '$qdir' && COMPOSE_PROFILES=openshell docker compose down -v --remove-orphans --rmi all"
+own_dir=1 own_files=
+for f in "$dir"/* "$dir"/.[!.]* "$dir"/..?*; do
+  [ -e "$f" ] || [ -L "$f" ] || continue
+  case ${f##*/} in
+  docker-compose.yml | docker-compose.yml.old | .env | docker-compose.override.yml) own_files="$own_files ${f##*/}" ;;
+  *) own_dir=0 ;;
+  esac
+done
+say "To remove it completely, images included (INSTALL.md, Uninstall):"
+if [ "$own_dir" = 1 ]; then
+  say "  $removal && cd ~ && rm -rf '$qdir'"
+else
+  say "  $removal && rm -f$own_files"
+  say "  (the directory holds other files too, so it stays)"
+fi
 say "Run install.sh again to watch another agent."

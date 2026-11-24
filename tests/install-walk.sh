@@ -6,9 +6,11 @@
 # Unlike tests/stack-acceptance.sh, which checks the stack in depth from this
 # checkout, this runs INSTALL.md's own command lines, at a user's default
 # settings, from an empty directory: the clone, the quick start and its
-# Verify list, Watch your own agent, Stop and reset, and Without the
-# repository. Each command is first checked to appear in INSTALL.md word for
-# word, so the walk breaks when the page changes under it.
+# Verify list, Watch your own agent, Stop and reset, Without the
+# repository, and Uninstall. Each command is first checked to appear in
+# INSTALL.md word for word, so the walk breaks when the page changes under
+# it; the Uninstall command is also checked to be the one docs/agent-install.md
+# gives.
 #
 # WALK_REF is the commit the clone and the downloaded file are moved to
 # (default: master as cloned). WALK_ARCH is the `uname -m` the host must have
@@ -318,6 +320,20 @@ if rows:
 doc inline "docker compose down -v --remove-orphans --rmi all"
 [[ -z $(stack_images) ]] || fail "the clean left images: $(stack_images)"
 [[ -z $(project_volumes datrail) ]] || fail "the clean left volumes"
+
+say "Uninstall"
+# A running stack again, so the command has containers, volumes and images to remove.
+aside "docker compose up -d"
+services_up 7
+cd "$work"
+note "The walk sets HOME to $work for the next command, so INSTALL.md's ~/datrail is its $work/datrail."
+uninstall="cd ~/datrail && COMPOSE_PROFILES=openshell docker compose down -v --remove-orphans --rmi all && cd ~ && rm -rf ~/datrail"
+HOME=$work doc "$uninstall"
+[[ ! -e $work/datrail ]] || fail "the uninstall left $work/datrail: $(ls -A "$work/datrail")"
+[[ -z $(stack_images) ]] || fail "the uninstall left images: $(stack_images)"
+[[ -z $(project_volumes datrail) ]] || fail "the uninstall left volumes"
+[[ -z $(docker ps -aq --filter label=com.docker.compose.project=datrail) ]] || fail "the uninstall left containers"
+grep -qF -- "\`$uninstall\`" "$here/docs/agent-install.md" || fail "docs/agent-install.md does not give the Uninstall command as INSTALL.md does"
 
 say "Done"
 note "INSTALL.md walked in $((SECONDS - started))s; nothing of the stack is left on this host."
