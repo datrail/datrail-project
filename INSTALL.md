@@ -211,9 +211,11 @@ What is left afterwards, and how to remove it:
   after the directory, so put yours there if it isn't `datrail`), and
   `docker volume rm` removes each whose name ends in `_captures` or
   `_raildash-db`.
-- **Images of an older version of this stack**, if this machine ran one
-  from a different directory: the case [Stop and reset](#stop-and-reset)
-  describes, removed with `docker image rm`.
+- **Images of DatRail versions this machine ran before**, after an update
+  in place or a stack run from another directory ([Stop and
+  reset](#stop-and-reset)): `--rmi all` removes only the images the current
+  `docker-compose.yml` names. `docker image ls 'ghcr.io/datrail/*'` lists
+  the ones left; `docker image rm` removes each.
 - **Docker.** On a Mac or Windows, Docker Desktop or WSL stay installed;
   remove them like any other app if nothing else needs them.
 - **On a VM made with [`gcp-vm.sh`](gcp-vm.sh)**, your membership of the
