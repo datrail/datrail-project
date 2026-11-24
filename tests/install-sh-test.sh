@@ -21,6 +21,11 @@ cat > "$work/bin/docker" <<'EOF'
 # ghcr.io/datrail/railmon:test, or the RAILMON_IMAGE in .env in the current
 # directory; FAKE_NOT_PULLED says it isn't on the host yet, FAKE_PULL_FAILS
 # that pulling it fails, FAKE_NO_BTF that the kernel check fails in it.
+# For an upgrade: FAKE_NEW_IMAGES and FAKE_OLD_IMAGES are the images
+# docker-compose.yml and docker-compose.yml.old name, FAKE_IN_USE the images
+# a container uses, FAKE_ALPINE that alpine:latest is on the host, and
+# FAKE_RM_FAILS that removing an image fails. FAKE_COMPOSE is the file the
+# stand-in curl downloads.
 echo "docker $*" >> "$FAKE_LOG"
 last=${!#}
 case "$*" in
@@ -33,11 +38,16 @@ case "$*" in
   "compose config --images railmon-listen")
     image=$(sed -n 's/^RAILMON_IMAGE=//p' .env 2> /dev/null | tail -n 1)
     printf 'nginx:1.30-alpine\n%s\n' "${image:-ghcr.io/datrail/railmon:test}" ;;
+  "image inspect alpine:latest") [ -n "${FAKE_ALPINE:-}" ] ;;
   "image inspect "*) [ -z "${FAKE_NOT_PULLED:-}" ] ;;
   "pull -q "*) [ -z "${FAKE_PULL_FAILS:-}" ] && echo sha256:0123 ;;
   "run --rm --cap-add BPF --cap-add PERFMON --cap-add SYS_ADMIN --entrypoint test "*" -r /sys/kernel/btf/vmlinux")
     [ -z "${FAKE_NO_BTF:-}" ] ;;
   "compose config") echo "name: $(basename "$PWD")" ;;
+  "compose config --images") printf '%s\n' ${FAKE_NEW_IMAGES:-ghcr.io/datrail/railmon:test nginx:1.30-alpine} ;;
+  "compose -f "*"/docker-compose.yml.old config --images") printf '%s\n' ${FAKE_OLD_IMAGES:-} ;;
+  "ps -aq --filter ancestor="*) [[ " ${FAKE_IN_USE:-} " == *" ${last#ancestor=} "* ]] && echo abc ;;
+  "image rm "*) [ -z "${FAKE_RM_FAILS:-}" ] ;;
   ps\ --format*) printf '%s' "${FAKE_PS:-}" ;;
   ps\ --filter\ label=com.docker.compose.service=raildash*) printf '%s' "${FAKE_STACKS:-}" ;;
   ps\ -q\ --filter\ label=openshell.ai/sandbox-name=*) [[ " ${FAKE_RUNNING:-} " == *" openshell:${4#label=openshell.ai/sandbox-name=} "* ]] && echo abc ;;
@@ -58,8 +68,14 @@ cat > "$work/bin/uname" <<'EOF'
 #!/usr/bin/env bash
 if [ "$*" = -s ]; then echo "${FAKE_UNAME:-Linux}"; else PATH=/usr/bin:/bin exec uname "$@"; fi
 EOF
-chmod +x "$work/bin/docker" "$work/bin/uname"
-export PATH="$work/bin:$PATH" FAKE_LOG="$work/docker.log"
+# `curl -fsSL URL -o FILE`, for the download path: FILE becomes FAKE_COMPOSE,
+# this checkout's docker-compose.yml unless a case names another.
+cat > "$work/bin/curl" <<'EOF'
+#!/usr/bin/env bash
+cp "$FAKE_COMPOSE" "${!#}"
+EOF
+chmod +x "$work/bin/docker" "$work/bin/uname" "$work/bin/curl"
+export PATH="$work/bin:$PATH" FAKE_LOG="$work/docker.log" FAKE_COMPOSE="$here/docker-compose.yml"
 fails=0
 
 # run DIR ARGS... < answers: install.sh in a session with no terminal
@@ -287,6 +303,66 @@ if run "$d" --check < /dev/null \
   && [[ $(cat "$d/.env") == RAILMON_IMAGE=example.com/railmon:mine && ! -e $d/docker-compose.yml ]]; then
   ok "--check, with the install's own RAILMON_IMAGE"
 else bad "--check, with the install's own RAILMON_IMAGE"; fi
+
+# 12. An upgrade (DR-313): install.sh downloads docker-compose.yml over an
+# older one. DatRail's images only the old file named go once RailDash is
+# healthy; another image, or one a container still uses, stays, and the line
+# to remove the other is printed. --compose-file and an unchanged download
+# remove nothing.
+upgrade() { # upgrade DIR: install.sh over an older docker-compose.yml, downloaded
+  mkdir -p "$1" && echo "# the older release" > "$1/docker-compose.yml"
+  : > "$FAKE_LOG"
+  setsid -w bash "$here/install.sh" --dir "$1" --yes --demo \
+    > "$work/out" 2>&1
+}
+old="ghcr.io/datrail/railmon:old ghcr.io/datrail/raildash:old nginx:1.29-alpine nginx:1.30-alpine"
+d=$work/nine
+if FAKE_OLD_IMAGES=$old upgrade "$d" < /dev/null \
+  && has "$FAKE_LOG" "docker image rm ghcr.io/datrail/railmon:old" \
+  && has "$FAKE_LOG" "docker image rm ghcr.io/datrail/raildash:old" \
+  && ! grep -q '^docker image rm nginx' "$FAKE_LOG" \
+  && grep -qxF 'Left on disk, since they may be used outside DatRail; to free the space: docker image rm nginx:1.29-alpine' "$work/out" \
+  && [[ -f $d/docker-compose.yml.old ]] \
+  && rm_at=$(grep -n '^docker image rm' "$FAKE_LOG" | head -n 1 | cut -d: -f1) \
+  && healthy_at=$(grep -n '^docker inspect --format {{.State.Health.Status}}' "$FAKE_LOG" | tail -n 1 | cut -d: -f1) \
+  && [[ -n $rm_at && -n $healthy_at && $rm_at -gt $healthy_at ]]; then
+  ok "an upgrade removes the old release's DatRail images, after RailDash is healthy"
+else bad "an upgrade removes the old release's DatRail images, after RailDash is healthy"; fi
+d=$work/ten
+if FAKE_OLD_IMAGES=$old FAKE_IN_USE=ghcr.io/datrail/raildash:old FAKE_ALPINE=1 upgrade "$d" < /dev/null \
+  && has "$FAKE_LOG" "docker image rm ghcr.io/datrail/railmon:old" \
+  && ! has "$FAKE_LOG" "docker image rm ghcr.io/datrail/raildash:old" \
+  && grep -qF 'Keeping ghcr.io/datrail/raildash:old: a container still uses it.' "$work/out" \
+  && ! has "$FAKE_LOG" "docker image rm alpine:latest" \
+  && grep -qF 'docker image rm nginx:1.29-alpine alpine:latest' "$work/out"; then
+  ok "an upgrade keeps an image in use, and prints alpine:latest's removal"
+else bad "an upgrade keeps an image in use, and prints alpine:latest's removal"; fi
+d=$work/eleven
+if FAKE_OLD_IMAGES=$old FAKE_RM_FAILS=1 upgrade "$d" < /dev/null \
+  && grep -qF "Couldn't remove the previous release's images (Docker says why if you run it yourself): docker image rm ghcr.io/datrail/raildash:old ghcr.io/datrail/railmon:old" "$work/out" \
+  && grep -qxF 'Left on disk, since they may be used outside DatRail; to free the space: docker image rm nginx:1.29-alpine' "$work/out" \
+  && ! grep -q 'Removed the previous release' "$work/out"; then
+  ok "a DatRail image that won't go is named apart from the others"
+else bad "a DatRail image that won't go is named apart from the others"; fi
+# An upgrade that stopped before RailDash was healthy left the .old file; the
+# next run downloads the same file and still cleans up.
+d=$work/thirteen
+mkdir -p "$d" && cp "$here/docker-compose.yml" "$d/docker-compose.yml" \
+  && echo "# the older release" > "$d/docker-compose.yml.old"
+: > "$FAKE_LOG"
+if FAKE_OLD_IMAGES=$old setsid -w bash "$here/install.sh" --dir "$d" --yes --demo > "$work/out" 2>&1 < /dev/null \
+  && has "$FAKE_LOG" "docker image rm ghcr.io/datrail/railmon:old"; then
+  ok "a run after an upgrade that stopped early still cleans up"
+else bad "a run after an upgrade that stopped early still cleans up"; fi
+d=$work/twelve
+mkdir -p "$d" && cp "$here/docker-compose.yml" "$d/docker-compose.yml"
+: > "$FAKE_LOG"
+if FAKE_OLD_IMAGES=$old setsid -w bash "$here/install.sh" --dir "$d" --yes --demo \
+    > "$work/out" 2>&1 < /dev/null \
+  && ! grep -q '^docker image rm\|docker-compose.yml.old' "$FAKE_LOG" && [[ ! -e $d/docker-compose.yml.old ]] \
+  && FAKE_OLD_IMAGES=$old run "$d" --yes --demo < /dev/null && ! grep -q '^docker image rm' "$FAKE_LOG"; then
+  ok "an unchanged download, or --compose-file, removes nothing"
+else bad "an unchanged download, or --compose-file, removes nothing"; fi
 
 [[ $fails == 0 ]] || { echo "$fails case(s) failed"; exit 1; }
 echo "all cases passed"
