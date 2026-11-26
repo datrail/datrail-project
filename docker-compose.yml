@@ -209,7 +209,7 @@ services:
     pid: host
     cap_add: [SYS_PTRACE]
     # It still mounts the Docker socket itself rather than docker-proxy,
-    # though the pinned RailMon (rule pack 16) only inspects. Until the scan
+    # though the pinned RailMon (rule pack 17) only inspects. Until the scan
     # moves behind the proxy, this socket is root-equivalent on the host too.
     # /.rail, where it writes each bundle, is in memory: it starts empty
     # after a restart, as it already did after a recreate.
