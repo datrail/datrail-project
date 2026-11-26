@@ -439,6 +439,25 @@ for those it prints the `docker image rm` line instead. Images from older
 releases stay, if you skipped one: an upgrade removes only what the previous
 `docker-compose.yml` named, so remove those with `docker image rm` yourself.
 
+### Verify the images
+
+Each image's release workflow publishes a signed build-provenance
+attestation for it, which says the image came from that workflow in its own
+repository. To check the images `docker-compose.yml` pins, run this in its
+directory with the [GitHub CLI](https://cli.github.com) (`gh auth login`
+first):
+
+```bash
+for image in $(docker compose config --images | grep '^ghcr\.io/datrail/' | sort -u); do
+  repo=${image#ghcr.io/}; repo=${repo%%[:@]*}
+  gh attestation verify "oci://$image" --repo "$repo" \
+    --signer-workflow "$repo/.github/workflows/container-release.yml"
+done
+```
+
+Each prints the attestation it verified, and fails if the image has none
+from that workflow. CI runs the same loop on every change and daily.
+
 ### Build from source
 
 To run each repository's default branch instead, build under local names:

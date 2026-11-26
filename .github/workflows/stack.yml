@@ -119,10 +119,29 @@ jobs:
     timeout-minutes: 45
     env:
       COMPOSE_PROJECT_NAME: datrail-ci-pub-${{ github.run_id }}-${{ github.run_attempt }}
+    permissions:
+      contents: read
+      attestations: read
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      # INSTALL.md's "Verify the images", as a user runs it (DR-302): each
+      # pinned image has a signed provenance attestation from its own
+      # repository's release workflow.
+      - name: Verify the pinned images' signed provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          images=$(docker compose config --images | grep '^ghcr\.io/datrail/' | sort -u)
+          [[ $(wc -l <<<"$images") -ge 2 ]] || { echo "::error::docker-compose.yml pins fewer than two DatRail images: $images"; exit 1; }
+          for image in $images; do
+            repo=${image#ghcr.io/}
+            repo=${repo%%[:@]*}
+            gh attestation verify "oci://$image" --repo "$repo" \
+              --signer-workflow "$repo/.github/workflows/container-release.yml"
+          done
       - name: Run the pinned published images and check what they show
         env:
           EVIDENCE_DIR: ${{ runner.temp }}/stack
