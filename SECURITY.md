@@ -71,5 +71,6 @@ allow-list is in scope.
   DatRail's network ([INSTALL.md, The RailDash
   token](INSTALL.md#the-raildash-token)). A way to get it from another host,
   or from a web page with the check on, is a vulnerability.
-- **The images are pinned to fixed published tags.** A guide that installs
-  an unpinned or unverified image is a defect worth reporting.
+- **The images are pinned to fixed published tags and their digests.** A
+  guide that installs an unpinned or unverified image is a defect worth
+  reporting.

@@ -21,8 +21,11 @@ People follow these files by hand and their own AI agents follow them too
 does breaks an install silently.
 
 - **Pinned images.** `docker-compose.yml` runs each component at a fixed
-  published tag. Moving a tag is a deliberate change, made once the new tag
-  is published, in a PR of its own.
+  published tag, with its digest (`<tag>@sha256:…`). Moving a pin is a
+  deliberate change, made once the new tag is published, in a PR of its own;
+  the digest is the tag's index digest,
+  `docker buildx imagetools inspect --format '{{.Manifest.Digest}}' ghcr.io/datrail/<component>:<tag>`.
+  CI fails a pin without one, or one the tag no longer names.
 - **Install steps that run.** Every command a guide gives is one CI runs:
   the quick start, watching your own agent, the published images, and
   `install.sh` against an agent that is already running (`stack.yml`'s jobs

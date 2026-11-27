@@ -51,7 +51,17 @@ if [[ ${STACK_IMAGES:-} == pinned ]]; then
   RAILDASH_IMAGE=$(jq -r '.services.raildash.image' <<<"$pinned")
   [[ $RAILMON_IMAGE == ghcr.io/datrail/railmon:* && $RAILDASH_IMAGE == ghcr.io/datrail/raildash:* ]] \
     || { echo "docker-compose.yml pins no published image: $RAILMON_IMAGE $RAILDASH_IMAGE" >&2; exit 1; }
+  # Each by its tag and digest (DR-302), so a moved tag can't change what
+  # the install runs.
+  [[ $RAILMON_IMAGE == *:*@sha256:* && $RAILDASH_IMAGE == *:*@sha256:* ]] \
+    || { echo "docker-compose.yml pins a tag without its digest: $RAILMON_IMAGE $RAILDASH_IMAGE" >&2; exit 1; }
 fi
+# An image's repository: the name without its tag or digest.
+repository() {
+  local name=${1%@*}
+  [[ ${name##*/} != *:* ]] || name=${name%:*}
+  echo "$name"
+}
 # The images this run pulls; empty means that component is built.
 pull_railmon=${RAILMON_IMAGE:-}
 pull_raildash=${RAILDASH_IMAGE:-}
@@ -189,7 +199,8 @@ for row in db.execute("SELECT method, host, path, authenticated, raw FROM intera
   # The README's reset, so it is checked on every run: nothing of the
   # project's may survive it, including the older version's volume.
   { make clean && [[ -z "$(project_volumes)" ]] \
-      && [[ -z "$(docker image ls -q "$railmon_image")$(docker image ls -q "$raildash_image")" ]]; } \
+      && ! docker image inspect "$railmon_image" > /dev/null 2>&1 \
+      && ! docker image inspect "$raildash_image" > /dev/null 2>&1; } \
     > "$EVIDENCE_DIR/cleanup.log" 2>&1 || { [[ $result != 0 ]] || result=1; }
   # What install.sh wrote into this checkout (none was there before), kept
   # for the reset above.
@@ -338,10 +349,18 @@ fi
 for pair in "railmon $pull_railmon" "raildash $pull_raildash"; do
   read -r component image <<<"$pair"
   [[ -n ${image:-} ]] || continue
-  remote=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$image")
-  docker image inspect --format '{{join .RepoDigests "\n"}}' "$image" | grep -qxF "${image%:*}@$remote" \
+  # What the registry names now: the tag's digest for a name with a tag (and
+  # maybe a digest too), a digest-only name as it is.
+  tagged=$image
+  [[ $(repository "$image") == "${image%@*}" ]] || tagged=${image%@*}
+  remote=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$tagged")
+  # A pin with a digest is the registry's image only if that digest is the
+  # tag's now: a moved tag fails here rather than in a user's install.
+  [[ $image != *@sha256:* || ${image##*@} == "$remote" ]] \
+    || { echo "$image: the registry's tag now names $remote" >&2; exit 1; }
+  docker image inspect --format '{{join .RepoDigests "\n"}}' "$image" | grep -qxF "$(repository "$image")@$remote" \
     || { echo "$image was built here, not pulled ($remote)" >&2; exit 1; }
-  echo "$component ${image%:*}@$remote" | tee -a "$EVIDENCE_DIR/component-images.txt"
+  echo "$component $(repository "$image")@$remote" | tee -a "$EVIDENCE_DIR/component-images.txt"
   for id in $("${compose[@]}" ps -q); do
     service=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.service"}}' "$id")
     [[ $service == "$component"* || ($component == railmon && $service == demo-agent) ]] || continue

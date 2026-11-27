@@ -46,9 +46,10 @@
 # The sensors, railmon-scan and docker-proxy have read-only
 # filesystems and can't gain privileges.
 #
-# Each component runs a fixed published tag, pinned below: RailMon and
-# RailDash each carry their own. Set RAILMON_IMAGE / RAILDASH_IMAGE to run
-# another published tag. To build from source instead, name local images
+# Each component runs a fixed published tag, pinned below by its digest
+# too, so a moved tag can't change what runs: RailMon and RailDash each
+# carry their own. Set RAILMON_IMAGE / RAILDASH_IMAGE to run another
+# published tag. To build from source instead, name local images
 # and build: `make update` does that, from each repository's default branch
 # (INSTALL.md, "Images"). Point RAILMON_SRC / RAILDASH_SRC at a local
 # checkout to build that instead; a railmon checkout needs its submodules
@@ -60,7 +61,7 @@
 # Compose builds services in parallel, and on Docker Desktop's containerd
 # image store a second build of the same image name fails.
 x-railmon: &railmon
-  image: ${RAILMON_IMAGE:-ghcr.io/datrail/railmon:0.1.0-m20}
+  image: ${RAILMON_IMAGE:-ghcr.io/datrail/railmon:0.1.0-m20@sha256:c64fc8f9d11b9c7c77f7dc2b028a0cab33ab1b6276bafa9b14c4bdc572bf15f0}
   restart: unless-stopped
 
 # The three sensors: the capabilities their eBPF probes need instead of
@@ -82,7 +83,7 @@ x-sensor: &sensor
 
 services:
   raildash:
-    image: ${RAILDASH_IMAGE:-ghcr.io/datrail/raildash:0.2.0-rc.19}
+    image: ${RAILDASH_IMAGE:-ghcr.io/datrail/raildash:0.2.0-rc.19@sha256:8d04db6cd022e83207d699e9e85ca397e511203979bf9b3c6eb8c27d3754d685}
     build:
       context: ${RAILDASH_SRC:-https://github.com/datrail/raildash.git}
     restart: unless-stopped
