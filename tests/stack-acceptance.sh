@@ -349,7 +349,11 @@ fi
 for pair in "railmon $pull_railmon" "raildash $pull_raildash"; do
   read -r component image <<<"$pair"
   [[ -n ${image:-} ]] || continue
-  remote=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "${image%@*}")
+  # What the registry names now: the tag's digest for a name with a tag (and
+  # maybe a digest too), a digest-only name as it is.
+  tagged=$image
+  [[ $(repository "$image") == "${image%@*}" ]] || tagged=${image%@*}
+  remote=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$tagged")
   # A pin with a digest is the registry's image only if that digest is the
   # tag's now: a moved tag fails here rather than in a user's install.
   [[ $image != *@sha256:* || ${image##*@} == "$remote" ]] \

@@ -453,9 +453,10 @@ RAILMON_IMAGE=datrail-railmon:local RAILDASH_IMAGE=datrail-raildash:local docker
 
 Keep both names set (in your shell or `.env`) for later `docker compose`
 commands, or they go back to the pinned tags. Don't use `--build` without
-them: Compose would tag the build with the published name. A git URL build
-context is fetched with its submodules, which RailMon needs. To build from
-local checkouts instead, clone them (RailMon with its submodules):
+them: the published names carry a digest, which a build can't be tagged
+with. A git URL build context is fetched with its submodules, which RailMon
+needs. To build from local checkouts instead, clone them (RailMon with its
+submodules):
 
 ```bash
 git clone --recursive https://github.com/datrail/railmon.git
