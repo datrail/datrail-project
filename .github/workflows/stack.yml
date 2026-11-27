@@ -131,6 +131,25 @@ jobs:
           # log (DR-316).
           STACK_REBOOT: '1'
         run: bash tests/stack-acceptance.sh
+      # install.sh's own Docker commands (its kernel check and its removal of
+      # the previous release's images) on the pins as written, tag and
+      # digest (DR-302): Docker resolves such a name by its digest.
+      - name: install.sh's image commands on the digest pins
+        run: |
+          set -euo pipefail
+          for image in $(docker compose config --images | grep '^ghcr\.io/datrail/' | sort -u); do
+            [[ $image == *:*@sha256:* ]] || { echo "::error::$image is pinned without its digest"; exit 1; }
+            docker image inspect "$image" > /dev/null 2>&1 || docker pull -q "$image" > /dev/null
+            docker image inspect "$image" > /dev/null
+            id=$(docker create "$image")
+            [[ $(docker ps -aq --no-trunc --filter "ancestor=$image") == "$id" ]] \
+              || { echo "::error::docker ps --filter ancestor=$image doesn't find its container"; exit 1; }
+            docker rm "$id" > /dev/null
+            docker image rm "$image" > /dev/null
+            ! docker image inspect "$image" > /dev/null 2>&1 \
+              || { echo "::error::docker image rm $image left it in place"; exit 1; }
+            echo "ok: $image"
+          done
       - name: Preserve service logs and results
         if: always()
         uses: actions/upload-artifact@v7
@@ -203,13 +222,14 @@ jobs:
           pinned=$(docker compose config --format json)
           railmon=$(jq -r '.services["railmon-collect"].image' <<<"$pinned")
           raildash=$(jq -r '.services.raildash.image' <<<"$pinned")
-          [[ $railmon == ghcr.io/datrail/railmon:* && $raildash == ghcr.io/datrail/raildash:* ]]
+          [[ $railmon == ghcr.io/datrail/railmon:*@sha256:* && $raildash == ghcr.io/datrail/raildash:*@sha256:* ]]
           docker pull "$railmon"
           docker pull "$raildash"
           {
             echo "railmon=$railmon"
             echo "raildash=$raildash"
-            echo "railmon_tag=v${railmon##*:}"
+            tag=${railmon%@*}
+            echo "railmon_tag=v${tag##*:}"
           } >> "$GITHUB_OUTPUT"
       # Test scripts only, from the tag the RailMon image was built from;
       # nothing here is built.

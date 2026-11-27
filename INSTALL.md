@@ -408,7 +408,9 @@ recreated sandbox.
 ## Images
 
 Each component runs a fixed published tag from `ghcr.io/datrail`, pinned in
-`docker-compose.yml`. RailMon and RailDash carry their own tags:
+`docker-compose.yml` by its digest too (`0.1.0-m20@sha256:…`), so the image
+that runs is the one this file names even if a tag were moved. RailMon and
+RailDash carry their own tags:
 
 | Component | Image |
 | --- | --- |

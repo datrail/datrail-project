@@ -205,7 +205,10 @@ for pair in "railmon railmon-collect" "raildash raildash"; do
   read -r component service <<<"$pair"
   image=$(docker compose config --format json | jq -r --arg s "$service" '.services[$s].image')
   digest=$(docker image inspect --format '{{join .RepoDigests " "}}' "$image")
-  [[ " $digest" == *" ${image%:*}@sha256:"* ]] || fail "$image was not pulled from ghcr.io/datrail"
+  repo=${image%@*}; repo=${repo%:*}
+  [[ " $digest" == *" $repo@sha256:"* ]] || fail "$image was not pulled from ghcr.io/datrail"
+  # A digest pin (DR-302) is the digest it came as.
+  [[ $image != *@sha256:* || " $digest " == *" $repo@${image##*@} "* ]] || fail "$image came as $digest"
   echo "$component $image $digest" | tee -a "$EVIDENCE_DIR/images.txt" "$transcript"
 done
 wait_for "the demo agent's POSTs to 127.0.0.1:8443 /v1/demo and /v1/demo/other, status 200" 300 "$py_api"'
