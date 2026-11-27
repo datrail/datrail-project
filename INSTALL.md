@@ -678,10 +678,11 @@ each MCP tool's input schema, one copy per place its server was declared;
 reads the agent's files instead of running commands in its container
 (runtime versions come from build stamps, and the scan's own `sh`, `id` and
 `env` leave `observed_file_access`); and names a listener or peer for its
-process rather than the thread that opened it. Packs 17 (22 November 2026)
-and 18 (24 November 2026) change only what a GKE pod scan reads, so a Docker
-install's ASPs read the same, but a baseline locked on an earlier pack still
-needs re-locking. Check the
+process rather than the thread that opened it. Pack 17 (22 November 2026)
+changes only what a GKE pod scan reads. Pack 18 (26 November 2026) also
+reads Python's or Node's version from the interpreter the agent's process
+runs, when its image sets no `PYTHON_VERSION` or `NODE_VERSION`, so
+`framework_identity` can gain a value for your own agent. Check the
 newest ASP's evidence and lock it as the new baseline; it happens once per
 upgrade.
 
